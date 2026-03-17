@@ -9,6 +9,7 @@ A CLI tool that generates intentionally random, physically meaningless atomic st
 - **Three placement modes** — fully random (`gas`), chain-growth (`chain`), coordination-complex-like (`shell`)
 - **10 disorder metrics** computed per structure, all usable as output filters
 - **Element pool** specified by atomic number (Z = 1–106, H through Sg); composition sampled randomly per structure
+- **Always outputs `--n-atoms` atoms** — placement is unrestricted; Pyykkö covalent radii are enforced by mandatory post-placement repulsion relaxation
 - Charge/multiplicity parity validation before any geometry is generated
 - Multi-structure batch generation with `--n-samples`; per-structure progress on stderr, XYZ on stdout
 - Reproducible runs via `--seed`
@@ -115,6 +116,8 @@ Elements are specified by atomic number. Omit to use all supported elements (Z =
 For each structure, `--n-atoms` elements are drawn independently and uniformly from this pool.
 The resulting composition varies per sample.
 
+If H (Z = 1) is in the pool and the sampled composition contains no hydrogen, a random number of H atoms is automatically appended (approximately `1 + uniform(0,1) × n_atoms × 1.2`). This can be disabled with `--no-add-hydrogen`.
+
 ## Charge and Multiplicity
 
 `--charge` and `--mult` are required and apply to every generated structure.
@@ -126,8 +129,27 @@ Before placement, PASTED checks two conditions against the randomly sampled comp
 Structures that fail either check are logged as `[invalid]` and skipped.
 High-spin vs. low-spin selection is **not enforced**; that is the user's responsibility.
 
-Because composition is random, parity failures are common when the element pool contains many odd-Z elements and `mult=1` is specified.
-Increasing `--n-samples` or using `--mult 2` reduces this.
+Because composition is random, parity failures are common when the element pool contains many odd-Z elements and `mult=1` is specified. Increasing `--n-samples` or using `--mult 2` reduces this.
+
+## Interatomic Distance Control
+
+PASTED enforces a minimum interatomic distance using Pyykkö single-bond covalent radii (Pyykkö & Atsumi, *Chem. Eur. J.* **15**, 186–197, 2009).
+
+The threshold for each atom pair (i, j) is:
+
+```
+d_min(i, j) = cov_scale × (r_i + r_j)
+```
+
+- Default `--cov-scale 1.0` = exact sum of covalent radii.
+- Values below 1.0 allow closer contacts; values above 1.0 enforce additional clearance.
+- Z > 86 (Fr through Sg): no single-bond literature values are available. PASTED uses the same-group nearest lighter element as a proxy (e.g. Fr → Cs, U → Nd, Rf → Hf).
+
+### Post-placement repulsion relaxation
+
+Placement does **not** check for distance violations — atoms are placed freely in the requested geometry (region/chain/shell). After placement, a mandatory **repulsion relaxation** step resolves all violations iteratively: for each pair below the threshold, both atoms are pushed apart along their connecting vector by half the deficit. This repeats until no violations remain or `--relax-cycles` is exhausted.
+
+This design guarantees that `--n-atoms` atoms are always placed, regardless of how crowded the initial configuration is. If relaxation does not converge within `--relax-cycles`, a `[warn]` line is printed to stderr and the structure is output as-is.
 
 ## Disorder Metrics
 
@@ -206,7 +228,7 @@ python pasted.py ... -o /dev/null
 
 ```
 required:
-  --n-atoms N           total atoms per structure
+  --n-atoms N           number of atoms per structure
   --charge INT          total system charge
   --mult INT            spin multiplicity 2S+1
 
@@ -223,8 +245,9 @@ elements:
   --elements SPEC       atomic-number spec (default: all Z=1-106)
 
 placement:
-  --min-dist FLOAT      minimum interatomic distance Å (default: 0.8)
-  --max-attempts INT    placement attempts per atom (default: 10000)
+  --cov-scale FLOAT     min dist = cov_scale × (r_i + r_j), Pyykkö radii (default: 1.0)
+  --relax-cycles INT    max cycles for post-placement repulsion relaxation (default: 500)
+  --no-add-hydrogen     disable automatic H augmentation
 
 sampling:
   --n-samples INT       number of structures to attempt (default: 1)
@@ -246,9 +269,11 @@ output:
 
 ## Notes and Limitations
 
-- **RDF_dev** is a finite-system approximation. Treat it as a relative indicator, not an absolute measure.
-- **Q4/Q6/Q8** are meaningful only when `--cutoff` is set to a value that gives a reasonable number of neighbours. The default 2.0 Å is appropriate for light elements; increase it (e.g. `--cutoff 3.0`) for heavier elements with longer bonds.
-- Charge/mult parity is checked per sample against the randomly drawn composition. A large `invalid_charge_mult` count in the summary means the element pool and charge/mult combination produce many odd-electron systems. Either widen `--mult` or restrict `--elements` to even-Z elements.
+- **Interatomic distances** use Pyykkö (2009) single-bond covalent radii. For Z > 86 (Fr through Sg), same-group proxies are used (e.g. Fr → Cs, U → Nd, Rf → Hf).
+- **Repulsion relaxation** guarantees that no pair falls below `cov_scale × (r_i + r_j)` when it converges. If `[warn] relax_positions did not converge` appears, the structure may contain marginal violations but is still output. Increase `--relax-cycles` if convergence is important.
+- **RDF_dev** is a finite-system approximation; treat it as a relative indicator.
+- **Q4/Q6/Q8** are meaningful only when `--cutoff` gives a reasonable number of neighbours. The default 2.0 Å suits light elements; increase to e.g. `--cutoff 3.0` for heavier elements with longer bonds.
+- Charge/mult parity failures are common with large element pools and `mult=1`. Increase `--n-samples` or use `--mult 2` to compensate.
 
 ## License
 

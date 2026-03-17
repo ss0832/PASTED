@@ -81,6 +81,64 @@ _ALL_METRICS = {
 }
 
 # ---------------------------------------------------------------------------
+# Pyykkö single-bond covalent radii (Å),  Z = 1–86
+# Reference: Pyykkö & Atsumi, Chem. Eur. J. 15 (2009) 186–197
+# Stored as an independent dict; values are not copied from any GPL source.
+# ---------------------------------------------------------------------------
+
+_COV_RADII_ANG: dict[str, float] = {
+    "H": 0.32, "He": 0.46,
+    "Li": 1.33, "Be": 1.02, "B": 0.85, "C": 0.75, "N": 0.71,
+    "O": 0.63, "F": 0.64, "Ne": 0.67,
+    "Na": 1.55, "Mg": 1.39, "Al": 1.26, "Si": 1.16, "P": 1.11,
+    "S": 1.03, "Cl": 0.99, "Ar": 0.96,
+    "K": 1.96, "Ca": 1.71,
+    "Sc": 1.48, "Ti": 1.36, "V": 1.34, "Cr": 1.22, "Mn": 1.19,
+    "Fe": 1.16, "Co": 1.11, "Ni": 1.10, "Cu": 1.12, "Zn": 1.18,
+    "Ga": 1.24, "Ge": 1.24, "As": 1.21, "Se": 1.16, "Br": 1.14, "Kr": 1.17,
+    "Rb": 2.10, "Sr": 1.85,
+    "Y": 1.63, "Zr": 1.54, "Nb": 1.47, "Mo": 1.38, "Tc": 1.28,
+    "Ru": 1.25, "Rh": 1.25, "Pd": 1.20, "Ag": 1.28, "Cd": 1.36,
+    "In": 1.42, "Sn": 1.40, "Sb": 1.40, "Te": 1.36, "I": 1.33, "Xe": 1.31,
+    "Cs": 2.32, "Ba": 1.96,
+    "La": 1.80, "Ce": 1.63, "Pr": 1.76, "Nd": 1.74, "Pm": 1.73,
+    "Sm": 1.72, "Eu": 1.68, "Gd": 1.69, "Tb": 1.68, "Dy": 1.67,
+    "Ho": 1.66, "Er": 1.65, "Tm": 1.64, "Yb": 1.70, "Lu": 1.62,
+    "Hf": 1.52, "Ta": 1.46, "W": 1.37, "Re": 1.31, "Os": 1.29,
+    "Ir": 1.22, "Pt": 1.23, "Au": 1.24, "Hg": 1.33,
+    "Tl": 1.44, "Pb": 1.44, "Bi": 1.51, "Po": 1.45, "At": 1.47, "Rn": 1.42,
+}
+
+# Z > 86: no literature single-bond radii available.
+# Proxy: same-group nearest lighter element.
+_COV_RADII_PROXY: dict[str, str] = {
+    "Fr": "Cs",  # group  1
+    "Ra": "Ba",  # group  2
+    "Ac": "La",  # group  3
+    # Actinides (Th–Lr) → corresponding lanthanides (Ce–Lu)
+    "Th": "Ce", "Pa": "Pr", "U":  "Nd", "Np": "Pm",
+    "Pu": "Sm", "Am": "Eu", "Cm": "Gd", "Bk": "Tb",
+    "Cf": "Dy", "Es": "Ho", "Fm": "Er", "Md": "Tm",
+    "No": "Yb", "Lr": "Lu",
+    # Period-7 d-block → Period-6 d-block (same group)
+    "Rf": "Hf", "Db": "Ta", "Sg": "W",
+}
+
+
+def _cov_radius_ang(sym: str) -> float:
+    """
+    Return the Pyykkö single-bond covalent radius in Å for *sym*.
+    Z > 86: use the same-group nearest lighter element as a proxy.
+    """
+    r = _COV_RADII_ANG.get(sym)
+    if r is not None:
+        return r
+    proxy = _COV_RADII_PROXY.get(sym)
+    if proxy is not None:
+        return _COV_RADII_ANG[proxy]
+    return 1.50   # ultimate fallback (should never be reached for Z ≤ 106)
+
+# ---------------------------------------------------------------------------
 # Parsers
 # ---------------------------------------------------------------------------
 
@@ -197,23 +255,92 @@ def _sample_box(lx: float, ly: float, lz: float, rng: random.Random) -> Vec3:
     return (rng.uniform(-lx/2,lx/2), rng.uniform(-ly/2,ly/2), rng.uniform(-lz/2,lz/2))
 
 
-def _no_clash(pt: Vec3, positions: list[Vec3], min_dist: float) -> bool:
-    """Return True if pt is at least min_dist away from every position in the list."""
-    if not positions:
-        return True
-    # np.asarray on a list of tuples is faster than np.array and avoids a copy
-    arr = np.asarray(positions, dtype=float)
-    p   = pt[0] - arr[:, 0]; q = pt[1] - arr[:, 1]; r = pt[2] - arr[:, 2]
-    return bool(np.min(p*p + q*q + r*r) >= min_dist * min_dist)
+def relax_positions(
+    atoms: list[str],
+    positions: list[Vec3],
+    cov_scale: float,
+    max_cycles: int = 500,
+) -> tuple[list[Vec3], bool]:
+    """
+    Iterative repulsion relaxation.
+
+    For every pair (i, j) whose distance is below
+    threshold = cov_scale * (r_i + r_j),
+    both atoms are displaced along their connecting vector by half the deficit.
+    Cycles repeat until no violations remain or *max_cycles* is exhausted.
+
+    Returns (relaxed_positions, converged).
+    *converged* is False only when max_cycles was reached with violations still
+    present — the caller should warn but the structure is still usable.
+    """
+    n = len(atoms)
+    if n < 2:
+        return positions, True
+
+    pts = np.array(positions, dtype=float)                  # (n, 3)
+    radii = np.array([_cov_radius_ang(a) for a in atoms])  # (n,)
+    # Precompute symmetric threshold matrix (n, n)
+    thresh = cov_scale * (radii[:, np.newaxis] + radii[np.newaxis, :])
+
+    converged = False
+    for _ in range(max_cycles):
+        diff  = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
+        dmat  = np.sqrt((diff ** 2).sum(axis=2))               # (n, n)
+        np.fill_diagonal(dmat, np.inf)
+
+        viol_mask = np.triu(dmat < thresh, k=1)
+        if not viol_mask.any():
+            converged = True
+            break
+
+        vi, vj = np.where(viol_mask)
+        for i, j in zip(vi, vj):
+            d = dmat[i, j]
+            if d < 1e-10:                        # coincident: random direction
+                v = np.random.default_rng().standard_normal(3)
+                v /= np.linalg.norm(v)
+            else:
+                v = diff[i, j] / d              # unit vector from j → i
+            push = (thresh[i, j] - d) * 0.5
+            pts[i] += push * v
+            pts[j] -= push * v
+
+    return [tuple(row) for row in pts], converged
+
+
+# ---------------------------------------------------------------------------
+# Hydrogen augmentation
+# ---------------------------------------------------------------------------
+
+def add_hydrogen(
+    atoms: list[str],
+    rng: random.Random,
+) -> list[str]:
+    """
+    If no H is present, append a random number of H atoms proportional to
+    the current atom count:
+      n_H = 1 + round(uniform(0,1) * n_current * 1.2)
+    The new list is returned (original is not modified).
+    """
+    if "H" in atoms:
+        return atoms
+    n = len(atoms)
+    n_h = 1 + round(rng.random() * n * 1.2)
+    return atoms + ["H"] * n_h
 
 # ---------------------------------------------------------------------------
 # Placement: gas
 # ---------------------------------------------------------------------------
 
 def place_gas(
-    atoms: list[str], region: str, min_dist: float,
-    max_att: int, rng: random.Random
+    atoms: list[str], region: str,
+    rng: random.Random,
 ) -> tuple[list[str], list[Vec3]]:
+    """
+    Place all atoms uniformly at random inside the region.
+    No clash checking — relax_positions handles distance violations afterwards.
+    Always returns exactly len(atoms) positions.
+    """
     if region.startswith("sphere:"):
         r = float(region.split(":")[1])
         gen = lambda: _sample_sphere(r, rng)
@@ -223,16 +350,7 @@ def place_gas(
         gen = lambda: _sample_box(dims[0], dims[1], dims[2], rng)
     else:
         raise ValueError(f"Unknown region: {region!r}")
-    positions: list[Vec3] = []
-    for idx, atom in enumerate(atoms):
-        placed = False
-        for _ in range(max_att):
-            pt = gen()
-            if _no_clash(pt, positions, min_dist):
-                positions.append(pt); placed = True; break
-        if not placed:
-            raise RuntimeError(
-                f"gas: cannot place atom #{idx+1} ({atom}) after {max_att} attempts.")
+    positions = [gen() for _ in atoms]
     return atoms, positions
 
 # ---------------------------------------------------------------------------
@@ -241,32 +359,27 @@ def place_gas(
 
 def place_chain(
     atoms: list[str], bond_lo: float, bond_hi: float,
-    branch_prob: float, min_dist: float, max_att: int, rng: random.Random
+    branch_prob: float,
+    rng: random.Random,
 ) -> tuple[list[str], list[Vec3]]:
     """
-    Random-walk growth with branching.
-    No region constraint; the chain grows freely.
+    Random-walk growth with branching. No region constraint.
+    No clash checking — relax_positions handles distance violations afterwards.
+    Always returns exactly len(atoms) positions.
     """
     positions: list[Vec3] = [(0.0, 0.0, 0.0)]
     tips: list[int] = [0]
     for idx in range(1, len(atoms)):
-        placed = False
-        for _ in range(max_att):
-            tip = rng.choice(tips)
-            tp = positions[tip]
-            bl = rng.uniform(bond_lo, bond_hi)
-            d = _unit_vec(rng)
-            pt: Vec3 = (tp[0]+bl*d[0], tp[1]+bl*d[1], tp[2]+bl*d[2])
-            if _no_clash(pt, positions, min_dist):
-                positions.append(pt)
-                if rng.random() < branch_prob:
-                    tips.append(idx)          # branch: keep parent tip
-                else:
-                    tips[tips.index(tip)] = idx  # linear: advance tip
-                placed = True; break
-        if not placed:
-            raise RuntimeError(
-                f"chain: cannot place atom #{idx+1} after {max_att} attempts.")
+        tip = rng.choice(tips)
+        tp = positions[tip]
+        bl = rng.uniform(bond_lo, bond_hi)
+        d = _unit_vec(rng)
+        pt: Vec3 = (tp[0]+bl*d[0], tp[1]+bl*d[1], tp[2]+bl*d[2])
+        positions.append(pt)
+        if rng.random() < branch_prob:
+            tips.append(idx)
+        else:
+            tips[tips.index(tip)] = idx
     return atoms, positions
 
 # ---------------------------------------------------------------------------
@@ -278,13 +391,14 @@ def place_shell(
     coord_lo: int, coord_hi: int,
     shell_lo: float, shell_hi: float,
     tail_lo: float, tail_hi: float,
-    min_dist: float, max_att: int, rng: random.Random
+    rng: random.Random,
 ) -> tuple[list[str], list[Vec3]]:
     """
     Center atom at origin + coordination shell + tail atoms.
+    No clash checking — relax_positions handles distance violations afterwards.
+    Always returns exactly len(atoms) positions.
     """
     n = len(atoms)
-    # Reorder so center atom is first
     ci = next((i for i, a in enumerate(atoms) if a == center_sym), 0)
     ordered = [atoms[ci]] + [a for i, a in enumerate(atoms) if i != ci]
 
@@ -292,30 +406,18 @@ def place_shell(
     coord_num = min(rng.randint(coord_lo, coord_hi), n - 1)
 
     # Coordination shell
-    for idx in range(1, min(1 + coord_num, n)):
-        placed = False
-        for _ in range(max_att):
-            r = rng.uniform(shell_lo, shell_hi)
-            d = _unit_vec(rng)
-            pt: Vec3 = (r*d[0], r*d[1], r*d[2])
-            if _no_clash(pt, positions, min_dist):
-                positions.append(pt); placed = True; break
-        if not placed:
-            raise RuntimeError(f"shell: cannot place coord atom #{idx} after {max_att} attempts.")
+    for _ in range(1, min(1 + coord_num, n)):
+        r = rng.uniform(shell_lo, shell_hi)
+        d = _unit_vec(rng)
+        positions.append((r*d[0], r*d[1], r*d[2]))
 
-    # Tail atoms grow from any non-center atom
+    # Tail atoms grow from a random non-center atom
     for idx in range(len(positions), n):
-        placed = False
-        for _ in range(max_att):
-            par = rng.randint(1, len(positions) - 1)
-            pp = positions[par]
-            bl = rng.uniform(tail_lo, tail_hi)
-            d = _unit_vec(rng)
-            pt = (pp[0]+bl*d[0], pp[1]+bl*d[1], pp[2]+bl*d[2])
-            if _no_clash(pt, positions, min_dist):
-                positions.append(pt); placed = True; break
-        if not placed:
-            raise RuntimeError(f"shell: cannot place tail atom #{idx-coord_num} after {max_att} attempts.")
+        par = rng.randint(1, len(positions) - 1)
+        pp = positions[par]
+        bl = rng.uniform(tail_lo, tail_hi)
+        d = _unit_vec(rng)
+        positions.append((pp[0]+bl*d[0], pp[1]+bl*d[1], pp[2]+bl*d[2]))
 
     return ordered, positions
 
@@ -590,10 +692,20 @@ examples
                     help="Element pool by atomic number (default: all Z=1-106).")
 
     pg = p.add_argument_group("placement")
-    pg.add_argument("--min-dist", type=float, default=0.8,
-                    help="Minimum interatomic distance Angstrom (default: 0.8).")
-    pg.add_argument("--max-attempts", type=int, default=10000,
-                    help="Max placement attempts per atom (default: 10000).")
+    pg.add_argument("--cov-scale", type=float, default=1.0,
+                    help=(
+                        "Minimum distance = cov_scale × (r_i + r_j), Pyykkö (2009) radii. "
+                        "Default 1.0 = exact sum of covalent radii."
+                    ))
+    pg.add_argument("--relax-cycles", type=int, default=500,
+                    help="Max cycles for post-placement repulsion relaxation (default: 500).")
+    pg.add_argument("--no-add-hydrogen", action="store_true",
+                    help=(
+                        "Disable automatic H augmentation. "
+                        "By default, if H(Z=1) is in the element pool and the sampled "
+                        "composition contains no H, H atoms are appended "
+                        "(n_H ≈ 1 + uniform(0,1) × n_atoms × 1.2)."
+                    ))
 
     sg = p.add_argument_group("sampling")
     sg.add_argument("--n-samples", type=int, default=1)
@@ -714,8 +826,18 @@ def main() -> None:
     n_passed = n_invalid = 0
     width = len(str(args.n_samples))
 
+    # Resolved distance parameters
+    cov_scale: float = args.cov_scale
+    relax_cycles: int = args.relax_cycles
+    h_in_pool = "H" in element_pool
+    do_add_h  = h_in_pool and not args.no_add_hydrogen
+
     for i in range(args.n_samples):
         atoms_list = [rng.choice(element_pool) for _ in range(args.n_atoms)]
+
+        # Hydrogen augmentation 
+        if do_add_h:
+            atoms_list = add_hydrogen(atoms_list, rng)
 
         ok, val_msg = validate_charge_mult(atoms_list, args.charge, args.mult)
         if not ok:
@@ -726,13 +848,12 @@ def main() -> None:
         try:
             if args.mode == "gas":
                 atoms_out, positions = place_gas(
-                    atoms_list, args.region, args.min_dist, args.max_attempts, rng)
+                    atoms_list, args.region, rng)
             elif args.mode == "chain":
                 atoms_out, positions = place_chain(
                     atoms_list, bond_lo, bond_hi,
-                    args.branch_prob, args.min_dist, args.max_attempts, rng)
+                    args.branch_prob, rng)
             else:
-                # Center atom: fixed override OR random from this sample's composition
                 center_sym = (
                     fixed_center_sym
                     if fixed_center_sym is not None
@@ -741,9 +862,18 @@ def main() -> None:
                 atoms_out, positions = place_shell(
                     atoms_list, center_sym,
                     coord_lo, coord_hi, shell_lo, shell_hi,
-                    bond_lo, bond_hi, args.min_dist, args.max_attempts, rng)
-        except RuntimeError as e:
+                    bond_lo, bond_hi, rng)
+        except (RuntimeError, ValueError) as e:
             print(f"[ERROR] sample {i+1}: {e}", file=sys.stderr); sys.exit(1)
+
+        # Mandatory post-placement relaxation
+        positions, converged = relax_positions(atoms_out, positions, cov_scale, relax_cycles)
+        if not converged:
+            print(
+                f"[{i+1:>{width}}/{args.n_samples}:warn] "
+                f"relax_positions did not converge in {relax_cycles} cycles.",
+                file=sys.stderr,
+            )
 
         metrics = compute_all_metrics(
             atoms_out, positions,
