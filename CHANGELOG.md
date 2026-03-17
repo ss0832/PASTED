@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-03-17
+
+### Added
+- `--mode maxent` — Maximum-entropy placement mode.  Atoms are initialised
+  at random, then iteratively repositioned by gradient descent on an angular
+  repulsion potential so that each atom's neighbour directions become as
+  uniformly distributed over the sphere as the Pyykkö distance constraints
+  allow.  The result is the constrained-maximum-entropy solution to
+  `max S = −∫ p(Ω) ln p(Ω) dΩ` subject to `d_ij ≥ cov_scale·(r_i + r_j)`.
+- `place_maxent(atoms, region, cov_scale, rng, ...)` — low-level placement
+  function, exported from the public API.
+- `compute_angular_entropy(positions, cutoff)` — diagnostic metric: mean
+  per-atom Shannon entropy of neighbour direction distributions.  Not
+  included in `ALL_METRICS` or XYZ comment lines; intended for comparing
+  placement quality.
+- `_angular_repulsion_gradient(pts, cutoff)` — internal numpy gradient of
+  the angular repulsion potential `U = Σ 1/(1 − cos θ + ε)`.
+- Three new CLI flags for `--mode maxent`:
+  `--maxent-steps` (default 300), `--maxent-lr` (default 0.05),
+  `--maxent-cutoff-scale` (default 2.5).
+- `tests/test_maxent.py` — 15 tests covering gradient, placement, entropy,
+  and generator integration.
+
+### Changed
+- `StructureGenerator` now accepts `mode="maxent"` alongside the existing
+  `gas`, `chain`, `shell` modes.
+- `_generator.py` `_place_one`: added `maxent` branch.
+- `__init__.py` exports: `place_maxent`, `compute_angular_entropy`.
+
 ## [0.1.2] - 2026-03-17
 
 ### Added

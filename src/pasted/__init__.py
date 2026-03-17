@@ -46,10 +46,11 @@ from ._atoms import (
 )
 from ._generator import Structure, StructureGenerator, generate
 from ._io import format_xyz
-from ._metrics import compute_all_metrics, compute_steinhardt_per_atom
+from ._metrics import compute_all_metrics, compute_angular_entropy, compute_steinhardt_per_atom
 from ._optimizer import StructureOptimizer, parse_objective_spec
+from ._placement import place_maxent
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = [
     # High-level API
@@ -68,8 +69,11 @@ __all__ = [
     "validate_charge_mult",
     # Metric / IO utilities
     "compute_all_metrics",
+    "compute_angular_entropy",
     "compute_steinhardt_per_atom",
     "format_xyz",
+    # Placement utilities
+    "place_maxent",
     # Package metadata
     "__version__",
 ]

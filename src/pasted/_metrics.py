@@ -329,3 +329,71 @@ def passes_filters(
         if math.isnan(v) or not (lo <= v <= hi):
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Angular entropy (diagnostic — not in ALL_METRICS, not in XYZ comment)
+# ---------------------------------------------------------------------------
+
+
+def compute_angular_entropy(
+    positions: list[Vec3],
+    cutoff: float,
+    n_bins: int = 20,
+) -> float:
+    """Mean per-atom angular entropy of neighbour direction distributions.
+
+    For each atom *i*, the directions to its neighbours within *cutoff* are
+    projected onto the unit sphere.  The polar angle θ distribution is
+    histogrammed and its Shannon entropy is computed.  The result is averaged
+    over all atoms that have at least one neighbour.
+
+    A value close to ln(*n_bins*) indicates a near-uniform (maximum-entropy)
+    angular distribution — neighbours are spread evenly over the sphere.
+    A low value indicates clustering of neighbours in certain directions,
+    i.e. accidental local order.
+
+    This metric is intended as a diagnostic for the ``maxent`` placement mode
+    and is **not** included in ``ALL_METRICS`` or in XYZ comment lines.
+
+    Parameters
+    ----------
+    positions:
+        Cartesian coordinates (Å).
+    cutoff:
+        Neighbour distance cutoff (Å).
+    n_bins:
+        Number of histogram bins for the θ distribution (default: 20).
+
+    Returns
+    -------
+    float
+        Mean per-atom angular Shannon entropy.  Returns 0.0 for structures
+        with fewer than two atoms or no neighbours within *cutoff*.
+    """
+    pts = np.array(positions, dtype=float)
+    n = len(pts)
+    if n < 2:
+        return 0.0
+
+    dmat = _squareform(_pdist(pts))
+    np.fill_diagonal(dmat, np.inf)
+
+    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
+    safe_d = np.where(dmat[:, :, np.newaxis] > 0, dmat[:, :, np.newaxis], 1.0)
+    d_hat = diff / safe_d                                   # (n, n, 3) unit vectors
+
+    # Polar angle of each neighbour direction
+    theta = np.arccos(np.clip(d_hat[:, :, 2], -1.0, 1.0))  # (n, n)
+
+    mask = dmat <= cutoff  # (n, n)
+    entropies: list[float] = []
+
+    for i in range(n):
+        nb_theta = theta[i, mask[i]]
+        if len(nb_theta) < 2:
+            continue
+        counts, _ = np.histogram(nb_theta, bins=n_bins, range=(0.0, math.pi))
+        entropies.append(_shannon_np(counts.astype(float)))
+
+    return float(np.mean(entropies)) if entropies else 0.0

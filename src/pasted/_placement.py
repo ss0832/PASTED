@@ -332,3 +332,138 @@ def place_shell(
         )
 
     return ordered, positions
+
+
+# ---------------------------------------------------------------------------
+# Placement: maxent
+# ---------------------------------------------------------------------------
+
+
+def _angular_repulsion_gradient(
+    pts: np.ndarray, cutoff: float
+) -> np.ndarray:
+    """Compute gradient of the angular repulsion potential.
+
+    For each atom *i* and each neighbour *j* within *cutoff*, the potential
+
+        U_ij = 1 / (1 - cos θ_ij + ε)
+
+    penalises neighbours that are close in *direction* from *i*.
+    A small ε = 1e-6 prevents division by zero when two directions coincide.
+
+    Returns the gradient ∂U/∂r_i of shape (n, 3).
+    """
+    n = len(pts)
+    grad = np.zeros((n, 3), dtype=float)
+    eps = 1e-6
+
+    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
+    dist = np.sqrt((diff**2).sum(axis=2))                  # (n, n)
+    np.fill_diagonal(dist, np.inf)
+
+    mask = dist <= cutoff                                   # (n, n) bool
+
+    # Unit vectors from j → i
+    safe_dist = np.where(dist > 0, dist, 1.0)
+    uhat = diff / safe_dist[:, :, np.newaxis]              # (n, n, 3)
+
+    # cos θ_ij = dot(uhat[i,j], uhat[i,k])  for all j,k neighbours of i
+    # We want ∂U/∂r_i.  Using the chain rule through cos θ:
+    #   ∂(cos θ_jk)/∂r_i involves both the direction and distance terms.
+    # Simplified: push each pair of neighbours apart *in angle* by displacing
+    # atom i away from each neighbour along the angular bisector.
+
+    mask_f = mask.astype(float)
+    for i in range(n):
+        ni_dirs = uhat[i] * mask_f[i, :, np.newaxis]  # (n, 3) zero for non-neighbours
+        # For each neighbour j, accumulate repulsion from all other neighbours k
+        # ∂U_jk/∂θ × ∂θ/∂r_i  → push apart the two directions
+        ni_idx = np.where(mask[i])[0]
+        for j in ni_idx:
+            cos_vals = (ni_dirs[ni_idx] * ni_dirs[j]).sum(axis=1)  # (n_nb,)
+            denom = 1.0 - cos_vals + eps
+            weights = 1.0 / denom**2                                # (n_nb,)
+            # Gradient contribution: push direction j away from each other dir
+            perp = ni_dirs[ni_idx] - cos_vals[:, np.newaxis] * ni_dirs[j]
+            grad[i] += (weights[:, np.newaxis] * perp).sum(axis=0) / safe_dist[i, j]
+
+    return grad
+
+
+def place_maxent(
+    atoms: list[str],
+    region: str,
+    cov_scale: float,
+    rng: random.Random,
+    maxent_steps: int = 300,
+    maxent_lr: float = 0.05,
+    maxent_cutoff_scale: float = 2.5,
+) -> tuple[list[str], list[Vec3]]:
+    """Place atoms to maximise angular entropy subject to distance constraints.
+
+    Implements constrained maximum-entropy placement: atoms are initialised
+    inside *region* at random, then iteratively repositioned so that each
+    atom's neighbourhood directions become as uniformly distributed over the
+    sphere as possible — the solution to
+
+        max  S = −∫ p(Ω) ln p(Ω) dΩ
+        s.t.  d_ij ≥ cov_scale × (r_i + r_j)   ∀ i,j
+
+    The angular repulsion potential
+
+        U = Σ_{i} Σ_{j,k ∈ N(i), j≠k}  1 / (1 − cos θ_{jk} + ε)
+
+    is minimised by gradient descent.  After every gradient step the
+    mandatory repulsion relaxation is applied to enforce the distance
+    constraint.  The result is a structure where neighbour directions are
+    spread as uniformly over the sphere as the distance constraints allow —
+    "校則の中での最大限の不真面目" (maximum disorder within the rules).
+
+    Parameters
+    ----------
+    atoms:
+        Element symbols.
+    region:
+        Initial placement region: ``"sphere:R"`` | ``"box:L"`` | ``"box:LX,LY,LZ"``.
+    cov_scale:
+        Pyykkö distance scale factor.
+    rng:
+        Seeded random-number generator.
+    maxent_steps:
+        Gradient-descent iterations (default: 300).
+    maxent_lr:
+        Learning rate for angular repulsion gradient descent (default: 0.05).
+    maxent_cutoff_scale:
+        Neighbour cutoff = this factor × median covalent sum (default: 2.5).
+        Larger values include more neighbours in the angular calculation.
+
+    Returns
+    -------
+    (atoms, positions)
+        Always ``len(atoms)`` positions.
+    """
+    # ── Initial random placement ─────────────────────────────────────────
+    _, positions = place_gas(atoms, region, rng)
+    positions, _ = relax_positions(atoms, positions, cov_scale, max_cycles=500)
+
+    # ── Determine neighbour cutoff from covalent radii ───────────────────
+    radii = np.array([_cov_radius_ang(a) for a in atoms])
+    pair_sums = sorted(
+        ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
+    )
+    median_sum = pair_sums[len(pair_sums) // 2]
+    ang_cutoff = cov_scale * maxent_cutoff_scale * median_sum
+
+    # ── Gradient descent on angular repulsion potential ──────────────────
+    pts = np.array(positions, dtype=float)
+
+    for _ in range(maxent_steps):
+        grad = _angular_repulsion_gradient(pts, ang_cutoff)
+        # Gradient ascent on entropy = descent on repulsion potential
+        pts -= maxent_lr * grad
+        # Re-enforce distance constraint after each step
+        pos_list: list[Vec3] = [tuple(row) for row in pts]
+        pos_list, _ = relax_positions(atoms, pos_list, cov_scale, max_cycles=50)
+        pts = np.array(pos_list, dtype=float)
+
+    return atoms, [tuple(row) for row in pts]

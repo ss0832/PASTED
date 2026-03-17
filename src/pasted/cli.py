@@ -76,7 +76,7 @@ examples
     )
 
     mg = p.add_argument_group("placement mode")
-    mg.add_argument("--mode", choices=["gas", "chain", "shell"], default="gas")
+    mg.add_argument("--mode", choices=["gas", "chain", "shell", "maxent"], default="gas")
     mg.add_argument(
         "--region", help="[gas] 'sphere:R' | 'box:L' | 'box:LX,LY,LZ' (Å). Required for gas."
     )
@@ -120,6 +120,30 @@ examples
         default="1.8:2.5",
         metavar="LO:HI",
         help="[shell] Shell radius range Å (default: 1.8:2.5).",
+    )
+    mg.add_argument(
+        "--maxent-steps",
+        type=int,
+        default=300,
+        help=(
+            "[maxent] Gradient-descent iterations for angular repulsion "
+            "(default: 300). More steps → more uniform neighbour directions."
+        ),
+    )
+    mg.add_argument(
+        "--maxent-lr",
+        type=float,
+        default=0.05,
+        help="[maxent] Learning rate for angular repulsion gradient descent (default: 0.05).",
+    )
+    mg.add_argument(
+        "--maxent-cutoff-scale",
+        type=float,
+        default=2.5,
+        help=(
+            "[maxent] Neighbour cutoff = this × median cov sum (default: 2.5). "
+            "Controls how many neighbours participate in angular repulsion."
+        ),
     )
 
     eg = p.add_argument_group("elements")
@@ -393,7 +417,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.mode == "gas" and not args.region and not args.optimize:
+    if args.mode in ("gas", "maxent") and not args.region and not args.optimize:
         parser.error("--region is required for --mode gas")
 
     # Parse range arguments

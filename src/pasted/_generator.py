@@ -33,6 +33,7 @@ from ._placement import (
     add_hydrogen,
     place_chain,
     place_gas,
+    place_maxent,
     place_shell,
     relax_positions,
 )
@@ -262,10 +263,12 @@ class StructureGenerator:
         filters: list[str] | None = None,
         verbose: bool = False,
     ) -> None:
-        if mode not in ("gas", "chain", "shell"):
-            raise ValueError(f"mode must be 'gas', 'chain', or 'shell'; got {mode!r}")
-        if mode == "gas" and region is None:
-            raise ValueError("region is required when mode='gas'")
+        if mode not in ("gas", "chain", "shell", "maxent"):
+            raise ValueError(
+                f"mode must be 'gas', 'chain', 'shell', or 'maxent'; got {mode!r}"
+            )
+        if mode in ("gas", "maxent") and region is None:
+            raise ValueError("region is required when mode='gas' or mode='maxent'")
 
         self.n_atoms = n_atoms
         self.charge = charge
@@ -400,6 +403,14 @@ class StructureGenerator:
                 bond_hi,
                 self.branch_prob,
                 self.chain_persist,
+                rng,
+            )
+        elif self.mode == "maxent":
+            assert self.region is not None
+            atoms_out, positions = place_maxent(
+                atoms_list,
+                self.region,
+                self.cov_scale,
                 rng,
             )
         else:  # shell
