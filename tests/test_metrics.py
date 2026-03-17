@@ -37,6 +37,7 @@ FOUR_POS: list[tuple[float, float, float]] = [
 # compute_h_atom
 # ---------------------------------------------------------------------------
 
+
 class TestComputeHAtom:
     def test_single_element_zero(self) -> None:
         assert compute_h_atom(["C", "C", "C"]) == pytest.approx(0.0)
@@ -57,6 +58,7 @@ class TestComputeHAtom:
 # compute_h_spatial
 # ---------------------------------------------------------------------------
 
+
 class TestComputeHSpatial:
     def test_empty_returns_zero(self) -> None:
         assert compute_h_spatial(np.array([]), 20) == 0.0
@@ -75,11 +77,13 @@ class TestComputeHSpatial:
 # compute_rdf_deviation
 # ---------------------------------------------------------------------------
 
+
 def test_rdf_deviation_non_negative() -> None:
     pts = np.array(FOUR_POS)
     dists = pdist(pts)
     rdf = compute_rdf_deviation(pts, dists, 20)
     assert rdf >= 0.0
+
 
 def test_rdf_deviation_single_pair_non_negative() -> None:
     pts = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]])
@@ -90,6 +94,7 @@ def test_rdf_deviation_single_pair_non_negative() -> None:
 # ---------------------------------------------------------------------------
 # compute_shape_anisotropy
 # ---------------------------------------------------------------------------
+
 
 class TestComputeShapeAnisotropy:
     def test_single_atom_nan(self) -> None:
@@ -117,11 +122,13 @@ class TestComputeShapeAnisotropy:
 # compute_steinhardt
 # ---------------------------------------------------------------------------
 
+
 def test_steinhardt_keys() -> None:
     pts = np.array(FOUR_POS)
     dmat = squareform(pdist(pts))
     result = compute_steinhardt(pts, dmat, [4, 6, 8], cutoff=3.0)
     assert set(result.keys()) == {"Q4", "Q6", "Q8"}
+
 
 def test_steinhardt_range() -> None:
     pts = np.array(FOUR_POS)
@@ -134,6 +141,7 @@ def test_steinhardt_range() -> None:
 # ---------------------------------------------------------------------------
 # compute_graph_metrics
 # ---------------------------------------------------------------------------
+
 
 class TestComputeGraphMetrics:
     def test_keys(self) -> None:
@@ -166,20 +174,26 @@ class TestComputeGraphMetrics:
 # compute_all_metrics
 # ---------------------------------------------------------------------------
 
+
 def test_all_metrics_keys() -> None:
-    metrics = compute_all_metrics(FOUR_ATOMS, FOUR_POS, n_bins=10,
-                                  w_atom=0.5, w_spatial=0.5, cutoff=3.0)
+    metrics = compute_all_metrics(
+        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=3.0
+    )
     assert set(metrics.keys()) == ALL_METRICS
 
+
 def test_all_metrics_h_total_formula() -> None:
-    metrics = compute_all_metrics(FOUR_ATOMS, FOUR_POS, n_bins=10,
-                                  w_atom=0.3, w_spatial=0.7, cutoff=3.0)
+    metrics = compute_all_metrics(
+        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.3, w_spatial=0.7, cutoff=3.0
+    )
     expected = 0.3 * metrics["H_atom"] + 0.7 * metrics["H_spatial"]
     assert metrics["H_total"] == pytest.approx(expected, rel=1e-9)
 
+
 def test_all_metrics_finite() -> None:
-    metrics = compute_all_metrics(FOUR_ATOMS, FOUR_POS, n_bins=10,
-                                  w_atom=0.5, w_spatial=0.5, cutoff=3.0)
+    metrics = compute_all_metrics(
+        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=3.0
+    )
     for k, v in metrics.items():
         assert math.isfinite(v), f"Metric {k} is not finite: {v}"
 
@@ -187,6 +201,7 @@ def test_all_metrics_finite() -> None:
 # ---------------------------------------------------------------------------
 # passes_filters
 # ---------------------------------------------------------------------------
+
 
 class TestPassesFilters:
     def test_empty_filters_pass(self) -> None:
@@ -209,5 +224,4 @@ class TestPassesFilters:
         assert not passes_filters(metrics, fail_second)
 
     def test_nan_metric_fails(self) -> None:
-        assert not passes_filters({"shape_aniso": float("nan")},
-                                  [("shape_aniso", 0.0, 1.0)])
+        assert not passes_filters({"shape_aniso": float("nan")}, [("shape_aniso", 0.0, 1.0)])

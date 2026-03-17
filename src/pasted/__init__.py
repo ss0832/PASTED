@@ -48,7 +48,7 @@ from ._generator import Structure, StructureGenerator, generate
 from ._io import format_xyz
 from ._metrics import compute_all_metrics
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     # High-level API

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy.sparse import csr_matrix as _csr_matrix
@@ -19,6 +19,8 @@ from scipy.spatial.distance import pdist as _pdist
 from scipy.spatial.distance import squareform as _squareform
 
 # scipy >= 1.15 renamed sph_harm → sph_harm_y with a different argument order.
+# The except branch is kept for environments that still run scipy < 1.15;
+# warn_unused_ignores is suppressed for this file in pyproject.toml [tool.mypy.overrides].
 try:
     from scipy.special import sph_harm_y as _sph_harm_raw
 
@@ -27,23 +29,19 @@ try:
         m: int,
         phi_azimuth: float | np.ndarray,
         theta_polar: float | np.ndarray,
-    ) -> complex | np.ndarray:
-        return cast(
-            "complex | np.ndarray", _sph_harm_raw(l, m, theta_polar, phi_azimuth)
-        )
+    ) -> np.ndarray:
+        return np.asarray(_sph_harm_raw(l, m, theta_polar, phi_azimuth))
 
 except ImportError:
-    from scipy.special import sph_harm as _sph_harm_raw  # type: ignore[no-redef]
+    from scipy.special import sph_harm as _sph_harm_raw  # type: ignore[no-redef,attr-defined]
 
-    def _sph_harm(  # type: ignore[misc]
+    def _sph_harm(  # type: ignore[misc,no-redef]
         l: int,  # noqa: E741
         m: int,
         phi_azimuth: float | np.ndarray,
         theta_polar: float | np.ndarray,
-    ) -> complex | np.ndarray:
-        return cast(
-            "complex | np.ndarray", _sph_harm_raw(m, l, phi_azimuth, theta_polar)
-        )
+    ) -> np.ndarray:
+        return np.asarray(_sph_harm_raw(m, l, phi_azimuth, theta_polar))
 
 
 if TYPE_CHECKING:

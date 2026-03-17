@@ -21,6 +21,7 @@ from pasted._atoms import (
 # parse_element_spec
 # ---------------------------------------------------------------------------
 
+
 class TestParseElementSpec:
     def test_range(self) -> None:
         syms = parse_element_spec("1-3")
@@ -59,9 +60,11 @@ class TestParseElementSpec:
 # default_element_pool
 # ---------------------------------------------------------------------------
 
+
 def test_default_pool_length() -> None:
     pool = default_element_pool()
     assert len(pool) == 106
+
 
 def test_default_pool_sorted_by_z() -> None:
     pool = default_element_pool()
@@ -73,23 +76,28 @@ def test_default_pool_sorted_by_z() -> None:
 # parse_lo_hi / parse_int_range
 # ---------------------------------------------------------------------------
 
+
 def test_parse_lo_hi_basic() -> None:
     lo, hi = parse_lo_hi("1.2:1.6", "bond-range")
     assert lo == pytest.approx(1.2)
     assert hi == pytest.approx(1.6)
 
+
 def test_parse_lo_hi_bad_format() -> None:
     with pytest.raises(ValueError):
         parse_lo_hi("1.2", "bond-range")
+
 
 def test_parse_int_range_basic() -> None:
     lo, hi = parse_int_range("4:8")
     assert lo == 4
     assert hi == 8
 
+
 def test_parse_int_range_zero_raises() -> None:
     with pytest.raises(ValueError):
         parse_int_range("0:4")
+
 
 def test_parse_int_range_inverted_raises() -> None:
     with pytest.raises(ValueError):
@@ -99,6 +107,7 @@ def test_parse_int_range_inverted_raises() -> None:
 # ---------------------------------------------------------------------------
 # parse_filter
 # ---------------------------------------------------------------------------
+
 
 class TestParseFilter:
     def test_open_hi(self) -> None:
@@ -136,6 +145,7 @@ class TestParseFilter:
 # validate_charge_mult
 # ---------------------------------------------------------------------------
 
+
 class TestValidateChargeMult:
     def test_h2_singlet_ok(self) -> None:
         ok, msg = validate_charge_mult(["H", "H"], 0, 1)
@@ -169,16 +179,19 @@ class TestValidateChargeMult:
 # cov_radius_ang
 # ---------------------------------------------------------------------------
 
+
 def test_cov_radius_known_elements() -> None:
     assert cov_radius_ang("H") == pytest.approx(0.32)
     assert cov_radius_ang("C") == pytest.approx(0.75)
     assert cov_radius_ang("Fe") == pytest.approx(1.16)
+
 
 def test_cov_radius_proxy_elements() -> None:
     # Fr → Cs proxy
     assert cov_radius_ang("Fr") == cov_radius_ang("Cs")
     # Rf → Hf proxy
     assert cov_radius_ang("Rf") == cov_radius_ang("Hf")
+
 
 def test_cov_radius_all_supported() -> None:
     """All supported elements should return a positive radius."""

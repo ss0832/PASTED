@@ -23,6 +23,7 @@ RNG = random.Random(99)
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _min_dist(positions: list) -> float:
     n = len(positions)
     dmin = math.inf
@@ -37,6 +38,7 @@ def _min_dist(positions: list) -> float:
 # ---------------------------------------------------------------------------
 # place_gas
 # ---------------------------------------------------------------------------
+
 
 class TestPlaceGas:
     def test_sphere_count(self) -> None:
@@ -81,6 +83,7 @@ class TestPlaceGas:
 # place_chain
 # ---------------------------------------------------------------------------
 
+
 class TestPlaceChain:
     def test_count(self) -> None:
         atoms = ["C"] * 10
@@ -109,6 +112,7 @@ class TestPlaceChain:
 # place_shell
 # ---------------------------------------------------------------------------
 
+
 class TestPlaceShell:
     def test_count(self) -> None:
         atoms = ["Fe", "C", "C", "N", "N", "O", "O", "O"]
@@ -133,6 +137,7 @@ class TestPlaceShell:
 # ---------------------------------------------------------------------------
 # relax_positions
 # ---------------------------------------------------------------------------
+
 
 class TestRelaxPositions:
     def test_single_atom_converges(self) -> None:
@@ -167,9 +172,7 @@ class TestRelaxPositions:
         n = len(atoms)
         for i in range(n):
             for j in range(i + 1, n):
-                d = math.sqrt(
-                    sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
-                )
+                d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
                 threshold = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
                 assert d >= threshold - 1e-5
 
@@ -177,6 +180,7 @@ class TestRelaxPositions:
 # ---------------------------------------------------------------------------
 # add_hydrogen
 # ---------------------------------------------------------------------------
+
 
 class TestAddHydrogen:
     def test_already_has_h(self) -> None:

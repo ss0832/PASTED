@@ -23,30 +23,41 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+_here = Path(__file__).resolve().parent
+_src  = _here / "src"
+
 # ---------------------------------------------------------------------------
 # Import-path fix
 # ---------------------------------------------------------------------------
-# This script is named ``pasted.py``.  Python automatically inserts the
-# script's directory into sys.path[0], which makes ``import pasted`` resolve
-# to *this file* instead of the real ``src/pasted/`` package.
+# Python inserts the script directory (and/or '') into sys.path[0] before
+# running this file.  Both resolve to the project root, which makes
+# ``import pasted`` find *this file* (pasted.py) rather than the real
+# src/pasted/ package — causing infinite recursion.
 #
-# Fix: temporarily remove the project root from sys.path, add src/ instead,
-# clear any stale ``pasted`` entry from sys.modules, then import normally.
+# Fix: remove every sys.path entry that points at the project root,
+#      clear the stale sys.modules entry, then add src/ so the package
+#      is found correctly whether or not it has been pip-installed.
 # ---------------------------------------------------------------------------
 
-_here = str(Path(__file__).resolve().parent)
-_src  = str(Path(__file__).resolve().parent / "src")
+def _path_points_to_root(p: str) -> bool:
+    """Return True if *p* resolves to the project root directory."""
+    try:
+        return Path(p).resolve() == _here
+    except Exception:
+        return False
 
-# 1. Clear any stale reference to this script masquerading as the package.
+
+# Remove '' and the project root dir from sys.path (both shadow pasted.py).
+sys.path = [p for p in sys.path if not _path_points_to_root(p or ".")]
+
+# Clear any stale reference to this script registered as the "pasted" module.
 sys.modules.pop("pasted", None)
 
-# 2. Remove the project root so pasted.py is no longer findable as "pasted".
-if _here in sys.path:
-    sys.path.remove(_here)
-
-# 3. Add src/ (only if it exists — bare checkout) so the real package is found.
-if Path(_src).is_dir() and _src not in sys.path:
-    sys.path.insert(0, _src)
+# Ensure src/ is on the path (no-op when already installed).
+if _src.is_dir():
+    _src_str = str(_src)
+    if _src_str not in sys.path:
+        sys.path.insert(0, _src_str)
 
 # ---------------------------------------------------------------------------
 # Delegate to the package CLI

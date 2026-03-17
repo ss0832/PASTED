@@ -14,12 +14,17 @@ from pasted._atoms import ALL_METRICS
 # StructureGenerator: construction
 # ---------------------------------------------------------------------------
 
+
 class TestStructureGeneratorInit:
     def test_basic_gas(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            seed=0,
         )
         assert gen.n_atoms == 6
         assert gen.mode == "gas"
@@ -27,65 +32,89 @@ class TestStructureGeneratorInit:
     def test_bad_mode_raises(self) -> None:
         with pytest.raises(ValueError, match="mode"):
             StructureGenerator(
-                n_atoms=5, charge=0, mult=1,
+                n_atoms=5,
+                charge=0,
+                mult=1,
                 mode="invalid",
             )
 
     def test_gas_without_region_raises(self) -> None:
         with pytest.raises(ValueError, match="region"):
             StructureGenerator(
-                n_atoms=5, charge=0, mult=1,
+                n_atoms=5,
+                charge=0,
+                mult=1,
                 mode="gas",
             )
 
     def test_bad_center_z_raises(self) -> None:
         with pytest.raises(ValueError):
             StructureGenerator(
-                n_atoms=5, charge=0, mult=1,
-                mode="shell", elements="6,7,8",
-                center_z=26,   # Fe not in pool
+                n_atoms=5,
+                charge=0,
+                mult=1,
+                mode="shell",
+                elements="6,7,8",
+                center_z=26,  # Fe not in pool
             )
 
     def test_element_pool_from_spec(self) -> None:
         gen = StructureGenerator(
-            n_atoms=5, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
         )
         assert set(gen.element_pool) == {"C", "N", "O"}
 
     def test_element_pool_from_list(self) -> None:
         gen = StructureGenerator(
-            n_atoms=5, charge=0, mult=1,
-            mode="chain", elements=["C", "N", "O"],
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements=["C", "N", "O"],
         )
         assert "C" in gen.element_pool
 
     def test_element_pool_default(self) -> None:
         gen = StructureGenerator(
-            n_atoms=5, charge=0, mult=1,
+            n_atoms=5,
+            charge=0,
+            mult=1,
             mode="chain",
         )
         assert len(gen.element_pool) == 106
 
     def test_cutoff_positive(self) -> None:
         gen = StructureGenerator(
-            n_atoms=5, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
         )
         assert gen.cutoff > 0
 
     def test_cutoff_override(self) -> None:
         gen = StructureGenerator(
-            n_atoms=5, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
             cutoff=3.5,
         )
         assert gen.cutoff == pytest.approx(3.5)
 
     def test_repr(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:5",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:5",
             elements="6,7,8",
         )
         r = repr(gen)
@@ -96,6 +125,7 @@ class TestStructureGeneratorInit:
 # ---------------------------------------------------------------------------
 # StructureGenerator: generate()
 # ---------------------------------------------------------------------------
+
 
 class TestGenerate:
     def test_returns_list(self, gas_gen: StructureGenerator) -> None:
@@ -109,9 +139,14 @@ class TestGenerate:
     def test_reproducible_with_seed(self) -> None:
         def run() -> list[Structure]:
             return StructureGenerator(
-                n_atoms=6, charge=0, mult=1,
-                mode="gas", region="sphere:6",
-                elements="6,7,8", n_samples=5, seed=42,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,7,8",
+                n_samples=5,
+                seed=42,
             ).generate()
 
         r1, r2 = run(), run()
@@ -123,9 +158,14 @@ class TestGenerate:
     def test_filter_applied(self) -> None:
         # Request only structures with H_total > 100 (impossible) → 0 results
         results = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=10, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=10,
+            seed=0,
             filters=["H_total:100:-"],
         ).generate()
         assert results == []
@@ -146,9 +186,14 @@ class TestGenerate:
 
     def test_sample_index_sequential(self) -> None:
         results = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=10, seed=5,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=10,
+            seed=5,
         ).generate()
         for i, s in enumerate(results, start=1):
             assert s.sample_index == i
@@ -158,12 +203,18 @@ class TestGenerate:
 # Structure dataclass
 # ---------------------------------------------------------------------------
 
+
 class TestStructure:
     def _make_structure(self) -> Structure:
         results = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=3, seed=10,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=3,
+            seed=10,
         ).generate()
         assert results, "Need at least one structure"
         return results[0]
@@ -213,9 +264,14 @@ class TestStructure:
 
     def test_write_xyz_append(self, tmp_path: Path) -> None:
         structures = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=5, seed=11,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=5,
+            seed=11,
         ).generate()
         out = tmp_path / "multi.xyz"
         for i, s in enumerate(structures):
@@ -236,28 +292,43 @@ class TestStructure:
 # generate() functional API
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateFunction:
     def test_basic_call(self) -> None:
         results = generate(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=3, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=3,
+            seed=0,
         )
         assert isinstance(results, list)
 
     def test_chain_mode(self) -> None:
         results = generate(
-            n_atoms=8, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=3, seed=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=3,
+            seed=1,
         )
         assert isinstance(results, list)
 
     def test_same_output_as_class(self) -> None:
         kwargs: dict = {
-            "n_atoms": 6, "charge": 0, "mult": 1,
-            "mode": "gas", "region": "sphere:6",
-            "elements": "6,7,8", "n_samples": 5, "seed": 99,
+            "n_atoms": 6,
+            "charge": 0,
+            "mult": 1,
+            "mode": "gas",
+            "region": "sphere:6",
+            "elements": "6,7,8",
+            "n_samples": 5,
+            "seed": 99,
         }
         r_func = generate(**kwargs)
         r_class = StructureGenerator(**kwargs).generate()

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.1.0"
+version = "0.1.1"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
 license = "MIT"
@@ -31,7 +31,7 @@ pasted = "pasted.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff==0.4",
+    "ruff>=0.4",
     "mypy>=1.10",
 ]
 
