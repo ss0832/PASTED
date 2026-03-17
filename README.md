@@ -2,6 +2,8 @@
 
 **P**ointless **A**tom **ST**ructure with **E**ntropy **D**iagnostics
 
+PASTED is a structure fuzzer for quantum chemistry and machine learning potential codes.
+
 A CLI tool that generates intentionally random, physically meaningless atomic structures and evaluates their degree of disorder through a suite of structural metrics. Useful for stress-testing structure optimizers, generating worst-case inputs for quantum chemistry codes, or studying what "maximum chaos" looks like in structural space.
 
 ## Features
