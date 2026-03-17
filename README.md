@@ -37,12 +37,20 @@ cd pasted
 # no build step required; run directly
 python pasted.py --help
 ```
+or
+```
+pip install pasted
+pasted --help
+```
 
 ## Quick Start
 
 ```bash
 # 10 atoms drawn from H–Zn, placed randomly in a sphere of radius 8 Å
 python pasted.py --n-atoms 10 --elements 1-30 --charge 0 --mult 1 \
+    --mode gas --region sphere:8
+# If you installed it via Pip, you can use the command below.
+pasted --n-atoms 10 --elements 1-30 --charge 0 --mult 1 \
     --mode gas --region sphere:8
 
 # Organic-looking chain structure (C/N/O only)
