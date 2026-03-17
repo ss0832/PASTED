@@ -1,5 +1,11 @@
 # PASTED
 
+[![CI](https://github.com/ss0832/PASTED/actions/workflows/ci.yml/badge.svg)](https://github.com/ss0832/PASTED/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/pasted.svg)](https://img.shields.io/pypi/v/pasted.svg)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pasted.svg)](https://img.shields.io/pypi/pyversions/pasted.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+
 **P**ointless **A**tom **ST**ructure with **E**ntropy **D**iagnostics
 
 PASTED is a structure fuzzer for quantum chemistry and machine learning potential codes.
@@ -32,7 +38,7 @@ pip install numpy scipy
 ## Installation
 
 ```bash
-git clone https://github.com/yourname/pasted.git
+git clone https://github.com/ss0832/pasted.git
 cd pasted
 # no build step required; run directly
 python pasted.py --help
