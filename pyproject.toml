@@ -31,7 +31,7 @@ pasted = "pasted.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff==0.4",
+    "ruff>=0.4",
     "mypy>=1.10",
 ]
 
@@ -69,6 +69,13 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = ["scipy.*"]
 ignore_missing_imports = true
+
+# _metrics.py contains a try/except ImportError block for scipy < 1.15 compatibility.
+# The except branch is unreachable on current scipy, so its type: ignore comments are
+# flagged as unused. Suppress only that check for this one file.
+[[tool.mypy.overrides]]
+module = ["pasted._metrics"]
+warn_unused_ignores = false
 
 # ---------------------------------------------------------------------------
 # pytest
