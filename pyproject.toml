@@ -31,7 +31,7 @@ pasted = "pasted.cli:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.4",
+    "ruff==0.4",
     "mypy>=1.10",
 ]
 
@@ -82,4 +82,4 @@ warn_unused_ignores = false
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --import-mode=importlib"
