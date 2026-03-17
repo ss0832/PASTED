@@ -417,7 +417,17 @@ def place_maxent(
     mandatory repulsion relaxation is applied to enforce the distance
     constraint.  The result is a structure where neighbour directions are
     spread as uniformly over the sphere as the distance constraints allow —
-    "校則の中での最大限の不真面目" (maximum disorder within the rules).
+    maximum disorder within the rules.
+
+    Stability measures applied per step:
+
+    - Per-atom gradient clipping: each atom's gradient vector is clamped to
+      unit norm before scaling by *maxent_lr*, preventing divergence.
+    - Soft restoring force: atoms that drift outside the initial region
+      radius are gently pulled back toward the centre of mass.  This keeps
+      the structure compact without hard-clamping coordinates.
+    - Centre-of-mass pinning: the centre of mass is re-centred to the origin
+      after each step so the whole structure does not drift.
 
     Parameters
     ----------
@@ -446,6 +456,17 @@ def place_maxent(
     _, positions = place_gas(atoms, region, rng)
     positions, _ = relax_positions(atoms, positions, cov_scale, max_cycles=500)
 
+    # ── Parse region radius for restoring force ──────────────────────────
+    if region.startswith("sphere:"):
+        region_radius = float(region.split(":")[1])
+    elif region.startswith("box:"):
+        dims = list(map(float, region.split(":")[1].split(",")))
+        if len(dims) == 1:
+            dims *= 3
+        region_radius = min(dims) / 2.0
+    else:
+        raise ValueError(f"Unknown region spec: {region!r}")
+
     # ── Determine neighbour cutoff from covalent radii ───────────────────
     radii = np.array([_cov_radius_ang(a) for a in atoms])
     pair_sums = sorted(
@@ -456,12 +477,31 @@ def place_maxent(
 
     # ── Gradient descent on angular repulsion potential ──────────────────
     pts = np.array(positions, dtype=float)
+    # Pin to origin initially
+    pts -= pts.mean(axis=0)
 
     for _ in range(maxent_steps):
         grad = _angular_repulsion_gradient(pts, ang_cutoff)
-        # Gradient ascent on entropy = descent on repulsion potential
-        pts -= maxent_lr * grad
-        # Re-enforce distance constraint after each step
+
+        # ── Per-atom gradient clipping (unit-norm cap) ────────────────────
+        norms = np.linalg.norm(grad, axis=1, keepdims=True)          # (n, 1)
+        norms_safe = np.where(norms > 0, norms, 1.0)
+        grad_clipped = np.where(norms > 1.0, grad / norms_safe, grad)
+
+        # ── Gradient step ─────────────────────────────────────────────────
+        pts -= maxent_lr * grad_clipped
+
+        # ── Soft restoring force: pull atoms back toward CoM ─────────────
+        # k_restore ramps up once an atom exceeds region_radius
+        r_from_com = np.linalg.norm(pts, axis=1, keepdims=True)      # (n, 1)
+        excess = np.maximum(r_from_com - region_radius, 0.0)         # 0 inside
+        k_restore = 0.1 * maxent_lr
+        pts -= k_restore * excess * (pts / np.where(r_from_com > 0, r_from_com, 1.0))
+
+        # ── Re-centre to origin ───────────────────────────────────────────
+        pts -= pts.mean(axis=0)
+
+        # ── Re-enforce distance constraint ───────────────────────────────
         pos_list: list[Vec3] = [tuple(row) for row in pts]
         pos_list, _ = relax_positions(atoms, pos_list, cov_scale, max_cycles=50)
         pts = np.array(pos_list, dtype=float)
