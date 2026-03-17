@@ -697,8 +697,8 @@ examples
                         "Minimum distance = cov_scale × (r_i + r_j), Pyykkö (2009) radii. "
                         "Default 1.0 = exact sum of covalent radii."
                     ))
-    pg.add_argument("--relax-cycles", type=int, default=500,
-                    help="Max cycles for post-placement repulsion relaxation (default: 500).")
+    pg.add_argument("--relax-cycles", type=int, default=1500,
+                    help="Max cycles for post-placement repulsion relaxation (default: 1500).")
     pg.add_argument("--no-add-hydrogen", action="store_true",
                     help=(
                         "Disable automatic H augmentation. "

@@ -266,7 +266,7 @@ elements:
 
 placement:
   --cov-scale FLOAT     min dist = cov_scale × (r_i + r_j), Pyykkö radii (default: 1.0)
-  --relax-cycles INT    max cycles for post-placement repulsion relaxation (default: 500)
+  --relax-cycles INT    max cycles for post-placement repulsion relaxation (default: 1500)
   --no-add-hydrogen     disable automatic H augmentation
 
 sampling:
