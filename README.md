@@ -12,6 +12,7 @@ A CLI tool that generates intentionally random, physically meaningless atomic st
 - **10 disorder metrics** computed per structure, all usable as output filters
 - **Element pool** specified by atomic number (Z = 1–106, H through Sg); composition sampled randomly per structure
 - **Always outputs `--n-atoms` atoms** — placement is unrestricted; Pyykkö covalent radii are enforced by mandatory post-placement repulsion relaxation
+- **Auto-scaled `--cutoff`** — defaults to `cov_scale × 1.5 × median(r_i + r_j)` over the element pool, so graph and Steinhardt metrics are meaningful regardless of which elements are used
 - Charge/multiplicity parity validation before any geometry is generated
 - Multi-structure batch generation with `--n-samples`; per-structure progress on stderr, XYZ on stdout
 - Reproducible runs via `--seed`
@@ -169,13 +170,30 @@ All are usable in `--filter`.
 | `graph_lcc` | Fraction of atoms in the largest connected component at `--cutoff` | 0–1 |
 | `graph_cc` | Mean clustering coefficient at `--cutoff` | 0–1 |
 
-### Tuning metric behaviour
+### Distance cutoff for graph and Steinhardt metrics
+
+The `--cutoff` parameter determines which atom pairs are considered "connected" for `graph_lcc`, `graph_cc`, and `Q4/Q6/Q8`. Setting this too small relative to the actual interatomic distances causes all metrics to collapse to zero (no neighbours found); setting it too large makes every atom a neighbour of every other.
+
+By default, `--cutoff` is set automatically to:
+
+```
+cutoff = cov_scale × 1.5 × median(r_i + r_j)  over all element-pool pairs
+```
+
+This scales with the element pool: light-element pools (e.g. C/N/O) get a cutoff around 2.1 Å; 5d-metal pools get around 3.8 Å. The auto value is printed to stderr at startup:
+
+```
+[cutoff] 2.130 Å (auto: cov_scale=1.0 × 1.5 × median(r_i+r_j)=1.420 Å)
+```
+
+Override with `--cutoff FLOAT` when needed.
+
+### Other metric tuning
 
 ```
 --n-bins N          histogram bins for H_spatial and RDF_dev (default: 20)
 --w-atom FLOAT      weight of H_atom in H_total (default: 0.5)
 --w-spatial FLOAT   weight of H_spatial in H_total (default: 0.5)
---cutoff FLOAT      distance cutoff in Å for Q_l and graph_* (default: 2.0)
 ```
 
 ## Filtering
@@ -259,7 +277,8 @@ metrics:
   --n-bins INT          histogram bins (default: 20)
   --w-atom FLOAT        H_atom weight in H_total (default: 0.5)
   --w-spatial FLOAT     H_spatial weight in H_total (default: 0.5)
-  --cutoff FLOAT        distance cutoff Å for Q_l / graph_* (default: 2.0)
+  --cutoff FLOAT        distance cutoff Å for Q_l / graph_*
+                        (default: auto = cov_scale × 1.5 × median(r_i+r_j))
 
 filtering:
   --filter METRIC:MIN:MAX   repeatable; use - for open bound
@@ -273,8 +292,8 @@ output:
 
 - **Interatomic distances** use Pyykkö (2009) single-bond covalent radii. For Z > 86 (Fr through Sg), same-group proxies are used (e.g. Fr → Cs, U → Nd, Rf → Hf).
 - **Repulsion relaxation** guarantees that no pair falls below `cov_scale × (r_i + r_j)` when it converges. If `[warn] relax_positions did not converge` appears, the structure may contain marginal violations but is still output. Increase `--relax-cycles` if convergence is important.
+- **Auto cutoff** is computed from the element pool before any structures are generated and is fixed for the entire run. If the actual composition drawn per sample is much lighter or heavier than the pool median, the effective neighbour count may still be low or high. Use `--cutoff` to override when needed.
 - **RDF_dev** is a finite-system approximation; treat it as a relative indicator.
-- **Q4/Q6/Q8** are meaningful only when `--cutoff` gives a reasonable number of neighbours. The default 2.0 Å suits light elements; increase to e.g. `--cutoff 3.0` for heavier elements with longer bonds.
 - Charge/mult parity failures are common with large element pools and `mult=1`. Increase `--n-samples` or use `--mult 2` to compensate.
 
 ## License

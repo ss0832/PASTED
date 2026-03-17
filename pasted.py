@@ -716,8 +716,12 @@ examples
                     help="Histogram bins for H_spatial/RDF_dev (default: 20).")
     xg.add_argument("--w-atom", type=float, default=0.5)
     xg.add_argument("--w-spatial", type=float, default=0.5)
-    xg.add_argument("--cutoff", type=float, default=2.0,
-                    help="Distance cutoff Angstrom for graph_* and Q_l (default: 2.0).")
+    xg.add_argument("--cutoff", type=float, default=None,
+                    help=(
+                        "Distance cutoff in Å for Q_l and graph_* metrics. "
+                        "Default: auto = cov_scale × 1.5 × median(r_i + r_j) over all "
+                        "element-pool pairs. Set explicitly to override."
+                    ))
 
     fg = p.add_argument_group("filtering")
     fg.add_argument("--filter", action="append", default=[], dest="filters",
@@ -780,6 +784,26 @@ def main() -> None:
         if args.elements else f"all Z=1-106 ({len(element_pool)} elements)"
     )
     print(f"[pool] {pool_label}", file=sys.stderr)
+
+    # Resolve cutoff: explicit value or auto from element pool
+    if args.cutoff is not None:
+        cutoff: float = args.cutoff
+        print(f"[cutoff] {cutoff:.3f} Å (user-specified)", file=sys.stderr)
+    else:
+        # Compute median pairwise sum of covalent radii over all pool pairs
+        radii = [_cov_radius_ang(s) for s in element_pool]
+        pair_sums = sorted(
+            ra + rb
+            for i, ra in enumerate(radii)
+            for rb in radii[i:]          # include same-element pairs
+        )
+        median_sum = pair_sums[len(pair_sums) // 2]
+        cutoff = args.cov_scale * 1.5 * median_sum
+        print(
+            f"[cutoff] {cutoff:.3f} Å (auto: cov_scale={args.cov_scale} × 1.5 × "
+            f"median(r_i+r_j)={median_sum:.3f} Å)",
+            file=sys.stderr,
+        )
 
     # Shell center: None means "random per sample"; fixed sym if --center-z given
     fixed_center_sym: str | None = None
@@ -877,7 +901,7 @@ def main() -> None:
 
         metrics = compute_all_metrics(
             atoms_out, positions,
-            args.n_bins, args.w_atom, args.w_spatial, args.cutoff)
+            args.n_bins, args.w_atom, args.w_spatial, cutoff)
 
         passed = passes_filters(metrics, filters)
         flag = "PASS" if passed else "skip"
