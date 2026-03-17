@@ -46,15 +46,18 @@ from ._atoms import (
 )
 from ._generator import Structure, StructureGenerator, generate
 from ._io import format_xyz
-from ._metrics import compute_all_metrics
+from ._metrics import compute_all_metrics, compute_steinhardt_per_atom
+from ._optimizer import StructureOptimizer, parse_objective_spec
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     # High-level API
     "Structure",
     "StructureGenerator",
+    "StructureOptimizer",
     "generate",
+    "parse_objective_spec",
     # Atomic data / utilities
     "ATOMIC_NUMBERS",
     "ALL_METRICS",
@@ -65,6 +68,7 @@ __all__ = [
     "validate_charge_mult",
     # Metric / IO utilities
     "compute_all_metrics",
+    "compute_steinhardt_per_atom",
     "format_xyz",
     # Package metadata
     "__version__",

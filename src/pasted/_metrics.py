@@ -142,16 +142,13 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
     return float(np.clip(1.5 * float(np.sum(lam**2)) / s**2 - 0.5, 0.0, 1.0))
 
 
-def compute_steinhardt(
+def compute_steinhardt_per_atom(
     pts: np.ndarray,
     dmat: np.ndarray,
     l_values: list[int],
     cutoff: float,
-) -> dict[str, float]:
-    """Steinhardt bond-orientational order parameters *Q_l*, averaged over atoms.
-
-    Vectorised over atoms and neighbours: one :func:`sph_harm` call per
-    *(l, m)* processes all n×n angles simultaneously.
+) -> dict[str, np.ndarray]:
+    """Per-atom Steinhardt Q_l values.
 
     Parameters
     ----------
@@ -166,10 +163,11 @@ def compute_steinhardt(
 
     Returns
     -------
-    dict mapping ``"Q{l}"`` to its value for each *l*.
+    dict mapping ``"Q{l}"`` to a :class:`numpy.ndarray` of shape ``(n,)``.
+    Atoms with no neighbours within *cutoff* are assigned Q_l = 0.
     """
     n = len(pts)
-    result: dict[str, float] = {}
+    result: dict[str, np.ndarray] = {}
 
     mask = dmat <= cutoff
     np.fill_diagonal(mask, False)
@@ -192,9 +190,39 @@ def compute_steinhardt(
             qlm_sq += np.abs(avg) ** 2
 
         ql = np.sqrt(4 * math.pi / (2 * l + 1) * qlm_sq)
-        result[f"Q{l}"] = float(np.where(deg > 0, ql, 0.0).mean())
+        result[f"Q{l}"] = np.where(deg > 0, ql, 0.0)
 
     return result
+
+
+def compute_steinhardt(
+    pts: np.ndarray,
+    dmat: np.ndarray,
+    l_values: list[int],
+    cutoff: float,
+) -> dict[str, float]:
+    """Steinhardt Q_l averaged over all atoms.
+
+    Delegates to :func:`compute_steinhardt_per_atom` and returns the
+    per-structure mean for each *l*.
+
+    Parameters
+    ----------
+    pts:
+        Positions array of shape ``(n, 3)``.
+    dmat:
+        Full n×n pairwise distance matrix.
+    l_values:
+        List of *l* values (e.g. ``[4, 6, 8]``).
+    cutoff:
+        Neighbour distance cutoff (Å).
+
+    Returns
+    -------
+    dict mapping ``"Q{l}"`` to its global average value.
+    """
+    per_atom = compute_steinhardt_per_atom(pts, dmat, l_values, cutoff)
+    return {k: float(v.mean()) for k, v in per_atom.items()}
 
 
 def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:

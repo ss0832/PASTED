@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-17
+
+### Added
+- `StructureOptimizer` class — objective-based structure optimisation that
+  **maximises** a user-defined disorder metric instead of sampling randomly.
+- Two optimisation methods: `"annealing"` (Simulated Annealing with
+  exponential cooling) and `"basin_hopping"` (Metropolis with more thorough
+  per-step relaxation).
+- Fragment coordinate move: atoms whose local Q6 exceeds `frag_threshold`
+  are preferentially displaced, targeting accidentally ordered regions.
+- Composition move: element types of two atoms are swapped (or one atom is
+  replaced) to explore composition space alongside geometry.
+- `parse_objective_spec(["METRIC:WEIGHT", ...])` utility function for
+  converting CLI strings to a weight dict.
+- `compute_steinhardt_per_atom` public function returning per-atom Q_l
+  arrays of shape `(n,)`, used internally by the optimizer for fragment
+  selection.
+- `--optimize` CLI flag (and associated options) enabling optimization mode
+  while preserving full backward compatibility with sampling mode.
+- `tests/test_optimizer.py` — 25 tests covering helpers, construction, and
+  all run() paths (SA, BH, callable objective, restarts, provided initial).
+
+### Changed
+- `compute_steinhardt` refactored to delegate to `compute_steinhardt_per_atom`,
+  eliminating code duplication.
+- `__init__.py` exports: `StructureOptimizer`, `parse_objective_spec`,
+  `compute_steinhardt_per_atom`.
+
 ## [0.1.1] - 2026-03-17
 
 ### Added

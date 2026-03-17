@@ -19,6 +19,7 @@ from ._atoms import (
     validate_charge_mult,
 )
 from ._generator import StructureGenerator
+from ._optimizer import StructureOptimizer, parse_objective_spec
 
 # ---------------------------------------------------------------------------
 # Argument parser
@@ -195,7 +196,192 @@ examples
     )
     og.add_argument("-o", "--output", default=None, help="Output XYZ file (default: stdout).")
 
+    optg = p.add_argument_group(
+        "optimization (add --optimize to enable; replaces sampling mode)"
+    )
+    optg.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Enable optimization mode (StructureOptimizer instead of StructureGenerator).",
+    )
+    optg.add_argument(
+        "--objective",
+        action="append",
+        default=[],
+        dest="objectives",
+        metavar="METRIC:WEIGHT",
+        help=(
+            "Objective term METRIC:WEIGHT (repeatable). "
+            "Optimizer maximises the weighted sum. "
+            "Default when omitted: H_total:1.0 Q6:-1.0. "
+            "Example: --objective H_atom:1.0 --objective Q6:-2.0"
+        ),
+    )
+    optg.add_argument(
+        "--method",
+        choices=["annealing", "basin_hopping"],
+        default="annealing",
+        help="Optimization method (default: annealing).",
+    )
+    optg.add_argument(
+        "--max-steps",
+        type=int,
+        default=5000,
+        help="MC steps per restart (default: 5000). --n-samples sets n_restarts.",
+    )
+    optg.add_argument(
+        "--T-start",
+        type=float,
+        default=1.0,
+        dest="T_start",
+        help="Initial temperature (default: 1.0).",
+    )
+    optg.add_argument(
+        "--T-end",
+        type=float,
+        default=0.01,
+        dest="T_end",
+        help="Final temperature for SA (default: 0.01). BH uses T-start throughout.",
+    )
+    optg.add_argument(
+        "--frag-threshold",
+        type=float,
+        default=0.3,
+        help="Local Q6 threshold for fragment selection (default: 0.3).",
+    )
+    optg.add_argument(
+        "--move-step",
+        type=float,
+        default=0.5,
+        help="Max displacement per coordinate step in Å (default: 0.5).",
+    )
+    optg.add_argument(
+        "--lcc-threshold",
+        type=float,
+        default=0.0,
+        help=(
+            "Minimum graph_lcc for step acceptance (default: 0.0 = disabled). "
+            "Set to 0.8 to enforce connectivity."
+        ),
+    )
+
     return p
+
+
+# ---------------------------------------------------------------------------
+# Mode dispatch helpers
+# ---------------------------------------------------------------------------
+
+
+def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None) -> None:
+    """Handle --optimize mode."""
+    try:
+        objective = parse_objective_spec(args.objectives)
+    except ValueError as exc:
+        print(f"[ERROR] --objective: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not objective:
+        objective = {"H_total": 1.0, "Q6": -1.0}
+        print(
+            "[optimize] no --objective given; using default: H_total:1.0  Q6:-1.0",
+            file=sys.stderr,
+        )
+    else:
+        terms = "  ".join(f"{k}:{v:+.3g}" for k, v in objective.items())
+        print(f"[optimize] objective: {terms}", file=sys.stderr)
+
+    try:
+        opt = StructureOptimizer(
+            n_atoms=args.n_atoms,
+            charge=args.charge,
+            mult=args.mult,
+            objective=objective,
+            elements=element_pool,
+            method=args.method,
+            max_steps=args.max_steps,
+            T_start=args.T_start,
+            T_end=args.T_end,
+            frag_threshold=args.frag_threshold,
+            move_step=args.move_step,
+            lcc_threshold=args.lcc_threshold,
+            cov_scale=args.cov_scale,
+            relax_cycles=args.relax_cycles,
+            cutoff=args.cutoff,
+            n_bins=args.n_bins,
+            w_atom=args.w_atom,
+            w_spatial=args.w_spatial,
+            n_restarts=args.n_samples,
+            seed=args.seed,
+            verbose=True,
+        )
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    best = opt.run()
+    output_text = best.to_xyz() + "\n"
+    _write_output(output_text, args.output)
+    if args.output:
+        print(f"[info] optimized structure written to {args.output!r}", file=sys.stderr)
+
+
+def _run_sample_mode(
+    args: argparse.Namespace,
+    element_pool: list[str] | None,
+    bond_range: tuple[float, float],
+    shell_radius: tuple[float, float],
+    coord_range: tuple[int, int],
+) -> None:
+    """Handle default sampling mode."""
+    try:
+        gen = StructureGenerator(
+            n_atoms=args.n_atoms,
+            charge=args.charge,
+            mult=args.mult,
+            mode=args.mode,
+            region=args.region,
+            branch_prob=args.branch_prob,
+            chain_persist=args.chain_persist,
+            bond_range=bond_range,
+            center_z=args.center_z,
+            coord_range=coord_range,
+            shell_radius=shell_radius,
+            elements=element_pool,
+            cov_scale=args.cov_scale,
+            relax_cycles=args.relax_cycles,
+            add_hydrogen=not args.no_add_hydrogen,
+            n_samples=args.n_samples,
+            seed=args.seed,
+            n_bins=args.n_bins,
+            w_atom=args.w_atom,
+            w_spatial=args.w_spatial,
+            cutoff=args.cutoff,
+            filters=args.filters,
+            verbose=True,
+        )
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    structures = gen.generate()
+    xyz_blocks = [s.to_xyz() for s in structures]
+    output_text = "\n".join(xyz_blocks) + ("\n" if xyz_blocks else "")
+    _write_output(output_text, args.output)
+    if args.output:
+        print(
+            f"[info] {len(structures)} structure(s) written to {args.output!r}",
+            file=sys.stderr,
+        )
+
+
+def _write_output(text: str, path: str | None) -> None:
+    """Write *text* to *path* or stdout."""
+    if path:
+        with open(path, "w") as fh:
+            fh.write(text)
+    else:
+        sys.stdout.write(text)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +393,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.mode == "gas" and not args.region:
+    if args.mode == "gas" and not args.region and not args.optimize:
         parser.error("--region is required for --mode gas")
 
     # Parse range arguments
@@ -228,11 +414,11 @@ def main() -> None:
         print(f"[ERROR] --elements: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # Print pool info (CLI-only: includes the original spec string)
-    if element_pool is not None:
-        pool_label = f"--elements {args.elements!r} → {len(element_pool)} elements"
-    else:
-        pool_label = f"all Z=1-106 ({len(default_element_pool())} elements)"
+    pool_label = (
+        f"--elements {args.elements!r} → {len(element_pool)} elements"
+        if element_pool is not None
+        else f"all Z=1-106 ({len(default_element_pool())} elements)"
+    )
     print(f"[pool] {pool_label}", file=sys.stderr)
 
     # --validate: quick sanity check then exit
@@ -244,52 +430,10 @@ def main() -> None:
         print(f"[validate:{'OK' if ok else 'FAIL'}] {msg}", file=sys.stderr)
         sys.exit(0 if ok else 1)
 
-    # Build generator (verbose=True → all progress printed to stderr)
-    try:
-        gen = StructureGenerator(
-            n_atoms=args.n_atoms,
-            charge=args.charge,
-            mult=args.mult,
-            mode=args.mode,
-            region=args.region,
-            branch_prob=args.branch_prob,
-            chain_persist=args.chain_persist,
-            bond_range=bond_range,
-            center_z=args.center_z,
-            coord_range=coord_range,
-            shell_radius=shell_radius,
-            elements=element_pool,  # already a list[str] or None
-            cov_scale=args.cov_scale,
-            relax_cycles=args.relax_cycles,
-            add_hydrogen=not args.no_add_hydrogen,
-            n_samples=args.n_samples,
-            seed=args.seed,
-            n_bins=args.n_bins,
-            w_atom=args.w_atom,
-            w_spatial=args.w_spatial,
-            cutoff=args.cutoff,
-            filters=args.filters,
-            verbose=True,
-        )
-    except ValueError as exc:
-        print(f"[ERROR] {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    structures = gen.generate()
-
-    # Serialise output
-    xyz_blocks = [s.to_xyz() for s in structures]
-    output_text = "\n".join(xyz_blocks) + ("\n" if xyz_blocks else "")
-
-    if args.output:
-        with open(args.output, "w") as fh:
-            fh.write(output_text)
-        print(
-            f"[info] {len(structures)} structure(s) written to {args.output!r}",
-            file=sys.stderr,
-        )
+    if args.optimize:
+        _run_optimize_mode(args, element_pool)
     else:
-        sys.stdout.write(output_text)
+        _run_sample_mode(args, element_pool, bond_range, shell_radius, coord_range)
 
 
 if __name__ == "__main__":
