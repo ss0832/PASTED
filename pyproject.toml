@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pasted"
+version = "0.1.0"
+description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+keywords = ["quantum chemistry", "structure generation", "fuzzing", "machine learning potentials"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.scripts]
+pasted = "pasted.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "PL"]
+ignore = [
+    "PLR2004",   # magic-value comparisons are fine in scientific code
+    "PLR0912",   # too-many-branches — intentional in generator loop
+    "PLR0913",   # too-many-arguments — intentional in StructureGenerator
+    "B006",      # mutable default args — we use None + defaults inside
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pasted"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["scipy.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
