@@ -74,13 +74,18 @@ Closest to true spatial randomness; highest expected `H_spatial`.
 
 ### `chain`
 
-Atoms grow one by one from a seed atom via a random walk.
-At each step, a random active tip is selected and the new atom is placed at a random bond length in a random direction.
+Atoms grow one by one from a seed atom via a random walk with directional persistence.
+At each step, a random active tip is selected and the new atom is placed at a random bond length.
+The direction of each step is constrained by `--chain-persist` to avoid self-tangling.
 A branching probability controls whether the old tip is kept (branch) or replaced (linear advance).
-Produces elongated, tree-like structures reminiscent of organic molecules — except with no regard for valence.
+Produces elongated, tree-like structures.
 
 ```
 --branch-prob FLOAT     branching probability (default: 0.3)
+--chain-persist FLOAT   directional persistence 0.0–1.0 (default: 0.5)
+                        0.0 = fully random (may self-tangle)
+                        0.5 = rear 120° cone excluded
+                        1.0 = front hemisphere only, nearly straight
 --bond-range LO:HI      bond length range in Å (default: 1.2:1.6)
 ```
 
@@ -256,6 +261,7 @@ placement mode:
   --mode {gas,chain,shell}
   --region SPEC         [gas] sphere:R | box:L | box:LX,LY,LZ
   --branch-prob FLOAT   [chain] branching probability (default: 0.3)
+  --chain-persist FLOAT [chain] directional persistence 0.0–1.0 (default: 0.5)
   --bond-range LO:HI    [chain/shell] bond length range Å (default: 1.2:1.6)
   --center-z Z          [shell] fix center atom by atomic number
   --coord-range MIN:MAX [shell] coordination number range (default: 4:8)

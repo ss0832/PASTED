@@ -359,27 +359,58 @@ def place_gas(
 
 def place_chain(
     atoms: list[str], bond_lo: float, bond_hi: float,
-    branch_prob: float,
+    branch_prob: float, persist: float,
     rng: random.Random,
 ) -> tuple[list[str], list[Vec3]]:
     """
-    Random-walk growth with branching. No region constraint.
+    Random-walk growth with branching and directional persistence.
+
+    persist controls how strongly each step continues in the previous direction.
+    Acceptance condition: dot(new_dir, prev_dir) >= persist - 1
+
+      persist=0.0  fully random, no constraint (default behaviour, may self-tangle)
+      persist=0.5  rear 120° cone excluded  (default)
+      persist=1.0  front hemisphere only — nearly straight chain
+
     No clash checking — relax_positions handles distance violations afterwards.
     Always returns exactly len(atoms) positions.
     """
+    # tip_dirs[i] = unit vector of the step that *arrived at* node i
+    # (None for the seed; seed has no incoming direction)
     positions: list[Vec3] = [(0.0, 0.0, 0.0)]
+    tip_dirs: list[Vec3 | None] = [None]
     tips: list[int] = [0]
+
     for idx in range(1, len(atoms)):
         tip = rng.choice(tips)
-        tp = positions[tip]
+        tp  = positions[tip]
+        prev_dir = tip_dirs[tip]
+
         bl = rng.uniform(bond_lo, bond_hi)
-        d = _unit_vec(rng)
+
+        # Sample a direction that satisfies the persistence constraint.
+        # Acceptance threshold = persist - 1:
+        #   persist=0.0 → threshold=-1.0 → always accepted → fully random
+        #   persist=0.5 → threshold=-0.5 → rear 120° cone excluded
+        #   persist=1.0 → threshold= 0.0 → front hemisphere only (nearly straight)
+        if prev_dir is None or persist == 0.0:
+            d = _unit_vec(rng)
+        else:
+            threshold = persist - 1.0
+            for _ in range(200):
+                d = _unit_vec(rng)
+                if (d[0]*prev_dir[0] + d[1]*prev_dir[1] + d[2]*prev_dir[2]) >= threshold:
+                    break
+
         pt: Vec3 = (tp[0]+bl*d[0], tp[1]+bl*d[1], tp[2]+bl*d[2])
         positions.append(pt)
+        tip_dirs.append(d)
+
         if rng.random() < branch_prob:
             tips.append(idx)
         else:
             tips[tips.index(tip)] = idx
+
     return atoms, positions
 
 # ---------------------------------------------------------------------------
@@ -678,6 +709,14 @@ examples
                     help="[gas] 'sphere:R' | 'box:L' | 'box:LX,LY,LZ' (Angstrom). Required for gas.")
     mg.add_argument("--branch-prob", type=float, default=0.3,
                     help="[chain] Branching probability (default: 0.3).")
+    mg.add_argument("--chain-persist", type=float, default=0.5,
+                    help=(
+                        "[chain] Directional persistence (0.0–1.0, default: 0.5). "
+                        "A new step is accepted only when dot(new, prev) >= -persist. "
+                        "0.0 = fully random (may self-tangle); "
+                        "0.5 = rear 120° cone excluded; "
+                        "1.0 = nearly straight."
+                    ))
     mg.add_argument("--bond-range", default="1.2:1.6", metavar="LO:HI",
                     help="[chain/shell-tails] Bond length range Angstrom (default: 1.2:1.6).")
     mg.add_argument("--center-z", type=int, default=None, metavar="Z",
@@ -859,7 +898,7 @@ def main() -> None:
     for i in range(args.n_samples):
         atoms_list = [rng.choice(element_pool) for _ in range(args.n_atoms)]
 
-        # Hydrogen augmentation 
+        # Hydrogen augmentation
         if do_add_h:
             atoms_list = add_hydrogen(atoms_list, rng)
 
@@ -876,7 +915,7 @@ def main() -> None:
             elif args.mode == "chain":
                 atoms_out, positions = place_chain(
                     atoms_list, bond_lo, bond_hi,
-                    args.branch_prob, rng)
+                    args.branch_prob, args.chain_persist, rng)
             else:
                 center_sym = (
                     fixed_center_sym
