@@ -316,6 +316,105 @@ output:
 - **RDF_dev** is a finite-system approximation; treat it as a relative indicator.
 - Charge/mult parity failures are common with large element pools and `mult=1`. Increase `--n-samples` or use `--mult 2` to compensate.
 
+## Retrieving Structures from the Class API
+
+### Basic usage: receive a list via `generate()`
+
+```python
+from pasted import StructureGenerator
+
+gen = StructureGenerator(
+    n_atoms=12, charge=0, mult=1,
+    mode="gas", region="sphere:9",
+    elements="1-30", n_samples=50, seed=42,
+)
+
+structures = gen.generate()   # list[Structure]
+```
+
+---
+
+### Attributes available on a `Structure` object
+
+```python
+s = structures[0]
+
+# Element symbols
+s.atoms        # ['C', 'N', 'H', 'O', ...]
+
+# Cartesian coordinates (Å)
+s.positions    # [(x, y, z), (x, y, z), ...]
+
+# Disorder metrics
+s.metrics      # {'H_atom': 1.09, 'H_spatial': 2.73, ...}
+
+# Charge and spin multiplicity
+s.charge       # 0
+s.mult         # 1
+
+# Placement mode / sequential index / seed
+s.mode         # 'gas'
+s.sample_index # 1
+s.seed         # 42
+
+# Shell mode only
+s.center_sym   # 'Fe'
+
+# Number of atoms
+len(s)         # 12
+```
+
+---
+
+### XYZ output
+
+```python
+# As a string
+xyz_str = s.to_xyz()
+print(xyz_str)
+
+# Write to file (append multiple structures)
+for i, s in enumerate(structures):
+    s.write_xyz("out.xyz", append=(i > 0))
+```
+
+---
+
+### Converting positions to a numpy array
+
+`positions` is a list of tuples. To obtain a numpy array:
+
+```python
+import numpy as np
+
+coords = np.array(s.positions)   # shape (n_atoms, 3)
+```
+
+---
+
+### Iterating directly over the generator
+
+```python
+for s in gen:          # __iter__ calls generate() internally
+    print(s)
+    print(s.metrics["H_total"])
+```
+
+---
+
+### Filtering structures by metric
+
+```python
+gen = StructureGenerator(
+    n_atoms=12, charge=0, mult=1,
+    mode="gas", region="sphere:9",
+    elements="6,7,8", n_samples=100,
+    filters=["H_total:2.0:-", "shape_aniso:0.5:-"],
+)
+
+disordered = gen.generate()   # contains only structures that passed all filters
+```
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).
