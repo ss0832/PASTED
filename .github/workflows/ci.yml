@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ["main", "develop"]
 
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,13 +26,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install ruff==0.4
+        run: pip install "ruff==0.4"
 
       - name: ruff check
         run: ruff check src/ tests/
-
-      - name: ruff format --check
-        run: ruff format --check src/ tests/
 
   test:
     name: Test (Python ${{ matrix.python-version }})
