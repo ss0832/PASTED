@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from scipy.sparse import csr_matrix as _csr_matrix
@@ -23,17 +23,28 @@ try:
     from scipy.special import sph_harm_y as _sph_harm_raw
 
     def _sph_harm(
-        l: int, m: int, phi_azimuth: float | np.ndarray, theta_polar: float | np.ndarray  # noqa: E741
+        l: int,  # noqa: E741
+        m: int,
+        phi_azimuth: float | np.ndarray,
+        theta_polar: float | np.ndarray,
     ) -> complex | np.ndarray:
-        return _sph_harm_raw(l, m, theta_polar, phi_azimuth)
+        return cast(
+            "complex | np.ndarray", _sph_harm_raw(l, m, theta_polar, phi_azimuth)
+        )
 
 except ImportError:
     from scipy.special import sph_harm as _sph_harm_raw  # type: ignore[no-redef]
 
     def _sph_harm(  # type: ignore[misc]
-        l: int, m: int, phi_azimuth: float | np.ndarray, theta_polar: float | np.ndarray  # noqa: E741
+        l: int,  # noqa: E741
+        m: int,
+        phi_azimuth: float | np.ndarray,
+        theta_polar: float | np.ndarray,
     ) -> complex | np.ndarray:
-        return _sph_harm_raw(m, l, phi_azimuth, theta_polar)
+        return cast(
+            "complex | np.ndarray", _sph_harm_raw(m, l, phi_azimuth, theta_polar)
+        )
+
 
 if TYPE_CHECKING:
     from ._placement import Vec3
@@ -41,6 +52,7 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Low-level entropy helper
 # ---------------------------------------------------------------------------
+
 
 def _shannon_np(counts: np.ndarray) -> float:
     """Shannon entropy from a raw (un-normalised) count array."""
@@ -50,9 +62,11 @@ def _shannon_np(counts: np.ndarray) -> float:
     p = counts[counts > 0] / total
     return float(-np.sum(p * np.log(p)))
 
+
 # ---------------------------------------------------------------------------
 # Individual metric functions
 # ---------------------------------------------------------------------------
+
 
 def compute_h_atom(atoms: list[str]) -> float:
     """Shannon entropy of the element composition.
@@ -81,9 +95,7 @@ def compute_h_spatial(dists: np.ndarray, n_bins: int) -> float:
     return _shannon_np(counts.astype(float))
 
 
-def compute_rdf_deviation(
-    pts: np.ndarray, dists: np.ndarray, n_bins: int
-) -> float:
+def compute_rdf_deviation(pts: np.ndarray, dists: np.ndarray, n_bins: int) -> float:
     """RMS deviation of the empirical *g*(*r*) from an ideal-gas baseline.
 
     A value of 0 indicates a perfectly random (ideal-gas-like) distribution.
@@ -101,14 +113,14 @@ def compute_rdf_deviation(
         return 0.0
     n = len(pts)
     r_max = float(dists.max())
-    r_bound = float(np.sqrt((pts ** 2).sum(axis=1)).max())
+    r_bound = float(np.sqrt((pts**2).sum(axis=1)).max())
     if r_bound == 0 or r_max == 0:
         return 0.0
-    rho = n / (4 / 3 * math.pi * r_bound ** 3)
+    rho = n / (4 / 3 * math.pi * r_bound**3)
     counts, edges = np.histogram(dists, bins=n_bins, range=(0.0, r_max))
     centres = (edges[:-1] + edges[1:]) / 2
     bw = edges[1] - edges[0]
-    ideal = rho * 4 * math.pi * centres ** 2 * bw * n / 2
+    ideal = rho * 4 * math.pi * centres**2 * bw * n / 2
     mask = ideal > 0
     if not mask.any():
         return 0.0
@@ -129,7 +141,7 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
     s = float(lam.sum())
     if s == 0:
         return 0.0
-    return float(np.clip(1.5 * float(np.sum(lam ** 2)) / s ** 2 - 0.5, 0.0, 1.0))
+    return float(np.clip(1.5 * float(np.sum(lam**2)) / s**2 - 0.5, 0.0, 1.0))
 
 
 def compute_steinhardt(
@@ -161,25 +173,24 @@ def compute_steinhardt(
     n = len(pts)
     result: dict[str, float] = {}
 
-    mask = (dmat <= cutoff)
+    mask = dmat <= cutoff
     np.fill_diagonal(mask, False)
-    deg = mask.sum(axis=1).astype(float)       # (n,)
+    deg = mask.sum(axis=1).astype(float)  # (n,)
     safe_deg = np.where(deg > 0, deg, 1.0)
-    mask_f = mask.astype(float)                # (n, n)
+    mask_f = mask.astype(float)  # (n, n)
 
-    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]      # (n, n, 3)
-    safe_r = np.where(dmat[:, :, np.newaxis] > 0,
-                      dmat[:, :, np.newaxis], 1.0)
-    d_hat = diff / safe_r                                        # (n, n, 3)
+    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
+    safe_r = np.where(dmat[:, :, np.newaxis] > 0, dmat[:, :, np.newaxis], 1.0)
+    d_hat = diff / safe_r  # (n, n, 3)
 
-    theta = np.arccos(np.clip(d_hat[:, :, 2], -1.0, 1.0))     # polar (n, n)
-    phi = np.arctan2(d_hat[:, :, 1], d_hat[:, :, 0])           # azimuthal (n, n)
+    theta = np.arccos(np.clip(d_hat[:, :, 2], -1.0, 1.0))  # polar (n, n)
+    phi = np.arctan2(d_hat[:, :, 1], d_hat[:, :, 0])  # azimuthal (n, n)
 
     for l in l_values:  # noqa: E741
         qlm_sq = np.zeros(n, dtype=float)
         for m in range(-l, l + 1):
-            ylm = _sph_harm(l, m, phi, theta)                   # (n, n) complex
-            avg = (ylm * mask_f).sum(axis=1) / safe_deg         # (n,) complex
+            ylm = _sph_harm(l, m, phi, theta)  # (n, n) complex
+            avg = (ylm * mask_f).sum(axis=1) / safe_deg  # (n,) complex
             qlm_sq += np.abs(avg) ** 2
 
         ql = np.sqrt(4 * math.pi / (2 * l + 1) * qlm_sq)
@@ -206,12 +217,10 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
     if n < 2:
         return {"graph_lcc": 1.0, "graph_cc": 0.0}
 
-    adj = (dmat <= cutoff)
+    adj = dmat <= cutoff
     np.fill_diagonal(adj, False)
 
-    _, labels = _connected_components(
-        _csr_matrix(adj), directed=False, return_labels=True
-    )
+    _, labels = _connected_components(_csr_matrix(adj), directed=False, return_labels=True)
     graph_lcc = float(np.bincount(labels).max()) / n
 
     deg = adj.sum(axis=1).astype(float)
@@ -223,9 +232,11 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 
     return {"graph_lcc": graph_lcc, "graph_cc": graph_cc}
 
+
 # ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
+
 
 def compute_all_metrics(
     atoms: list[str],
@@ -260,25 +271,27 @@ def compute_all_metrics(
     -------
     dict with keys matching :data:`pasted._atoms.ALL_METRICS`.
     """
-    pts = np.array(positions, dtype=float)   # (n, 3)
-    dists = _pdist(pts)                       # condensed (n*(n-1)/2,)
-    dmat = _squareform(dists)                 # full (n, n)
+    pts = np.array(positions, dtype=float)  # (n, 3)
+    dists = _pdist(pts)  # condensed (n*(n-1)/2,)
+    dmat = _squareform(dists)  # full (n, n)
 
     ha = compute_h_atom(atoms)
     hs = compute_h_spatial(dists, n_bins)
     return {
-        "H_atom":      ha,
-        "H_spatial":   hs,
-        "H_total":     w_atom * ha + w_spatial * hs,
-        "RDF_dev":     compute_rdf_deviation(pts, dists, n_bins),
+        "H_atom": ha,
+        "H_spatial": hs,
+        "H_total": w_atom * ha + w_spatial * hs,
+        "RDF_dev": compute_rdf_deviation(pts, dists, n_bins),
         "shape_aniso": compute_shape_anisotropy(pts),
         **compute_steinhardt(pts, dmat, [4, 6, 8], cutoff),
         **compute_graph_metrics(dmat, cutoff),
     }
 
+
 # ---------------------------------------------------------------------------
 # Filter helper
 # ---------------------------------------------------------------------------
+
 
 def passes_filters(
     metrics: dict[str, float],

@@ -21,6 +21,7 @@ Vec3 = tuple[float, float, float]
 # Low-level geometry helpers
 # ---------------------------------------------------------------------------
 
+
 def _unit_vec(rng: random.Random) -> Vec3:
     """Uniform random point on the unit sphere (Marsaglia rejection method)."""
     while True:
@@ -47,9 +48,11 @@ def _sample_box(lx: float, ly: float, lz: float, rng: random.Random) -> Vec3:
         rng.uniform(-lz / 2, lz / 2),
     )
 
+
 # ---------------------------------------------------------------------------
 # Post-placement repulsion relaxation
 # ---------------------------------------------------------------------------
+
 
 def relax_positions(
     atoms: list[str],
@@ -85,14 +88,14 @@ def relax_positions(
     if n < 2:
         return positions, True
 
-    pts = np.array(positions, dtype=float)                   # (n, 3)
-    radii = np.array([_cov_radius_ang(a) for a in atoms])   # (n,)
+    pts = np.array(positions, dtype=float)  # (n, 3)
+    radii = np.array([_cov_radius_ang(a) for a in atoms])  # (n,)
     thresh = cov_scale * (radii[:, np.newaxis] + radii[np.newaxis, :])  # (n, n)
 
     converged = False
     for _ in range(max_cycles):
         diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
-        dmat = np.sqrt((diff ** 2).sum(axis=2))               # (n, n)
+        dmat = np.sqrt((diff**2).sum(axis=2))  # (n, n)
         np.fill_diagonal(dmat, np.inf)
 
         viol_mask = np.triu(dmat < thresh, k=1)
@@ -112,11 +115,13 @@ def relax_positions(
             pts[i] += push * v
             pts[j] -= push * v
 
-    return [tuple(row) for row in pts], converged  # type: ignore[return-value]
+    return [tuple(row) for row in pts], converged
+
 
 # ---------------------------------------------------------------------------
 # Hydrogen augmentation
 # ---------------------------------------------------------------------------
+
 
 def add_hydrogen(atoms: list[str], rng: random.Random) -> list[str]:
     """Append hydrogen atoms when H is in the pool but absent from *atoms*.
@@ -132,9 +137,11 @@ def add_hydrogen(atoms: list[str], rng: random.Random) -> list[str]:
     n_h = 1 + round(rng.random() * n * 1.2)
     return atoms + ["H"] * n_h
 
+
 # ---------------------------------------------------------------------------
 # Placement: gas
 # ---------------------------------------------------------------------------
+
 
 def place_gas(
     atoms: list[str],
@@ -175,16 +182,18 @@ def place_gas(
         if len(dims) == 1:
             dims *= 3
 
-        def sampler() -> Vec3:  # type: ignore[misc]
+        def sampler() -> Vec3:
             return _sample_box(dims[0], dims[1], dims[2], rng)
 
     else:
         raise ValueError(f"Unknown region spec: {region!r}")
     return atoms, [sampler() for _ in atoms]
 
+
 # ---------------------------------------------------------------------------
 # Placement: chain
 # ---------------------------------------------------------------------------
+
 
 def place_chain(
     atoms: list[str],
@@ -237,11 +246,7 @@ def place_chain(
             threshold = persist - 1.0
             d = _unit_vec(rng)
             for _ in range(200):
-                if (
-                    d[0] * prev_dir[0]
-                    + d[1] * prev_dir[1]
-                    + d[2] * prev_dir[2]
-                ) >= threshold:
+                if (d[0] * prev_dir[0] + d[1] * prev_dir[1] + d[2] * prev_dir[2]) >= threshold:
                     break
                 d = _unit_vec(rng)
 
@@ -260,9 +265,11 @@ def place_chain(
 
     return atoms, positions
 
+
 # ---------------------------------------------------------------------------
 # Placement: shell
 # ---------------------------------------------------------------------------
+
 
 def place_shell(
     atoms: list[str],
@@ -316,10 +323,12 @@ def place_shell(
         pp = positions[par]
         bl = rng.uniform(tail_lo, tail_hi)
         d = _unit_vec(rng)
-        positions.append((
-            pp[0] + bl * d[0],
-            pp[1] + bl * d[1],
-            pp[2] + bl * d[2],
-        ))
+        positions.append(
+            (
+                pp[0] + bl * d[0],
+                pp[1] + bl * d[1],
+                pp[2] + bl * d[2],
+            )
+        )
 
     return ordered, positions

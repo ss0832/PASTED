@@ -51,13 +51,9 @@ def format_xyz(
     -------
     A multi-line string (no trailing newline).
     """
-    comp = ",".join(
-        f"{s}:{c}" for s, c in sorted(Counter(atoms).items())
-    )
+    comp = ",".join(f"{s}:{c}" for s, c in sorted(Counter(atoms).items()))
     metric_str = "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
-    comment = (
-        f"{prefix} charge={charge:+d} mult={mult} comp=[{comp}]  {metric_str}"
-    ).strip()
+    comment = (f"{prefix} charge={charge:+d} mult={mult} comp=[{comp}]  {metric_str}").strip()
     lines = [str(len(atoms)), comment]
     for atom, (x, y, z) in zip(atoms, positions, strict=False):
         lines.append(f"{atom:<4s}  {x:12.6f}  {y:12.6f}  {z:12.6f}")

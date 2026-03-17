@@ -41,6 +41,7 @@ from ._placement import (
 # Structure dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Structure:
     """A single generated atomic structure with its computed disorder metrics.
@@ -97,16 +98,16 @@ class Structure:
         if not prefix:
             prefix = f"sample={self.sample_index} mode={self.mode}"
             if self.mode == "shell" and self.center_sym:
-                prefix += (
-                    f" center={self.center_sym}"
-                    f"(Z={ATOMIC_NUMBERS[self.center_sym]})"
-                )
+                prefix += f" center={self.center_sym}(Z={ATOMIC_NUMBERS[self.center_sym]})"
             if self.seed is not None:
                 prefix += f" seed={self.seed}"
         return format_xyz(
-            self.atoms, self.positions,
-            self.charge, self.mult,
-            self.metrics, prefix,
+            self.atoms,
+            self.positions,
+            self.charge,
+            self.mult,
+            self.metrics,
+            prefix,
         )
 
     def write_xyz(self, path: str | Path, *, append: bool = True) -> None:
@@ -134,19 +135,15 @@ class Structure:
 
     def __repr__(self) -> str:
         counts = Counter(self.atoms)
-        comp = "".join(
-            f"{sym}{n}" if n > 1 else sym
-            for sym, n in sorted(counts.items())
-        )
+        comp = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))
         h_total = self.metrics.get("H_total", float("nan"))
-        return (
-            f"Structure(n={len(self)}, comp={comp!r}, mode={self.mode!r}, "
-            f"H_total={h_total:.3f})"
-        )
+        return f"Structure(n={len(self)}, comp={comp!r}, mode={self.mode!r}, H_total={h_total:.3f})"
+
 
 # ---------------------------------------------------------------------------
 # StructureGenerator
 # ---------------------------------------------------------------------------
+
 
 class StructureGenerator:
     """Generate random atomic structures with disorder metrics.
@@ -266,9 +263,7 @@ class StructureGenerator:
         verbose: bool = False,
     ) -> None:
         if mode not in ("gas", "chain", "shell"):
-            raise ValueError(
-                f"mode must be 'gas', 'chain', or 'shell'; got {mode!r}"
-            )
+            raise ValueError(f"mode must be 'gas', 'chain', or 'shell'; got {mode!r}")
         if mode == "gas" and region is None:
             raise ValueError("region is required when mode='gas'")
 
@@ -302,9 +297,7 @@ class StructureGenerator:
             self._element_pool = list(elements)
 
         # ── Filters ─────────────────────────────────────────────────────
-        self._filters: list[tuple[str, float, float]] = [
-            parse_filter(f) for f in (filters or [])
-        ]
+        self._filters: list[tuple[str, float, float]] = [parse_filter(f) for f in (filters or [])]
 
         # ── Cutoff ──────────────────────────────────────────────────────
         self._cutoff: float = self._resolve_cutoff(cutoff)
@@ -313,14 +306,10 @@ class StructureGenerator:
         self._fixed_center_sym: str | None = None
         if mode == "shell" and center_z is not None:
             if center_z not in _Z_TO_SYM:
-                raise ValueError(
-                    f"center_z={center_z}: unknown atomic number."
-                )
+                raise ValueError(f"center_z={center_z}: unknown atomic number.")
             sym = _Z_TO_SYM[center_z]
             if sym not in self._element_pool:
-                raise ValueError(
-                    f"center_z={center_z} ({sym}) is not in the element pool."
-                )
+                raise ValueError(f"center_z={center_z} ({sym}) is not in the element pool.")
             self._fixed_center_sym = sym
 
         if self.verbose:
@@ -348,11 +337,7 @@ class StructureGenerator:
                 self._log(f"[cutoff] {override:.3f} Å (user-specified)")
             return override
         radii = [_cov_radius_ang(s) for s in self._element_pool]
-        pair_sums = sorted(
-            ra + rb
-            for i, ra in enumerate(radii)
-            for rb in radii[i:]
-        )
+        pair_sums = sorted(ra + rb for i, ra in enumerate(radii) for rb in radii[i:])
         median_sum = pair_sums[len(pair_sums) // 2]
         cutoff = self.cov_scale * 1.5 * median_sum
         if self.verbose:
@@ -402,13 +387,20 @@ class StructureGenerator:
 
         center_sym: str | None = None
         if self.mode == "gas":
+            assert self.region is not None  # guaranteed by __init__ validation
             atoms_out, positions = place_gas(
-                atoms_list, self.region, rng  # type: ignore[arg-type]
+                atoms_list,
+                self.region,
+                rng,
             )
         elif self.mode == "chain":
             atoms_out, positions = place_chain(
-                atoms_list, bond_lo, bond_hi,
-                self.branch_prob, self.chain_persist, rng,
+                atoms_list,
+                bond_lo,
+                bond_hi,
+                self.branch_prob,
+                self.chain_persist,
+                rng,
             )
         else:  # shell
             center_sym = (
@@ -417,10 +409,15 @@ class StructureGenerator:
                 else rng.choice(atoms_list)
             )
             atoms_out, positions = place_shell(
-                atoms_list, center_sym,
-                coord_lo, coord_hi,
-                shell_lo, shell_hi,
-                bond_lo, bond_hi, rng,
+                atoms_list,
+                center_sym,
+                coord_lo,
+                coord_hi,
+                shell_lo,
+                shell_hi,
+                bond_lo,
+                bond_hi,
+                rng,
             )
         return atoms_out, positions, center_sym
 
@@ -444,10 +441,7 @@ class StructureGenerator:
         if self.verbose and self._filters:
             self._log(
                 "[filter] "
-                + ",  ".join(
-                    f"{m} in [{lo:.4g},{hi:.4g}]"
-                    for m, lo, hi in self._filters
-                )
+                + ",  ".join(f"{m} in [{lo:.4g},{hi:.4g}]" for m, lo, hi in self._filters)
             )
 
         do_add_h = ("H" in self._element_pool) and self._add_hydrogen
@@ -464,14 +458,14 @@ class StructureGenerator:
             if not ok:
                 n_invalid += 1
                 if self.verbose:
-                    self._log(f"[{i+1:>{width}}/{self.n_samples}:invalid] {val_msg}")
+                    self._log(f"[{i + 1:>{width}}/{self.n_samples}:invalid] {val_msg}")
                 continue
 
             try:
                 atoms_out, positions, center_sym = self._place_one(atoms_list, rng)
             except (RuntimeError, ValueError) as exc:
                 if self.verbose:
-                    self._log(f"[ERROR] sample {i+1}: {exc}")
+                    self._log(f"[ERROR] sample {i + 1}: {exc}")
                 raise
 
             positions, converged = relax_positions(
@@ -479,35 +473,42 @@ class StructureGenerator:
             )
             if not converged and self.verbose:
                 self._log(
-                    f"[{i+1:>{width}}/{self.n_samples}:warn] "
+                    f"[{i + 1:>{width}}/{self.n_samples}:warn] "
                     f"relax_positions did not converge in {self.relax_cycles} cycles."
                 )
 
             metrics = compute_all_metrics(
-                atoms_out, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff,
+                atoms_out,
+                positions,
+                self.n_bins,
+                self.w_atom,
+                self.w_spatial,
+                self._cutoff,
             )
             passed = passes_filters(metrics, self._filters)
             if self.verbose:
                 flag = "PASS" if passed else "skip"
                 self._log(
-                    f"[{i+1:>{width}}/{self.n_samples}:{flag}]  "
+                    f"[{i + 1:>{width}}/{self.n_samples}:{flag}]  "
                     + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
                 )
             if not passed:
                 continue
 
             n_passed += 1
-            results.append(Structure(
-                atoms=atoms_out,
-                positions=positions,
-                charge=self.charge,
-                mult=self.mult,
-                metrics=metrics,
-                mode=self.mode,
-                sample_index=n_passed,
-                center_sym=center_sym if self.mode == "shell" else None,
-                seed=self.seed,
-            ))
+            results.append(
+                Structure(
+                    atoms=atoms_out,
+                    positions=positions,
+                    charge=self.charge,
+                    mult=self.mult,
+                    metrics=metrics,
+                    mode=self.mode,
+                    sample_index=n_passed,
+                    center_sym=center_sym if self.mode == "shell" else None,
+                    seed=self.seed,
+                )
+            )
 
         if self.verbose:
             n_skip = self.n_samples - n_passed - n_invalid
@@ -517,8 +518,7 @@ class StructureGenerator:
             )
             if not results:
                 self._log(
-                    "[warning] No structures passed. "
-                    "Try relaxing filters or increasing n_samples."
+                    "[warning] No structures passed. Try relaxing filters or increasing n_samples."
                 )
 
         return results
@@ -540,9 +540,11 @@ class StructureGenerator:
             f"pool_size={len(self._element_pool)})"
         )
 
+
 # ---------------------------------------------------------------------------
 # Functional API
 # ---------------------------------------------------------------------------
+
 
 def generate(
     *,

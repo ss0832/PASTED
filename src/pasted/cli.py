@@ -24,6 +24,7 @@ from ._generator import StructureGenerator
 # Argument parser
 # ---------------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pasted",
@@ -65,89 +66,142 @@ examples
     )
 
     req = p.add_argument_group("required")
-    req.add_argument("--n-atoms", type=int, required=True,
-                     help="Total number of atoms per structure.")
-    req.add_argument("--charge", type=int, required=True,
-                     help="Total system charge.")
-    req.add_argument("--mult", type=int, required=True,
-                     help="Spin multiplicity 2S+1 (HS/LS not enforced).")
+    req.add_argument(
+        "--n-atoms", type=int, required=True, help="Total number of atoms per structure."
+    )
+    req.add_argument("--charge", type=int, required=True, help="Total system charge.")
+    req.add_argument(
+        "--mult", type=int, required=True, help="Spin multiplicity 2S+1 (HS/LS not enforced)."
+    )
 
     mg = p.add_argument_group("placement mode")
     mg.add_argument("--mode", choices=["gas", "chain", "shell"], default="gas")
-    mg.add_argument("--region",
-                    help="[gas] 'sphere:R' | 'box:L' | 'box:LX,LY,LZ' (Å). Required for gas.")
-    mg.add_argument("--branch-prob", type=float, default=0.3,
-                    help="[chain] Branching probability (default: 0.3).")
-    mg.add_argument("--chain-persist", type=float, default=0.5,
-                    help=(
-                        "[chain] Directional persistence (0.0–1.0, default: 0.5). "
-                        "0.0 = fully random; 0.5 = rear 120° cone excluded; "
-                        "1.0 = nearly straight."
-                    ))
-    mg.add_argument("--bond-range", default="1.2:1.6", metavar="LO:HI",
-                    help="[chain/shell-tails] Bond length range Å (default: 1.2:1.6).")
-    mg.add_argument("--center-z", type=int, default=None, metavar="Z",
-                    help="[shell] Atomic number of center atom. Default: random per sample.")
-    mg.add_argument("--coord-range", default="4:8", metavar="MIN:MAX",
-                    help="[shell] Coordination number range (default: 4:8).")
-    mg.add_argument("--shell-radius", default="1.8:2.5", metavar="LO:HI",
-                    help="[shell] Shell radius range Å (default: 1.8:2.5).")
+    mg.add_argument(
+        "--region", help="[gas] 'sphere:R' | 'box:L' | 'box:LX,LY,LZ' (Å). Required for gas."
+    )
+    mg.add_argument(
+        "--branch-prob",
+        type=float,
+        default=0.3,
+        help="[chain] Branching probability (default: 0.3).",
+    )
+    mg.add_argument(
+        "--chain-persist",
+        type=float,
+        default=0.5,
+        help=(
+            "[chain] Directional persistence (0.0–1.0, default: 0.5). "
+            "0.0 = fully random; 0.5 = rear 120° cone excluded; "
+            "1.0 = nearly straight."
+        ),
+    )
+    mg.add_argument(
+        "--bond-range",
+        default="1.2:1.6",
+        metavar="LO:HI",
+        help="[chain/shell-tails] Bond length range Å (default: 1.2:1.6).",
+    )
+    mg.add_argument(
+        "--center-z",
+        type=int,
+        default=None,
+        metavar="Z",
+        help="[shell] Atomic number of center atom. Default: random per sample.",
+    )
+    mg.add_argument(
+        "--coord-range",
+        default="4:8",
+        metavar="MIN:MAX",
+        help="[shell] Coordination number range (default: 4:8).",
+    )
+    mg.add_argument(
+        "--shell-radius",
+        default="1.8:2.5",
+        metavar="LO:HI",
+        help="[shell] Shell radius range Å (default: 1.8:2.5).",
+    )
 
     eg = p.add_argument_group("elements")
-    eg.add_argument("--elements", default=None, metavar="SPEC",
-                    help="Element pool by atomic number (default: all Z=1-106).")
+    eg.add_argument(
+        "--elements",
+        default=None,
+        metavar="SPEC",
+        help="Element pool by atomic number (default: all Z=1-106).",
+    )
 
     pg = p.add_argument_group("placement")
-    pg.add_argument("--cov-scale", type=float, default=1.0,
-                    help=(
-                        "Minimum distance = cov_scale × (r_i + r_j), Pyykkö (2009) radii. "
-                        "Default 1.0 = exact sum of covalent radii."
-                    ))
-    pg.add_argument("--relax-cycles", type=int, default=1500,
-                    help="Max cycles for post-placement repulsion relaxation (default: 1500).")
-    pg.add_argument("--no-add-hydrogen", action="store_true",
-                    help=(
-                        "Disable automatic H augmentation. "
-                        "By default, if H(Z=1) is in the element pool and the sampled "
-                        "composition contains no H, H atoms are appended "
-                        "(n_H ≈ 1 + uniform(0,1) × n_atoms × 1.2)."
-                    ))
+    pg.add_argument(
+        "--cov-scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Minimum distance = cov_scale × (r_i + r_j), Pyykkö (2009) radii. "
+            "Default 1.0 = exact sum of covalent radii."
+        ),
+    )
+    pg.add_argument(
+        "--relax-cycles",
+        type=int,
+        default=1500,
+        help="Max cycles for post-placement repulsion relaxation (default: 1500).",
+    )
+    pg.add_argument(
+        "--no-add-hydrogen",
+        action="store_true",
+        help=(
+            "Disable automatic H augmentation. "
+            "By default, if H(Z=1) is in the element pool and the sampled "
+            "composition contains no H, H atoms are appended "
+            "(n_H ≈ 1 + uniform(0,1) × n_atoms × 1.2)."
+        ),
+    )
 
     sg = p.add_argument_group("sampling")
     sg.add_argument("--n-samples", type=int, default=1)
     sg.add_argument("--seed", type=int, default=None)
 
     xg = p.add_argument_group("metrics")
-    xg.add_argument("--n-bins", type=int, default=20,
-                    help="Histogram bins for H_spatial/RDF_dev (default: 20).")
+    xg.add_argument(
+        "--n-bins", type=int, default=20, help="Histogram bins for H_spatial/RDF_dev (default: 20)."
+    )
     xg.add_argument("--w-atom", type=float, default=0.5)
     xg.add_argument("--w-spatial", type=float, default=0.5)
-    xg.add_argument("--cutoff", type=float, default=None,
-                    help=(
-                        "Distance cutoff in Å for Q_l and graph_* metrics. "
-                        "Default: auto = cov_scale × 1.5 × median(r_i + r_j) over "
-                        "the element pool. Set explicitly to override."
-                    ))
+    xg.add_argument(
+        "--cutoff",
+        type=float,
+        default=None,
+        help=(
+            "Distance cutoff in Å for Q_l and graph_* metrics. "
+            "Default: auto = cov_scale × 1.5 × median(r_i + r_j) over "
+            "the element pool. Set explicitly to override."
+        ),
+    )
 
     fg = p.add_argument_group("filtering")
-    fg.add_argument("--filter", action="append", default=[], dest="filters",
-                    metavar="METRIC:MIN:MAX",
-                    help=(
-                        "Keep structures where METRIC ∈ [MIN, MAX]. "
-                        "Use '-' for open bound. Repeatable."
-                    ))
+    fg.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        dest="filters",
+        metavar="METRIC:MIN:MAX",
+        help=("Keep structures where METRIC ∈ [MIN, MAX]. Use '-' for open bound. Repeatable."),
+    )
 
     og = p.add_argument_group("output")
-    og.add_argument("--validate", action="store_true",
-                    help="Validate charge/mult against one random composition, then exit.")
-    og.add_argument("-o", "--output", default=None,
-                    help="Output XYZ file (default: stdout).")
+    og.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate charge/mult against one random composition, then exit.",
+    )
+    og.add_argument("-o", "--output", default=None, help="Output XYZ file (default: stdout).")
 
     return p
+
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = build_parser()
@@ -204,7 +258,7 @@ def main() -> None:
             center_z=args.center_z,
             coord_range=coord_range,
             shell_radius=shell_radius,
-            elements=element_pool,           # already a list[str] or None
+            elements=element_pool,  # already a list[str] or None
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
             add_hydrogen=not args.no_add_hydrogen,
