@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-03-17
+
+### Added (Documentation & Behavior Details)
+- **Algorithmic Behavior**: The `maxent` mode functions as a constrained maximum-entropy sampling method. It optimizes the objective function $S = -\int p(\Omega) \ln p(\Omega) d\Omega$ under the strict condition $d_{ij} \ge \text{cov\_scale} \times (r_i + r_j)$.
+- **Optimization Mechanics & Numerical Stability**: The gradient descent utilizes an angular repulsion potential defined as $U = \sum_i \sum_{j,k \in N(i), j \neq k} \frac{1}{1 - \cos \theta_{jk} + \varepsilon}$. A numerically small constant ($\varepsilon = 10^{-6}$) is explicitly integrated into the denominator. This implementation prevents division by zero and mitigates the risk of gradient explosion in scenarios where two neighbor directions strictly coincide. Distance constraint re-enforcement is systematically executed via `relax_positions` after each gradient step to prevent physical violations.
+- **Parameter Tuning Guidelines**:
+  - `--maxent-lr`: Values between 0.02 and 0.05 are considered practical for dense structures. The application of larger learning rates exhibits a mathematical tendency to cause spatial drift outside the designated initial region.
+  - `--maxent-steps`: Increased iterations correspond structurally to higher uniformity in neighbor directions, accompanied by potential spatial expansion.
+- **Statistical Tendencies**: Compared to the `gas` mode, `maxent` systematically yields configurations with computationally lower $Q_6$ values (typically $< 0.2$), reducing the quantitative reliance on post-placement filtering processes.
+- **API Clarifications**: `compute_angular_entropy` is defined strictly as a placement-quality diagnostic variable, validating its exclusion from general structural disorder metrics such as `ALL_METRICS` and standard XYZ comment lines.
+
+
 ## [0.1.3] - 2026-03-17
 
 ### Added
