@@ -83,7 +83,8 @@ Use `-` for an open bound. Multiple `--filter` flags are ANDed together.
 ```
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
-`shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`.
+`shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
+`bond_strain_rms`, `ring_fraction`, `charge_frustration`.
 
 ### Collecting a fixed number of passing structures
 
@@ -124,7 +125,7 @@ An interrupted run always produces a valid XYZ file.
 
 ## Optimiser mode
 
-Pass `--optimize` to run basin-hopping optimisation on an existing structure
+Pass `--optimize` to run basin-hopping optimization on an existing structure
 instead of de-novo generation:
 
 ```bash

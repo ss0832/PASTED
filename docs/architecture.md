@@ -16,7 +16,7 @@ generate textbook molecules.
 
 **Fail gracefully, not loudly.**
 The C++ acceleration layer is optional.  If the extensions are not compiled,
-the package falls back to pure Python/NumPy with no change in behaviour.
+the package falls back to pure Python/NumPy with no change in behavior.
 If `relax_positions` does not converge within `max_cycles`, the best
 available structure is returned with `converged=False` — the run continues.
 
@@ -35,15 +35,16 @@ src/pasted/
 ├── __init__.py          Public API exports and package docstring
 ├── _atoms.py            Element data, covalent radii, pool/filter parsing
 ├── _generator.py        StructureGenerator class and generate() function
-├── _io.py               XYZ serialisation (format_xyz)
+├── _io.py               XYZ serialization (format_xyz)
 ├── _metrics.py          All disorder metrics: entropy, RDF, Steinhardt, graph
 ├── _optimizer.py        StructureOptimizer — basin-hopping on existing structures
 ├── _placement.py        Placement algorithms + relax_positions dispatcher
 ├── cli.py               argparse CLI entry point
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_MAXENT flags; None fallbacks
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT flags; None fallbacks
     ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
-    └── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
+    ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
+    └── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
 ```
 
 ---
@@ -65,7 +66,7 @@ randomly chosen existing tip.  Two parameters control shape:
 - `chain_bias` — global axis drift; the first bond direction becomes a bias
   axis and all subsequent steps are blended toward it
 
-`chain_bias=0.0` (the default) reproduces the behaviour of versions prior
+`chain_bias=0.0` (the default) reproduces the behavior of versions prior
 to 0.1.6 exactly.
 
 ### shell
@@ -81,7 +82,7 @@ gradient descent on an angular repulsion potential:
 
 $$U = \sum_i \sum_{j,k \in N(i)} \frac{1}{1 - \cos\theta_{jk} + \varepsilon}$$
 
-The result is the constrained maximum-entropy solution: neighbour directions
+The result is the constrained maximum-entropy solution: neighbor directions
 spread as uniformly over the sphere as the distance constraints allow.
 
 ---
@@ -101,13 +102,16 @@ stored in `Structure.metrics`.
 | `Q4`, `Q6`, `Q8` | [0, 1] | Steinhardt bond-order parameters |
 | `graph_lcc` | [0, 1] | Largest connected-component fraction |
 | `graph_cc` | [0, 1] | Mean clustering coefficient |
+| `bond_strain_rms` | ≥ 0 | RMS relative deviation of bonded-pair distances from Pyykkö ideal lengths |
+| `ring_fraction` | [0, 1] | Fraction of atoms belonging to at least one ring (Union-Find detection) |
+| `charge_frustration` | ≥ 0 | Variance of Pauling electronegativity differences across bonded pairs |
 
 ---
 
 ## C++ acceleration layer
 
-The `_ext` sub-package contains two independently compiled pybind11 modules.
-Each can be absent without affecting the other.
+The `_ext` sub-package contains three independently compiled pybind11 modules.
+Each can be absent without affecting the others.
 
 ### `_relax_core` — `relax_positions`
 
@@ -124,8 +128,28 @@ per-cycle heap allocation.
 
 Computes ∂U/∂rᵢ for the angular repulsion potential used by `place_maxent`.
 
-- **N < 32**: O(N³) full neighbour search
-- **N ≥ 32**: O(N²) Cell List neighbour search (cell width = `cutoff`)
+- **N < 32**: O(N³) full neighbor search
+- **N ≥ 32**: O(N²) Cell List neighbor search (cell width = `cutoff`)
+
+### `_steinhardt_core` — `compute_steinhardt_per_atom`
+
+Computes per-atom Steinhardt Q_l bond-order parameters using a sparse
+neighbor list, replacing the dense O(N²) Python/scipy path.
+
+- **N < 64**: O(N²) full-pair loop
+- **N ≥ 64**: O(N·k) flat Cell List (k = mean neighbor count)
+
+Spherical harmonics are evaluated via the associated Legendre polynomial
+three-term recurrence with no scipy call in the hot loop.  The symmetry
+`|Y_l^{-m}|² = |Y_l^m|²` halves harmonic evaluations by computing only
+m = 0..l.  When absent, `_steinhardt_per_atom_sparse` provides the same
+O(N·k) complexity using `np.bincount` for accumulation.
+
+| Path | N=2000 | Speed-up vs dense Python |
+|---|:---:|:---:|
+| Dense Python (original) | ~35 s | 1× |
+| Sparse Python fallback | ~0.21 s | ~164× |
+| C++ (`_steinhardt_core`) | ~17 ms | **~2 000×** |
 
 ---
 
@@ -142,7 +166,7 @@ same loop logic.
 `n_success` and `n_samples` together control termination:
 
 - `n_samples > 0`, `n_success = None` — attempt exactly `n_samples` times
-  (original behaviour).
+  (original behavior).
 - `n_samples > 0`, `n_success = N` — stop at N successes or `n_samples`
   attempts, whichever comes first.
 - `n_samples = 0`, `n_success = N` — unlimited attempts; stop only when N

@@ -15,8 +15,8 @@ If none is available the package still installs and runs on pure Python/NumPy.
 Verify that the C++ extensions compiled successfully:
 
 ```python
-from pasted._ext import HAS_RELAX, HAS_MAXENT
-print(HAS_RELAX, HAS_MAXENT)   # True True  → acceleration active
+from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT
+print(HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT)   # True True True  → all acceleration active
 ```
 
 ---
@@ -39,7 +39,7 @@ pasted --n-atoms 10 --charge 0 --mult 1 \
 | `--mode gas` | Atoms placed uniformly at random inside a sphere or box |
 | `--mode chain` | Random-walk chain with branching and directional persistence |
 | `--mode shell` | Central atom surrounded by a coordination shell |
-| `--mode maxent` | Maximum-entropy placement — neighbours spread as uniformly as possible |
+| `--mode maxent` | Maximum-entropy placement — neighbors spread as uniformly as possible |
 
 ### Generating elongated chain structures
 
@@ -69,7 +69,8 @@ pasted --n-atoms 15 --charge 0 --mult 1 \
 ```
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
-`shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`.
+`shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
+`bond_strain_rms`, `ring_fraction`, `charge_frustration`.
 
 ### Shell mode with a fixed center atom
 

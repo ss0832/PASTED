@@ -50,6 +50,12 @@ if TYPE_CHECKING:
 from ._atoms import cov_radius_ang as _cov_radius_ang
 from ._atoms import pauling_electronegativity as _pauling_en
 
+# Optional C++ acceleration for Steinhardt Q_l
+from ._ext import HAS_STEINHARDT as _HAS_STEINHARDT
+
+if _HAS_STEINHARDT:
+    from ._ext import steinhardt_per_atom as _steinhardt_per_atom_cpp
+
 # ---------------------------------------------------------------------------
 # Low-level entropy helper
 # ---------------------------------------------------------------------------
@@ -145,6 +151,55 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
     return float(np.clip(1.5 * float(np.sum(lam**2)) / s**2 - 0.5, 0.0, 1.0))
 
 
+def _steinhardt_per_atom_sparse(
+    pts: np.ndarray,
+    dmat: np.ndarray,
+    l_values: list[int],
+    cutoff: float,
+) -> dict[str, np.ndarray]:
+    """Pure-Python sparse fallback for :func:`compute_steinhardt_per_atom`.
+
+    Computes spherical harmonics only for actual neighbour pairs
+    (d_ij <= cutoff) instead of the full N×N dense matrix, reducing the
+    number of ``sph_harm`` evaluations from O(N²) to O(N·k) where k is
+    the mean neighbour count.
+    """
+    n = len(pts)
+    result: dict[str, np.ndarray] = {}
+
+    mask = dmat <= cutoff
+    np.fill_diagonal(mask, False)
+    deg = mask.sum(axis=1).astype(float)
+    safe_deg = np.where(deg > 0, deg, 1.0)
+
+    # Sparse neighbour index: rows[k], cols[k] = atom i, neighbour j
+    rows, cols = np.where(mask)
+    if len(rows) == 0:
+        for l in l_values:  # noqa: E741
+            result[f"Q{l}"] = np.zeros(n, dtype=float)
+        return result
+
+    diff_nb = pts[rows] - pts[cols]                            # (n_bonds, 3)
+    r_nb = dmat[rows, cols]
+    safe_r_nb = np.where(r_nb > 0, r_nb, 1.0)
+    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]              # (n_bonds, 3)
+    theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))  # (n_bonds,)
+    phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])       # (n_bonds,)
+
+    for l in l_values:  # noqa: E741
+        qlm_sq = np.zeros(n, dtype=float)
+        for m in range(-l, l + 1):
+            ylm_nb = _sph_harm(l, m, phi_nb, theta_nb)             # (n_bonds,) complex
+            re_sum = np.bincount(rows, weights=ylm_nb.real, minlength=n)
+            im_sum = np.bincount(rows, weights=ylm_nb.imag, minlength=n)
+            avg_sq = (re_sum / safe_deg) ** 2 + (im_sum / safe_deg) ** 2
+            qlm_sq += avg_sq
+        ql = np.sqrt(4 * math.pi / (2 * l + 1) * qlm_sq)
+        result[f"Q{l}"] = np.where(deg > 0, ql, 0.0)
+
+    return result
+
+
 def compute_steinhardt_per_atom(
     pts: np.ndarray,
     dmat: np.ndarray,
@@ -152,6 +207,17 @@ def compute_steinhardt_per_atom(
     cutoff: float,
 ) -> dict[str, np.ndarray]:
     """Per-atom Steinhardt Q_l values.
+
+    When the C++ extension ``pasted._ext._steinhardt_core`` is available
+    (``HAS_STEINHARDT = True``), the computation uses a sparse neighbour
+    list built internally by the extension, evaluating spherical harmonics
+    only for actual neighbour pairs instead of the full N×N matrix.  This
+    gives an O(N·k) algorithm (k = mean neighbour count) versus O(N²) for
+    the dense fallback.
+
+    When the extension is absent the function falls back to a sparse
+    Python/NumPy/scipy implementation that provides the same O(N·k)
+    complexity using ``np.bincount`` for accumulation.
 
     Parameters
     ----------
@@ -169,33 +235,12 @@ def compute_steinhardt_per_atom(
     dict mapping ``"Q{l}"`` to a :class:`numpy.ndarray` of shape ``(n,)``.
     Atoms with no neighbours within *cutoff* are assigned Q_l = 0.
     """
-    n = len(pts)
-    result: dict[str, np.ndarray] = {}
-
-    mask = dmat <= cutoff
-    np.fill_diagonal(mask, False)
-    deg = mask.sum(axis=1).astype(float)  # (n,)
-    safe_deg = np.where(deg > 0, deg, 1.0)
-    mask_f = mask.astype(float)  # (n, n)
-
-    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
-    safe_r = np.where(dmat[:, :, np.newaxis] > 0, dmat[:, :, np.newaxis], 1.0)
-    d_hat = diff / safe_r  # (n, n, 3)
-
-    theta = np.arccos(np.clip(d_hat[:, :, 2], -1.0, 1.0))  # polar (n, n)
-    phi = np.arctan2(d_hat[:, :, 1], d_hat[:, :, 0])  # azimuthal (n, n)
-
-    for l in l_values:  # noqa: E741
-        qlm_sq = np.zeros(n, dtype=float)
-        for m in range(-l, l + 1):
-            ylm = _sph_harm(l, m, phi, theta)  # (n, n) complex
-            avg = (ylm * mask_f).sum(axis=1) / safe_deg  # (n,) complex
-            qlm_sq += np.abs(avg) ** 2
-
-        ql = np.sqrt(4 * math.pi / (2 * l + 1) * qlm_sq)
-        result[f"Q{l}"] = np.where(deg > 0, ql, 0.0)
-
-    return result
+    if _HAS_STEINHARDT:
+        raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(  # type: ignore[operator]
+            pts, cutoff, l_values
+        )
+        return raw
+    return _steinhardt_per_atom_sparse(pts, dmat, l_values, cutoff)
 
 
 def compute_steinhardt(
