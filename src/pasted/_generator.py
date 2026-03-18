@@ -567,6 +567,7 @@ class StructureGenerator:
                 self.w_atom,
                 self.w_spatial,
                 self._cutoff,
+                self.cov_scale,
             )
             passed = passes_filters(metrics, self._filters)
             if self.verbose:

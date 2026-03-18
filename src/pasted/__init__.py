@@ -40,15 +40,24 @@ import importlib.metadata
 from ._atoms import (
     ALL_METRICS,
     ATOMIC_NUMBERS,
+    PAULING_EN_FALLBACK,
     cov_radius_ang,
     default_element_pool,
     parse_element_spec,
     parse_filter,
+    pauling_electronegativity,
     validate_charge_mult,
 )
 from ._generator import Structure, StructureGenerator, generate
 from ._io import format_xyz
-from ._metrics import compute_all_metrics, compute_angular_entropy, compute_steinhardt_per_atom
+from ._metrics import (
+    compute_all_metrics,
+    compute_angular_entropy,
+    compute_bond_strain_rms,
+    compute_charge_frustration,
+    compute_ring_fraction,
+    compute_steinhardt_per_atom,
+)
 from ._optimizer import StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
 
@@ -67,7 +76,9 @@ __all__ = [
     # Atomic data / utilities
     "ATOMIC_NUMBERS",
     "ALL_METRICS",
+    "PAULING_EN_FALLBACK",
     "cov_radius_ang",
+    "pauling_electronegativity",
     "default_element_pool",
     "parse_element_spec",
     "parse_filter",
@@ -75,6 +86,9 @@ __all__ = [
     # Metric / IO utilities
     "compute_all_metrics",
     "compute_angular_entropy",
+    "compute_bond_strain_rms",
+    "compute_ring_fraction",
+    "compute_charge_frustration",
     "compute_steinhardt_per_atom",
     "format_xyz",
     # Placement utilities

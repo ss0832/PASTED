@@ -399,7 +399,8 @@ class StructureOptimizer:
         pts = np.array(positions)
         dmat = _squareform(_pdist(pts))
         metrics = compute_all_metrics(
-            atoms, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff
+            atoms, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff,
+            self.cov_scale,
         )
         f_current = _eval_objective(metrics, self.objective)
         per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, dmat, [6], self._cutoff)[
@@ -448,6 +449,7 @@ class StructureOptimizer:
                 self.w_atom,
                 self.w_spatial,
                 self._cutoff,
+                self.cov_scale,
             )
             f_new = _eval_objective(new_metrics, self.objective)
 

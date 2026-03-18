@@ -47,6 +47,9 @@ except ImportError:
 if TYPE_CHECKING:
     from ._placement import Vec3
 
+from ._atoms import cov_radius_ang as _cov_radius_ang
+from ._atoms import pauling_electronegativity as _pauling_en
+
 # ---------------------------------------------------------------------------
 # Low-level entropy helper
 # ---------------------------------------------------------------------------
@@ -260,6 +263,178 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
+# MM-level structural descriptors (added in 0.1.9)
+# ---------------------------------------------------------------------------
+
+
+def compute_bond_strain_rms(
+    atoms: list[str],
+    dmat: np.ndarray,
+    cov_scale: float,
+) -> float:
+    """RMS relative deviation of bonded-pair distances from their ideal lengths.
+
+    A pair (i, j) is considered *bonded* when its distance satisfies
+    ``d_ij < cov_scale × (r_i + r_j)``, where r values are Pyykkö
+    single-bond covalent radii.  The strain of each bonded pair is defined as
+
+    .. math::
+
+        \\varepsilon_{ij} = \\frac{d_{ij} - (r_i + r_j)}{r_i + r_j}
+
+    and the metric is the root-mean-square of all per-pair strains.  A value
+    of 0 indicates every bonded pair sits exactly at its ideal length; values
+    above ~0.1 indicate structurally distorted geometries.
+
+    Parameters
+    ----------
+    atoms:
+        Element symbols.
+    dmat:
+        Full n×n pairwise distance matrix (Å).
+    cov_scale:
+        Bond detection threshold scale factor.  A pair is counted as bonded
+        when ``d_ij < cov_scale × (r_i + r_j)``.
+
+    Returns
+    -------
+    float
+        RMS relative bond-length deviation.  Returns 0.0 when no bonded
+        pairs are detected.
+    """
+    n = len(atoms)
+    strains: list[float] = []
+    for i in range(n):
+        ri = _cov_radius_ang(atoms[i])
+        for j in range(i + 1, n):
+            ideal = ri + _cov_radius_ang(atoms[j])
+            if dmat[i, j] < cov_scale * ideal:
+                strains.append((dmat[i, j] - ideal) / ideal)
+    if not strains:
+        return 0.0
+    arr = np.array(strains, dtype=float)
+    return float(np.sqrt(np.mean(arr**2)))
+
+
+def compute_ring_fraction(
+    atoms: list[str],
+    dmat: np.ndarray,
+    cov_scale: float,
+) -> float:
+    """Fraction of atoms that belong to at least one ring.
+
+    Builds a bond graph using the same ``cov_scale × (r_i + r_j)`` threshold
+    as :func:`compute_bond_strain_rms`, then detects rings via a Union-Find
+    spanning-tree construction: every back-edge (an edge between two vertices
+    already in the same component) indicates a cycle, and both its endpoints
+    are marked as ring members.
+
+    Parameters
+    ----------
+    atoms:
+        Element symbols.
+    dmat:
+        Full n×n pairwise distance matrix (Å).
+    cov_scale:
+        Bond detection threshold scale factor.
+
+    Returns
+    -------
+    float
+        Fraction of atoms in at least one ring, in [0, 1].  Returns 0.0
+        for structures with fewer than three atoms or no cycles.
+    """
+    n = len(atoms)
+    if n < 3:
+        return 0.0
+
+    parent = list(range(n))
+    rank = [0] * n
+
+    def _find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]  # path compression
+            x = parent[x]
+        return x
+
+    def _union(a: int, b: int) -> bool:
+        """Union by rank.  Returns False (back-edge) when already in same set."""
+        ra, rb = _find(a), _find(b)
+        if ra == rb:
+            return False
+        if rank[ra] < rank[rb]:
+            ra, rb = rb, ra
+        parent[rb] = ra
+        if rank[ra] == rank[rb]:
+            rank[ra] += 1
+        return True
+
+    in_ring = [False] * n
+    for i in range(n):
+        ri = _cov_radius_ang(atoms[i])
+        for j in range(i + 1, n):
+            ideal = ri + _cov_radius_ang(atoms[j])
+            if dmat[i, j] < cov_scale * ideal:
+                if not _union(i, j):  # back-edge → cycle detected
+                    in_ring[i] = True
+                    in_ring[j] = True
+
+    return float(sum(in_ring) / n)
+
+
+def compute_charge_frustration(
+    atoms: list[str],
+    dmat: np.ndarray,
+    cov_scale: float,
+) -> float:
+    """Variance of Pauling electronegativity differences across bonded pairs.
+
+    For each bonded pair (i, j) — defined by the same
+    ``cov_scale × (r_i + r_j)`` threshold — the absolute electronegativity
+    difference ``|χ_i − χ_j|`` is computed.  The metric is the *variance*
+    of these differences over all bonded pairs.
+
+    A high value indicates a structure where electronegativity differences
+    are inconsistently distributed across bonds: some neighbours are well
+    matched while others are highly mismatched.  This is analogous to
+    *charge frustration* in disordered materials, where local charge
+    neutrality cannot be satisfied simultaneously at every site.
+
+    Noble gases and elements without a Pauling value use the module-level
+    fallback of 1.0 (see :func:`~pasted._atoms.pauling_electronegativity`).
+
+    Parameters
+    ----------
+    atoms:
+        Element symbols.
+    dmat:
+        Full n×n pairwise distance matrix (Å).
+    cov_scale:
+        Bond detection threshold scale factor.
+
+    Returns
+    -------
+    float
+        Variance of |Δχ| across all bonded pairs.  Returns 0.0 when fewer
+        than two bonded pairs are detected (variance is undefined for a
+        single observation).
+    """
+    n = len(atoms)
+    en = [_pauling_en(sym) for sym in atoms]
+    diffs: list[float] = []
+    for i in range(n):
+        ri = _cov_radius_ang(atoms[i])
+        for j in range(i + 1, n):
+            ideal = ri + _cov_radius_ang(atoms[j])
+            if dmat[i, j] < cov_scale * ideal:
+                diffs.append(abs(en[i] - en[j]))
+    if len(diffs) < 2:
+        return 0.0
+    arr = np.array(diffs, dtype=float)
+    return float(np.var(arr))
+
+
+# ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
 
@@ -271,8 +446,9 @@ def compute_all_metrics(
     w_atom: float,
     w_spatial: float,
     cutoff: float,
+    cov_scale: float = 1.0,
 ) -> dict[str, float]:
-    """Compute all ten disorder metrics for a single structure.
+    """Compute all thirteen disorder metrics for a single structure.
 
     The pairwise distance matrix is constructed once and shared across all
     individual metric functions.
@@ -292,6 +468,10 @@ def compute_all_metrics(
         Weight of ``H_spatial`` in ``H_total``.
     cutoff:
         Distance cutoff (Å) for Steinhardt and graph metrics.
+    cov_scale:
+        Bond detection threshold scale factor for the MM-level descriptors
+        :func:`compute_bond_strain_rms`, :func:`compute_ring_fraction`, and
+        :func:`compute_charge_frustration`.  Default: ``1.0``.
 
     Returns
     -------
@@ -311,6 +491,9 @@ def compute_all_metrics(
         "shape_aniso": compute_shape_anisotropy(pts),
         **compute_steinhardt(pts, dmat, [4, 6, 8], cutoff),
         **compute_graph_metrics(dmat, cutoff),
+        "bond_strain_rms": compute_bond_strain_rms(atoms, dmat, cov_scale),
+        "ring_fraction": compute_ring_fraction(atoms, dmat, cov_scale),
+        "charge_frustration": compute_charge_frustration(atoms, dmat, cov_scale),
     }
 
 
