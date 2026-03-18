@@ -41,9 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `[project.optional-dependencies].dev`.
 - `setup.py` (new file): declares two `Pybind11Extension` entries,
   one per C++ source file.
-- `src/pasted/_core.cpp` を削除し `src/pasted/_ext/_relax.cpp` /
-  `_maxent.cpp` に分割。モジュール名も `_pasted_core` →
-  `_ext._relax_core` / `_ext._maxent_core` に変更。
 - Pure-Python fallback for `relax_positions` now pre-creates
   `np.random.default_rng(seed)` once before the relaxation loop instead of
   calling `np.random.default_rng()` (unseeded) inside the loop on every
