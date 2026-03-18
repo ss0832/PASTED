@@ -6,6 +6,9 @@
 pip install pasted
 ```
 
+Requires Python 3.10 or later. Python 3.10, 3.11, 3.12, and 3.13 are
+officially supported and tested in CI.
+
 A C++17 compiler is required to build the optional acceleration extensions.
 If none is available the package still installs and runs on pure Python/NumPy.
 
