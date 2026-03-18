@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-03-18
+
+### Added
+- **Python 3.13 officially supported.**  `cp313` wheels are now built and
+  tested in CI.  The C++ extensions (`_relax_core`, `_maxent_core`) compile
+  and load correctly under Python 3.13.
+
+### Fixed
+- `__version__` is now derived dynamically from package metadata via
+  `importlib.metadata.version("pasted")` instead of being hardcoded in
+  `__init__.py`.  This eliminates the version skew that caused
+  `pasted.__version__` to report `"0.1.4"` even after upgrading to a
+  newer release.  Falls back to `"unknown"` when the package is not
+  installed (e.g. running directly from the source tree without `pip install`).
+
+### Changed
+- `pyproject.toml`: version bumped to `0.1.8`.
+
 ## [0.1.7] - 2026-03-18
 
 ### Added
