@@ -26,7 +26,6 @@ from ._atoms import _cov_radius_ang
 # HAS_RELAX / HAS_MAXENT are set by _ext/__init__.py; False when the
 # corresponding .so is absent (no compiler, pure-source install, etc.).
 # No user-facing behaviour changes in either case.
-
 from ._ext import HAS_MAXENT, HAS_RELAX
 from ._ext import angular_repulsion_gradient as _cpp_angular_gradient
 from ._ext import relax_positions as _cpp_relax_positions
