@@ -50,7 +50,7 @@ from ._metrics import compute_all_metrics, compute_angular_entropy, compute_stei
 from ._optimizer import StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
 
-__version__ = "0.1.4"
+__version__ = "0.1.8"
 
 __all__ = [
     # High-level API
