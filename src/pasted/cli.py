@@ -195,7 +195,27 @@ examples
     )
 
     sg = p.add_argument_group("sampling")
-    sg.add_argument("--n-samples", type=int, default=1)
+    sg.add_argument(
+        "--n-samples",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Maximum number of placement attempts (default: 1). "
+            "Use 0 for unlimited attempts — requires --n-success to be set."
+        ),
+    )
+    sg.add_argument(
+        "--n-success",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Stop as soon as N structures pass all filters (default: off). "
+            "Combines with --n-samples as an upper bound on attempts. "
+            "Use --n-samples 0 with --n-success N for unlimited attempts."
+        ),
+    )
     sg.add_argument("--seed", type=int, default=None)
 
     xg = p.add_argument_group("metrics")
@@ -390,6 +410,7 @@ def _run_sample_mode(
             relax_cycles=args.relax_cycles,
             add_hydrogen=not args.no_add_hydrogen,
             n_samples=args.n_samples,
+            n_success=args.n_success,
             seed=args.seed,
             n_bins=args.n_bins,
             w_atom=args.w_atom,
@@ -402,13 +423,21 @@ def _run_sample_mode(
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    structures = gen.generate()
-    xyz_blocks = [s.to_xyz() for s in structures]
-    output_text = "\n".join(xyz_blocks) + ("\n" if xyz_blocks else "")
-    _write_output(output_text, args.output)
+    # Use stream() so each passing structure is written immediately.
+    # This way a Ctrl-C mid-run still produces valid XYZ output up to that point.
+    n_written = 0
+    for s in gen.stream():
+        xyz = s.to_xyz() + "\n"
+        if args.output:
+            with open(args.output, "a" if n_written > 0 else "w") as fh:
+                fh.write(xyz)
+        else:
+            sys.stdout.write(xyz)
+        n_written += 1
+
     if args.output:
         print(
-            f"[info] {len(structures)} structure(s) written to {args.output!r}",
+            f"[info] {n_written} structure(s) written to {args.output!r}",
             file=sys.stderr,
         )
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.1.6"
+version = "0.1.7"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
 license = "MIT"
@@ -59,6 +59,7 @@ ignore = [
     "PLR2004",   # magic-value comparisons are fine in scientific code
     "PLR0912",   # too-many-branches — intentional in generator loop
     "PLR0913",   # too-many-arguments — intentional in StructureGenerator
+    "PLR0915",   # too-many-statements — intentional in StructureGenerator.__init__
     "B006",      # mutable default args — we use None + defaults inside
 ]
 

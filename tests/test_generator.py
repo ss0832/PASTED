@@ -335,3 +335,94 @@ class TestGenerateFunction:
         assert len(r_func) == len(r_class)
         for sf, sc in zip(r_func, r_class, strict=True):
             assert sf.atoms == sc.atoms
+
+
+# ---------------------------------------------------------------------------
+# n_success and stream()
+# ---------------------------------------------------------------------------
+
+
+class TestNSuccess:
+    def _gen(self, n_success: int | None, n_samples: int) -> StructureGenerator:
+        return StructureGenerator(
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=n_samples,
+            n_success=n_success,
+            seed=0,
+        )
+
+    def test_n_success_stops_early(self) -> None:
+        """stream() stops as soon as n_success structures have been yielded."""
+        gen = self._gen(n_success=2, n_samples=200)
+        results = list(gen.stream())
+        assert len(results) == 2
+
+    def test_n_success_returns_partial_on_exhaustion(self) -> None:
+        """When n_samples is exhausted before n_success, return what was collected."""
+        gen = self._gen(n_success=1000, n_samples=3)
+        results = list(gen.stream())
+        assert len(results) <= 3
+
+    def test_n_success_none_uses_n_samples(self) -> None:
+        """Without n_success, stream() behaves identically to the original generate()."""
+        gen = self._gen(n_success=None, n_samples=5)
+        via_stream = list(gen.stream())
+        via_generate = gen.generate()
+        assert len(via_stream) == len(via_generate)
+        for a, b in zip(via_stream, via_generate, strict=True):
+            assert a.atoms == b.atoms
+
+    def test_n_samples_zero_requires_n_success(self) -> None:
+        """n_samples=0 without n_success must raise ValueError."""
+        with pytest.raises(ValueError, match="n_success"):
+            StructureGenerator(
+                n_atoms=6, charge=0, mult=1,
+                mode="gas", region="sphere:6",
+                elements="6,7,8",
+                n_samples=0,
+            )
+
+    def test_n_samples_zero_unlimited(self) -> None:
+        """n_samples=0 with n_success runs until n_success is reached."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1,
+            mode="gas", region="sphere:6",
+            elements="6,7,8",
+            n_samples=0,
+            n_success=3,
+            seed=1,
+        )
+        results = list(gen.stream())
+        assert len(results) == 3
+
+    def test_sample_index_sequential_with_n_success(self) -> None:
+        """sample_index must be 1-based and sequential even when stopping early."""
+        gen = self._gen(n_success=3, n_samples=200)
+        results = list(gen.stream())
+        for expected, s in enumerate(results, start=1):
+            assert s.sample_index == expected
+
+    def test_generate_delegates_to_stream(self) -> None:
+        """generate() and stream() must yield the same structures in the same order."""
+        gen = self._gen(n_success=3, n_samples=100)
+        via_stream = list(gen.stream())
+        via_generate = gen.generate()
+        assert len(via_stream) == len(via_generate)
+        for a, b in zip(via_stream, via_generate, strict=True):
+            assert a.atoms == b.atoms
+
+    def test_stream_write_xyz(self, tmp_path: Path) -> None:
+        """Each yielded structure should be writable to XYZ immediately."""
+        out = tmp_path / "stream.xyz"
+        gen = self._gen(n_success=2, n_samples=100)
+        for s in gen.stream():
+            s.write_xyz(str(out))
+        lines = out.read_text().splitlines()
+        # Each XYZ block starts with atom count; we should have 2 blocks
+        atom_count_lines = [ln for ln in lines if ln.strip().isdigit()]
+        assert len(atom_count_lines) == 2

@@ -195,7 +195,21 @@ class StructureGenerator:
         Automatically append H atoms when H is in the pool but the sampled
         composition contains none (default: ``True``).
     n_samples:
-        Number of structures to attempt (default: 1).
+        Maximum number of placement attempts (default: 1).
+        Use ``0`` to allow unlimited attempts (only valid when *n_success*
+        is also set, otherwise a :exc:`ValueError` is raised).
+    n_success:
+        Target number of structures that must pass all filters before
+        generation stops (default: ``None``).
+
+        - ``None`` → generate exactly *n_samples* attempts and return all
+          that passed (original behaviour).
+        - ``N > 0`` with ``n_samples > 0`` → stop as soon as *N* structures
+          pass **or** *n_samples* attempts are exhausted, whichever comes
+          first.  Returns the structures collected so far with a warning if
+          fewer than *N* were found.
+        - ``N > 0`` with ``n_samples = 0`` → unlimited attempts; stop only
+          when *N* structures have passed.
     seed:
         Random seed for reproducibility (``None`` → non-deterministic).
     n_bins:
@@ -262,6 +276,7 @@ class StructureGenerator:
         relax_cycles: int = 1500,
         add_hydrogen: bool = True,
         n_samples: int = 1,
+        n_success: int | None = None,
         seed: int | None = None,
         n_bins: int = 20,
         w_atom: float = 0.5,
@@ -293,11 +308,21 @@ class StructureGenerator:
         self.relax_cycles = relax_cycles
         self._add_hydrogen = add_hydrogen
         self.n_samples = n_samples
+        self.n_success = n_success
         self.seed = seed
         self.n_bins = n_bins
         self.w_atom = w_atom
         self.w_spatial = w_spatial
         self.verbose = verbose
+
+        # ── n_samples / n_success validation ────────────────────────────
+        if n_samples == 0 and n_success is None:
+            raise ValueError(
+                "n_samples=0 (unlimited) requires n_success to be set; "
+                "otherwise generation would run forever."
+            )
+        if n_success is not None and n_success < 1:
+            raise ValueError(f"n_success must be >= 1; got {n_success}.")
 
         # ── Element pool ────────────────────────────────────────────────
         if elements is None:
@@ -446,16 +471,43 @@ class StructureGenerator:
     # Generation                                                           #
     # ------------------------------------------------------------------ #
 
-    def generate(self) -> list[Structure]:
-        """Generate structures and return those that pass all filters.
+    def stream(self) -> Iterator[Structure]:
+        """Generate structures one by one, yielding each that passes all filters.
+
+        Unlike :meth:`generate`, structures are yielded immediately as they
+        pass, so callers can write output or stop early without waiting for
+        all attempts to complete.
+
+        Respects both *n_samples* (maximum attempts) and *n_success* (target
+        number of passing structures):
+
+        - If *n_success* is set, the iterator stops as soon as that many
+          structures have been yielded — even if *n_samples* attempts have
+          not been exhausted.
+        - If *n_samples* is ``0`` (unlimited), the iterator runs until
+          *n_success* structures have been yielded.
+        - If *n_samples* attempts are exhausted before *n_success* is
+          reached, a warning is emitted to *stderr* and the iterator ends.
 
         Each call creates a fresh :class:`random.Random` seeded with
         ``self.seed``, so repeated calls with the same seed are reproducible.
 
-        Returns
-        -------
-        list[Structure]
-            Structures that passed all filters, in generation order.
+        Yields
+        ------
+        Structure
+            Each structure that passed all filters, in generation order.
+
+        Examples
+        --------
+        Write structures to a file as they are found::
+
+            gen = StructureGenerator(
+                n_atoms=12, charge=0, mult=1,
+                mode="gas", region="sphere:9",
+                elements="1-30", n_success=10, n_samples=500, seed=42,
+            )
+            for s in gen.stream():
+                s.write_xyz("out.xyz")
         """
         rng = random.Random(self.seed)
 
@@ -466,11 +518,21 @@ class StructureGenerator:
             )
 
         do_add_h = ("H" in self._element_pool) and self._add_hydrogen
-        results: list[Structure] = []
-        n_passed = n_invalid = 0
-        width = len(str(self.n_samples))
+        n_passed = n_invalid = n_attempted = 0
+        unlimited = (self.n_samples == 0)
+        denom = "∞" if unlimited else str(self.n_samples)
+        width = len(denom)
 
-        for i in range(self.n_samples):
+        while True:
+            # Stop conditions
+            if not unlimited and n_attempted >= self.n_samples:
+                break
+            if self.n_success is not None and n_passed >= self.n_success:
+                break
+
+            i = n_attempted
+            n_attempted += 1
+
             atoms_list = [rng.choice(self._element_pool) for _ in range(self.n_atoms)]
             if do_add_h:
                 atoms_list = add_hydrogen(atoms_list, rng)
@@ -479,7 +541,7 @@ class StructureGenerator:
             if not ok:
                 n_invalid += 1
                 if self.verbose:
-                    self._log(f"[{i + 1:>{width}}/{self.n_samples}:invalid] {val_msg}")
+                    self._log(f"[{i + 1:>{width}}/{denom}:invalid] {val_msg}")
                 continue
 
             try:
@@ -494,7 +556,7 @@ class StructureGenerator:
             )
             if not converged and self.verbose:
                 self._log(
-                    f"[{i + 1:>{width}}/{self.n_samples}:warn] "
+                    f"[{i + 1:>{width}}/{denom}:warn] "
                     f"relax_positions did not converge in {self.relax_cycles} cycles."
                 )
 
@@ -510,47 +572,63 @@ class StructureGenerator:
             if self.verbose:
                 flag = "PASS" if passed else "skip"
                 self._log(
-                    f"[{i + 1:>{width}}/{self.n_samples}:{flag}]  "
+                    f"[{i + 1:>{width}}/{denom}:{flag}]  "
                     + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
                 )
             if not passed:
                 continue
 
             n_passed += 1
-            results.append(
-                Structure(
-                    atoms=atoms_out,
-                    positions=positions,
-                    charge=self.charge,
-                    mult=self.mult,
-                    metrics=metrics,
-                    mode=self.mode,
-                    sample_index=n_passed,
-                    center_sym=center_sym if self.mode == "shell" else None,
-                    seed=self.seed,
-                )
+            yield Structure(
+                atoms=atoms_out,
+                positions=positions,
+                charge=self.charge,
+                mult=self.mult,
+                metrics=metrics,
+                mode=self.mode,
+                sample_index=n_passed,
+                center_sym=center_sym if self.mode == "shell" else None,
+                seed=self.seed,
             )
 
         if self.verbose:
-            n_skip = self.n_samples - n_passed - n_invalid
+            n_skip = n_attempted - n_passed - n_invalid
             self._log(
-                f"[summary] attempted={self.n_samples}  passed={n_passed}  "
+                f"[summary] attempted={n_attempted}  passed={n_passed}  "
                 f"filtered_out={n_skip}  invalid_charge_mult={n_invalid}"
             )
-            if not results:
+            if self.n_success is not None and n_passed < self.n_success:
+                self._log(
+                    f"[warning] Reached attempt limit ({n_attempted}) before collecting "
+                    f"n_success={self.n_success} structures ({n_passed} collected). "
+                    f"Try increasing n_samples or relaxing filters."
+                )
+            elif n_passed == 0:
                 self._log(
                     "[warning] No structures passed. Try relaxing filters or increasing n_samples."
                 )
 
-        return results
+    def generate(self) -> list[Structure]:
+        """Generate structures and return those that pass all filters.
+
+        Delegates to :meth:`stream` and collects results into a list.
+        Each call creates a fresh :class:`random.Random` seeded with
+        ``self.seed``, so repeated calls with the same seed are reproducible.
+
+        Returns
+        -------
+        list[Structure]
+            Structures that passed all filters, in generation order.
+        """
+        return list(self.stream())
 
     # ------------------------------------------------------------------ #
     # Iteration support                                                    #
     # ------------------------------------------------------------------ #
 
     def __iter__(self) -> Iterator[Structure]:
-        """Iterate over generated structures (calls :meth:`generate` once)."""
-        return iter(self.generate())
+        """Iterate over generated structures (delegates to :meth:`stream`)."""
+        return self.stream()
 
     def __repr__(self) -> str:
         return (
@@ -558,6 +636,7 @@ class StructureGenerator:
             f"n_atoms={self.n_atoms}, mode={self.mode!r}, "
             f"charge={self.charge:+d}, mult={self.mult}, "
             f"n_samples={self.n_samples}, "
+            f"n_success={self.n_success}, "
             f"pool_size={len(self._element_pool)})"
         )
 
@@ -586,6 +665,7 @@ def generate(
     relax_cycles: int = 1500,
     add_hydrogen: bool = True,
     n_samples: int = 1,
+    n_success: int | None = None,
     seed: int | None = None,
     n_bins: int = 20,
     w_atom: float = 0.5,
@@ -640,6 +720,7 @@ def generate(
         relax_cycles=relax_cycles,
         add_hydrogen=add_hydrogen,
         n_samples=n_samples,
+        n_success=n_success,
         seed=seed,
         n_bins=n_bins,
         w_atom=w_atom,
