@@ -86,7 +86,7 @@ jobs:
         run: python -m build
 
       - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: dist-${{ github.sha }}
           path: dist/
@@ -96,9 +96,13 @@ jobs:
     name: Build & deploy docs
     needs: [test, typecheck]
     runs-on: ubuntu-latest
-    # Deploy only on pushes to main; PRs only build (no deploy)
     permissions:
-      contents: write
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
 
@@ -113,10 +117,13 @@ jobs:
       - name: Build Sphinx docs
         run: sphinx-build -b html docs/ docs/_build/html --keep-going
 
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs/_build/html
-
+        id: deployment
+        uses: actions/deploy-pages@v4
