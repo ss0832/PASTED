@@ -25,6 +25,8 @@ pure-Python implementations in _placement.py when False.
 
 from __future__ import annotations
 
+from typing import Any
+
 # ---------------------------------------------------------------------------
 # _relax_core  — repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
@@ -32,6 +34,7 @@ try:
     from ._relax_core import relax_positions  # type: ignore[import-untyped]
     HAS_RELAX: bool = True
 except ImportError:
+    relax_positions: Any = None  # type: ignore[no-redef]
     HAS_RELAX = False
 
 # ---------------------------------------------------------------------------
@@ -41,6 +44,7 @@ try:
     from ._maxent_core import angular_repulsion_gradient  # type: ignore[import-untyped]
     HAS_MAXENT: bool = True
 except ImportError:
+    angular_repulsion_gradient: Any = None  # type: ignore[no-redef]
     HAS_MAXENT = False
 
 __all__ = [
