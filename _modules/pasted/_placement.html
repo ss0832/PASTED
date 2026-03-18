@@ -1,0 +1,978 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pasted._placement &#8212; PASTED 0.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="../../_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="../../_static/documentation_options.js?v=ff6474e5"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/pasted/_placement';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">PASTED</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick start</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api/index.html">API reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/generator.html">StructureGenerator &amp; generate()</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optimizer.html">StructureOptimizer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/placement.html">Placement functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/metrics.html">Metric functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/atoms.html">Atom utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/io.html">IO utilities</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cli.html">CLI reference</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../architecture.html">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/ss0832/PASTED" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/ss0832/PASTED/issues/new?title=Issue%20on%20page%20%2F_modules/pasted/_placement.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <h1>Source code for pasted._placement</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">pasted._placement</span>
+<span class="sd">=================</span>
+<span class="sd">Atom-placement algorithms (gas / chain / shell) and post-placement</span>
+<span class="sd">repulsion relaxation.  No file I/O; no metrics.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._atoms</span><span class="w"> </span><span class="kn">import</span> <span class="n">_cov_radius_ang</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Optional C++ acceleration  (pasted._ext)</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Each hotspot is a separate compiled module under pasted._ext so they can</span>
+<span class="c1"># be built and updated independently:</span>
+<span class="c1">#</span>
+<span class="c1">#   _ext._relax_core   → relax_positions()        (all placement modes)</span>
+<span class="c1">#   _ext._maxent_core  → angular_repulsion_gradient() (maxent only)</span>
+<span class="c1">#</span>
+<span class="c1"># HAS_RELAX / HAS_MAXENT are set by _ext/__init__.py; False when the</span>
+<span class="c1"># corresponding .so is absent (no compiler, pure-source install, etc.).</span>
+<span class="c1"># No user-facing behaviour changes in either case.</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._ext</span><span class="w"> </span><span class="kn">import</span> <span class="n">HAS_MAXENT</span><span class="p">,</span> <span class="n">HAS_RELAX</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._ext</span><span class="w"> </span><span class="kn">import</span> <span class="n">angular_repulsion_gradient</span> <span class="k">as</span> <span class="n">_cpp_angular_gradient</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._ext</span><span class="w"> </span><span class="kn">import</span> <span class="n">relax_positions</span> <span class="k">as</span> <span class="n">_cpp_relax_positions</span>
+
+<span class="c1"># Type alias used throughout this module and exported for type annotations.</span>
+<span class="n">Vec3</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Low-level geometry helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Vec3</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Uniform random point on the unit sphere (Marsaglia rejection method).&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">r2</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span> <span class="o">*</span> <span class="n">y</span> <span class="o">+</span> <span class="n">z</span> <span class="o">*</span> <span class="n">z</span>
+        <span class="k">if</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">r2</span> <span class="o">&lt;=</span> <span class="mf">1.0</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">r2</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">x</span> <span class="o">/</span> <span class="n">r</span><span class="p">,</span> <span class="n">y</span> <span class="o">/</span> <span class="n">r</span><span class="p">,</span> <span class="n">z</span> <span class="o">/</span> <span class="n">r</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sample_sphere</span><span class="p">(</span><span class="n">radius</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Vec3</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Uniform random point inside a sphere of *radius*.&quot;&quot;&quot;</span>
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">radius</span><span class="p">,</span> <span class="n">radius</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span> <span class="o">*</span> <span class="n">y</span> <span class="o">+</span> <span class="n">z</span> <span class="o">*</span> <span class="n">z</span> <span class="o">&lt;=</span> <span class="n">radius</span> <span class="o">*</span> <span class="n">radius</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_sample_box</span><span class="p">(</span><span class="n">lx</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">ly</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">lz</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Vec3</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Uniform random point inside an axis-aligned box centred at the origin.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">lx</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">lx</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">ly</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">ly</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
+        <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="o">-</span><span class="n">lz</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">lz</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
+    <span class="p">)</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Post-placement repulsion relaxation</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="relax_positions">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.relax_positions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">relax_positions</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">positions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">],</span>
+    <span class="n">cov_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">max_cycles</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">500</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve interatomic distance violations by iterative pair repulsion.</span>
+
+<span class="sd">    For every pair (i, j) whose distance falls below</span>
+<span class="sd">    ``cov_scale × (r_i + r_j)`` (Pyykkö single-bond covalent radii), both</span>
+<span class="sd">    atoms are displaced along their connecting vector by half the deficit.</span>
+<span class="sd">    The loop repeats until no violations remain or *max_cycles* is exhausted.</span>
+
+<span class="sd">    When the compiled C++ extension (``pasted._pasted_core``) is available</span>
+<span class="sd">    the heavy loop runs in native code; otherwise the pure-Python/NumPy</span>
+<span class="sd">    fallback is used transparently.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    atoms:</span>
+<span class="sd">        Element symbols, one per atom.</span>
+<span class="sd">    positions:</span>
+<span class="sd">        Initial Cartesian coordinates (Å).</span>
+<span class="sd">    cov_scale:</span>
+<span class="sd">        Scale factor applied to the sum of covalent radii.</span>
+<span class="sd">    max_cycles:</span>
+<span class="sd">        Maximum number of relaxation iterations.</span>
+<span class="sd">    seed:</span>
+<span class="sd">        Optional integer seed for the RNG used when two atoms are exactly</span>
+<span class="sd">        coincident (distance &lt; 1e-10 Å).  ``None`` → non-deterministic.</span>
+<span class="sd">        Pass the generator&#39;s master seed here for full reproducibility.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (relaxed_positions, converged)</span>
+<span class="sd">        *converged* is ``False`` only when *max_cycles* was reached with</span>
+<span class="sd">        violations still present; the structure is still returned and usable.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">positions</span><span class="p">,</span> <span class="kc">True</span>
+
+    <span class="n">pts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>          <span class="c1"># (n, 3)</span>
+    <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">_cov_radius_ang</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">])</span>  <span class="c1"># (n,)</span>
+
+    <span class="c1"># ── C++ fast path ────────────────────────────────────────────────────</span>
+    <span class="k">if</span> <span class="n">HAS_RELAX</span><span class="p">:</span>
+        <span class="n">seed_int</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">if</span> <span class="n">seed</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="nb">int</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
+        <span class="n">pts_out</span><span class="p">,</span> <span class="n">converged</span> <span class="o">=</span> <span class="n">_cpp_relax_positions</span><span class="p">(</span>
+            <span class="n">pts</span><span class="p">,</span> <span class="n">radii</span><span class="p">,</span> <span class="n">cov_scale</span><span class="p">,</span> <span class="n">max_cycles</span><span class="p">,</span> <span class="n">seed_int</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">pts_out</span><span class="p">],</span> <span class="n">converged</span>
+
+    <span class="c1"># ── Pure-Python / NumPy fallback ─────────────────────────────────────</span>
+    <span class="n">thresh</span> <span class="o">=</span> <span class="n">cov_scale</span> <span class="o">*</span> <span class="p">(</span><span class="n">radii</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">+</span> <span class="n">radii</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:])</span>  <span class="c1"># (n, n)</span>
+    <span class="n">rng_np</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>  <span class="c1"># seeded; used only for coincident atoms</span>
+
+    <span class="n">converged</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">max_cycles</span><span class="p">):</span>
+        <span class="n">diff</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>  <span class="c1"># (n, n, 3)</span>
+        <span class="n">dmat</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">diff</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>                  <span class="c1"># (n, n)</span>
+        <span class="n">np</span><span class="o">.</span><span class="n">fill_diagonal</span><span class="p">(</span><span class="n">dmat</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+
+        <span class="n">viol_mask</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">triu</span><span class="p">(</span><span class="n">dmat</span> <span class="o">&lt;</span> <span class="n">thresh</span><span class="p">,</span> <span class="n">k</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">viol_mask</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">converged</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="k">break</span>
+
+        <span class="n">vi</span><span class="p">,</span> <span class="n">vj</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">viol_mask</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">vi</span><span class="p">,</span> <span class="n">vj</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">dmat</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">d</span> <span class="o">&lt;</span> <span class="mf">1e-10</span><span class="p">:</span>  <span class="c1"># coincident atoms: push in a random direction</span>
+                <span class="n">v_raw</span> <span class="o">=</span> <span class="n">rng_np</span><span class="o">.</span><span class="n">standard_normal</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">v_raw</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">v_raw</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">v</span> <span class="o">=</span> <span class="n">diff</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">/</span> <span class="n">d</span>  <span class="c1"># unit vector from j → i</span>
+            <span class="n">push</span> <span class="o">=</span> <span class="p">(</span><span class="n">thresh</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span> <span class="o">-</span> <span class="n">d</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>
+            <span class="n">pts</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="n">push</span> <span class="o">*</span> <span class="n">v</span>
+            <span class="n">pts</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">-=</span> <span class="n">push</span> <span class="o">*</span> <span class="n">v</span>
+
+    <span class="k">return</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">],</span> <span class="n">converged</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Hydrogen augmentation</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="add_hydrogen">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.add_hydrogen">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">add_hydrogen</span><span class="p">(</span><span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Append hydrogen atoms when H is in the pool but absent from *atoms*.</span>
+
+<span class="sd">    The number of H atoms added is:</span>
+<span class="sd">    ``n_H = 1 + round(uniform(0, 1) × n_current × 1.2)``</span>
+
+<span class="sd">    The original list is not modified; a new list is returned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;H&quot;</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">atoms</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+    <span class="n">n_h</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">+</span> <span class="nb">round</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">*</span> <span class="n">n</span> <span class="o">*</span> <span class="mf">1.2</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">atoms</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;H&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">n_h</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Placement: gas</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="place_gas">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.place_gas">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">place_gas</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">region</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Place all atoms uniformly at random inside *region*.</span>
+
+<span class="sd">    No clash checking is performed — call :func:`relax_positions` afterwards.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    atoms:</span>
+<span class="sd">        Element symbols.</span>
+<span class="sd">    region:</span>
+<span class="sd">        ``&quot;sphere:R&quot;`` | ``&quot;box:L&quot;`` | ``&quot;box:LX,LY,LZ&quot;``</span>
+<span class="sd">    rng:</span>
+<span class="sd">        Seeded random-number generator.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (atoms, positions)</span>
+<span class="sd">        Always ``len(atoms)`` positions.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">    ValueError</span>
+<span class="sd">        On unrecognised region spec.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">region</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;sphere:&quot;</span><span class="p">):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">sampler</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Vec3</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_sample_sphere</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">region</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;box:&quot;</span><span class="p">):</span>
+        <span class="n">dims</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">dims</span> <span class="o">*=</span> <span class="mi">3</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">sampler</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Vec3</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">_sample_box</span><span class="p">(</span><span class="n">dims</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dims</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">dims</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">rng</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown region spec: </span><span class="si">{</span><span class="n">region</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">atoms</span><span class="p">,</span> <span class="p">[</span><span class="n">sampler</span><span class="p">()</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">]</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Placement: chain</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="place_chain">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.place_chain">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">place_chain</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">bond_lo</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">bond_hi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">branch_prob</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">persist</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">,</span>
+    <span class="n">chain_bias</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Random-walk atom-chain growth with branching and directional persistence.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    atoms:</span>
+<span class="sd">        Element symbols (order is preserved).</span>
+<span class="sd">    bond_lo, bond_hi:</span>
+<span class="sd">        Bond-length range (Å).</span>
+<span class="sd">    branch_prob:</span>
+<span class="sd">        Probability that an atom becomes a new branch tip rather than</span>
+<span class="sd">        replacing the existing tip (0 = linear, 1 = fully branched tree).</span>
+<span class="sd">    persist:</span>
+<span class="sd">        Directional persistence ∈ [0, 1].  A new step direction *d* is</span>
+<span class="sd">        accepted only when ``dot(d, prev_dir) ≥ persist − 1``.</span>
+
+<span class="sd">        - 0.0 → fully random (may self-tangle)</span>
+<span class="sd">        - 0.5 → rear 120° cone excluded  *(default)*</span>
+<span class="sd">        - 1.0 → front hemisphere only, nearly straight chain</span>
+
+<span class="sd">    rng:</span>
+<span class="sd">        Seeded random-number generator.</span>
+<span class="sd">    chain_bias:</span>
+<span class="sd">        Global-axis drift strength ∈ [0, 1] (default: 0.0).</span>
+
+<span class="sd">        After the first bond is placed its direction becomes the *bias axis*.</span>
+<span class="sd">        Every subsequent step direction is blended toward that axis before</span>
+<span class="sd">        normalisation::</span>
+
+<span class="sd">            d_biased = d + axis * chain_bias</span>
+<span class="sd">            d_final  = d_biased / ||d_biased||</span>
+
+<span class="sd">        - 0.0 → no bias; behaviour identical to previous versions</span>
+<span class="sd">        - 0.3 → moderate elongation; shape_aniso ≥ 0.5 rate rises from</span>
+<span class="sd">                ~40% to ~70% for n = 20 atoms</span>
+<span class="sd">        - 1.0 → strong elongation; nearly rod-like for small n</span>
+
+<span class="sd">        ``chain_bias`` and ``persist`` are complementary: ``persist`` controls</span>
+<span class="sd">        local turn angles between consecutive bonds; ``chain_bias`` imposes a</span>
+<span class="sd">        global preferred axis regardless of chain length.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (atoms, positions)</span>
+<span class="sd">        Always ``len(atoms)`` positions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">positions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]</span>
+    <span class="n">tip_dirs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span>
+    <span class="n">tips</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="c1"># The bias axis is set from the first bond placed (atom 0 → atom 1).</span>
+    <span class="c1"># Until then it is None and no bias is applied.</span>
+    <span class="n">bias_axis</span><span class="p">:</span> <span class="n">Vec3</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)):</span>
+        <span class="n">tip</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">tips</span><span class="p">)</span>
+        <span class="n">tp</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">tip</span><span class="p">]</span>
+        <span class="n">prev_dir</span> <span class="o">=</span> <span class="n">tip_dirs</span><span class="p">[</span><span class="n">tip</span><span class="p">]</span>
+        <span class="n">bl</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">bond_lo</span><span class="p">,</span> <span class="n">bond_hi</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">prev_dir</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">persist</span> <span class="o">==</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="n">persist</span> <span class="o">-</span> <span class="mf">1.0</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">200</span><span class="p">):</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">prev_dir</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">prev_dir</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">prev_dir</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="o">&gt;=</span> <span class="n">threshold</span><span class="p">:</span>
+                    <span class="k">break</span>
+                <span class="n">d</span> <span class="o">=</span> <span class="n">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+
+        <span class="c1"># Apply global-axis bias when active (from the second bond onward)</span>
+        <span class="k">if</span> <span class="n">chain_bias</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="ow">and</span> <span class="n">bias_axis</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bx</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">bias_axis</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">chain_bias</span>
+            <span class="n">by</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">bias_axis</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">chain_bias</span>
+            <span class="n">bz</span> <span class="o">=</span> <span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">bias_axis</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">chain_bias</span>
+            <span class="n">inv_len</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">bx</span> <span class="o">*</span> <span class="n">bx</span> <span class="o">+</span> <span class="n">by</span> <span class="o">*</span> <span class="n">by</span> <span class="o">+</span> <span class="n">bz</span> <span class="o">*</span> <span class="n">bz</span><span class="p">)</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="p">(</span><span class="n">bx</span> <span class="o">*</span> <span class="n">inv_len</span><span class="p">,</span> <span class="n">by</span> <span class="o">*</span> <span class="n">inv_len</span><span class="p">,</span> <span class="n">bz</span> <span class="o">*</span> <span class="n">inv_len</span><span class="p">)</span>
+
+        <span class="n">pt</span><span class="p">:</span> <span class="n">Vec3</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">tp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+            <span class="n">tp</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+            <span class="n">tp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pt</span><span class="p">)</span>
+        <span class="n">tip_dirs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+        <span class="c1"># First bond establishes the bias axis</span>
+        <span class="k">if</span> <span class="n">idx</span> <span class="o">==</span> <span class="mi">1</span> <span class="ow">and</span> <span class="n">chain_bias</span> <span class="o">&gt;</span> <span class="mf">0.0</span><span class="p">:</span>
+            <span class="n">bias_axis</span> <span class="o">=</span> <span class="n">d</span>
+
+        <span class="k">if</span> <span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">branch_prob</span><span class="p">:</span>
+            <span class="n">tips</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">tips</span><span class="p">[</span><span class="n">tips</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">tip</span><span class="p">)]</span> <span class="o">=</span> <span class="n">idx</span>
+
+    <span class="k">return</span> <span class="n">atoms</span><span class="p">,</span> <span class="n">positions</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Placement: shell</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="place_shell">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.place_shell">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">place_shell</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">center_sym</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">coord_lo</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">coord_hi</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">shell_lo</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">shell_hi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">tail_lo</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">tail_hi</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Center atom at origin + coordination shell + tail atoms.</span>
+
+<span class="sd">    No clash checking is performed — call :func:`relax_positions` afterwards.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    atoms:</span>
+<span class="sd">        Element symbols; must contain at least one occurrence of *center_sym*.</span>
+<span class="sd">    center_sym:</span>
+<span class="sd">        Symbol of the atom placed at the origin.</span>
+<span class="sd">    coord_lo, coord_hi:</span>
+<span class="sd">        Coordination-number range (number of shell atoms).</span>
+<span class="sd">    shell_lo, shell_hi:</span>
+<span class="sd">        Shell radius range (Å).</span>
+<span class="sd">    tail_lo, tail_hi:</span>
+<span class="sd">        Tail bond-length range (Å).</span>
+<span class="sd">    rng:</span>
+<span class="sd">        Seeded random-number generator.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (ordered_atoms, positions)</span>
+<span class="sd">        Center atom is first; always ``len(atoms)`` positions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span>
+    <span class="n">ci</span> <span class="o">=</span> <span class="nb">next</span><span class="p">((</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span> <span class="k">if</span> <span class="n">a</span> <span class="o">==</span> <span class="n">center_sym</span><span class="p">),</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">ordered</span> <span class="o">=</span> <span class="p">[</span><span class="n">atoms</span><span class="p">[</span><span class="n">ci</span><span class="p">]]</span> <span class="o">+</span> <span class="p">[</span><span class="n">a</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">a</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span> <span class="o">!=</span> <span class="n">ci</span><span class="p">]</span>
+
+    <span class="n">positions</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]</span> <span class="o">=</span> <span class="p">[(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)]</span>
+    <span class="n">coord_num</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="n">coord_lo</span><span class="p">,</span> <span class="n">coord_hi</span><span class="p">),</span> <span class="n">n</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="n">coord_num</span><span class="p">,</span> <span class="n">n</span><span class="p">)):</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">shell_lo</span><span class="p">,</span> <span class="n">shell_hi</span><span class="p">)</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+        <span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">r</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">r</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">r</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">positions</span><span class="p">),</span> <span class="n">n</span><span class="p">):</span>
+        <span class="n">par</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">positions</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">pp</span> <span class="o">=</span> <span class="n">positions</span><span class="p">[</span><span class="n">par</span><span class="p">]</span>
+        <span class="n">bl</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">tail_lo</span><span class="p">,</span> <span class="n">tail_hi</span><span class="p">)</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">_unit_vec</span><span class="p">(</span><span class="n">rng</span><span class="p">)</span>
+        <span class="n">positions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">pp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                <span class="n">pp</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+                <span class="n">pp</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">+</span> <span class="n">bl</span> <span class="o">*</span> <span class="n">d</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ordered</span><span class="p">,</span> <span class="n">positions</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Placement: maxent</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_angular_repulsion_gradient</span><span class="p">(</span>
+    <span class="n">pts</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">:</span> <span class="nb">float</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Compute gradient of the angular repulsion potential.</span>
+
+<span class="sd">    For each atom *i* and each neighbour *j* within *cutoff*, the potential</span>
+
+<span class="sd">        U_ij = 1 / (1 - cos θ_ij + ε)</span>
+
+<span class="sd">    penalises neighbours that are close in *direction* from *i*.</span>
+<span class="sd">    A small ε = 1e-6 prevents division by zero when two directions coincide.</span>
+
+<span class="sd">    When the compiled C++ extension is available the inner double loop runs</span>
+<span class="sd">    in native code (O(N²) cost, but without Python interpreter overhead).</span>
+
+<span class="sd">    Returns the gradient ∂U/∂r_i of shape (n, 3).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># ── C++ fast path ────────────────────────────────────────────────────</span>
+    <span class="k">if</span> <span class="n">HAS_MAXENT</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_cpp_angular_gradient</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">)</span>  <span class="c1"># type: ignore[no-any-return]</span>
+
+    <span class="c1"># ── Pure-Python / NumPy fallback ─────────────────────────────────────</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">pts</span><span class="p">)</span>
+    <span class="n">grad</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="n">eps</span> <span class="o">=</span> <span class="mf">1e-6</span>
+
+    <span class="n">diff</span> <span class="o">=</span> <span class="n">pts</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">-</span> <span class="n">pts</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>  <span class="c1"># (n, n, 3)</span>
+    <span class="n">dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">((</span><span class="n">diff</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">2</span><span class="p">))</span>                  <span class="c1"># (n, n)</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">fill_diagonal</span><span class="p">(</span><span class="n">dist</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+
+    <span class="n">mask</span> <span class="o">=</span> <span class="n">dist</span> <span class="o">&lt;=</span> <span class="n">cutoff</span>                                   <span class="c1"># (n, n) bool</span>
+
+    <span class="c1"># Unit vectors from j → i</span>
+    <span class="n">safe_dist</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">dist</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">dist</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+    <span class="n">uhat</span> <span class="o">=</span> <span class="n">diff</span> <span class="o">/</span> <span class="n">safe_dist</span><span class="p">[:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>              <span class="c1"># (n, n, 3)</span>
+
+    <span class="n">mask_f</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="n">ni_dirs</span> <span class="o">=</span> <span class="n">uhat</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">mask_f</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>  <span class="c1"># (n, 3) zero for non-neighbours</span>
+        <span class="n">ni_idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">mask</span><span class="p">[</span><span class="n">i</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">ni_idx</span><span class="p">:</span>
+            <span class="n">cos_vals</span> <span class="o">=</span> <span class="p">(</span><span class="n">ni_dirs</span><span class="p">[</span><span class="n">ni_idx</span><span class="p">]</span> <span class="o">*</span> <span class="n">ni_dirs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># (n_nb,)</span>
+            <span class="n">denom</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">-</span> <span class="n">cos_vals</span> <span class="o">+</span> <span class="n">eps</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="n">denom</span><span class="o">**</span><span class="mi">2</span>                                <span class="c1"># (n_nb,)</span>
+            <span class="n">perp</span> <span class="o">=</span> <span class="n">ni_dirs</span><span class="p">[</span><span class="n">ni_idx</span><span class="p">]</span> <span class="o">-</span> <span class="n">cos_vals</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">ni_dirs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+            <span class="n">grad</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">+=</span> <span class="p">(</span><span class="n">weights</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">perp</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span> <span class="o">/</span> <span class="n">safe_dist</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">grad</span>
+
+
+<div class="viewcode-block" id="place_maxent">
+<a class="viewcode-back" href="../../api/placement.html#pasted._placement.place_maxent">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">place_maxent</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+    <span class="n">region</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">cov_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">rng</span><span class="p">:</span> <span class="n">random</span><span class="o">.</span><span class="n">Random</span><span class="p">,</span>
+    <span class="n">maxent_steps</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">300</span><span class="p">,</span>
+    <span class="n">maxent_lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.05</span><span class="p">,</span>
+    <span class="n">maxent_cutoff_scale</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.5</span><span class="p">,</span>
+    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Place atoms to maximise angular entropy subject to distance constraints.</span>
+
+<span class="sd">    Implements constrained maximum-entropy placement: atoms are initialised</span>
+<span class="sd">    inside *region* at random, then iteratively repositioned so that each</span>
+<span class="sd">    atom&#39;s neighbourhood directions become as uniformly distributed over the</span>
+<span class="sd">    sphere as possible — the solution to</span>
+
+<span class="sd">        max  S = −∫ p(Ω) ln p(Ω) dΩ</span>
+<span class="sd">        s.t.  d_ij ≥ cov_scale × (r_i + r_j)   ∀ i,j</span>
+
+<span class="sd">    The angular repulsion potential</span>
+
+<span class="sd">        U = Σ_{i} Σ_{j,k ∈ N(i), j≠k}  1 / (1 − cos θ_{jk} + ε)</span>
+
+<span class="sd">    is minimised by gradient descent.  After every gradient step the</span>
+<span class="sd">    mandatory repulsion relaxation is applied to enforce the distance</span>
+<span class="sd">    constraint.  The result is a structure where neighbour directions are</span>
+<span class="sd">    spread as uniformly over the sphere as the distance constraints allow —</span>
+<span class="sd">    maximum disorder within the rules.</span>
+
+<span class="sd">    Stability measures applied per step:</span>
+
+<span class="sd">    - Per-atom gradient clipping: each atom&#39;s gradient vector is clamped to</span>
+<span class="sd">      unit norm before scaling by *maxent_lr*, preventing divergence.</span>
+<span class="sd">    - Soft restoring force: atoms that drift outside the initial region</span>
+<span class="sd">      radius are gently pulled back toward the centre of mass.  This keeps</span>
+<span class="sd">      the structure compact without hard-clamping coordinates.</span>
+<span class="sd">    - Centre-of-mass pinning: the centre of mass is re-centred to the origin</span>
+<span class="sd">      after each step so the whole structure does not drift.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    atoms:</span>
+<span class="sd">        Element symbols.</span>
+<span class="sd">    region:</span>
+<span class="sd">        Initial placement region: ``&quot;sphere:R&quot;`` | ``&quot;box:L&quot;`` | ``&quot;box:LX,LY,LZ&quot;``.</span>
+<span class="sd">    cov_scale:</span>
+<span class="sd">        Pyykkö distance scale factor.</span>
+<span class="sd">    rng:</span>
+<span class="sd">        Seeded random-number generator.</span>
+<span class="sd">    maxent_steps:</span>
+<span class="sd">        Gradient-descent iterations (default: 300).</span>
+<span class="sd">    maxent_lr:</span>
+<span class="sd">        Learning rate for angular repulsion gradient descent (default: 0.05).</span>
+<span class="sd">    maxent_cutoff_scale:</span>
+<span class="sd">        Neighbour cutoff = this factor × median covalent sum (default: 2.5).</span>
+<span class="sd">        Larger values include more neighbours in the angular calculation.</span>
+<span class="sd">    seed:</span>
+<span class="sd">        Optional integer seed forwarded to :func:`relax_positions` for the</span>
+<span class="sd">        coincident-atom edge case.  ``None`` → non-deterministic (default).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    (atoms, positions)</span>
+<span class="sd">        Always ``len(atoms)`` positions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># ── Initial random placement ─────────────────────────────────────────</span>
+    <span class="n">_</span><span class="p">,</span> <span class="n">positions</span> <span class="o">=</span> <span class="n">place_gas</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">region</span><span class="p">,</span> <span class="n">rng</span><span class="p">)</span>
+    <span class="n">positions</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">relax_positions</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">positions</span><span class="p">,</span> <span class="n">cov_scale</span><span class="p">,</span> <span class="n">max_cycles</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+
+    <span class="c1"># ── Parse region radius for restoring force ──────────────────────────</span>
+    <span class="k">if</span> <span class="n">region</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;sphere:&quot;</span><span class="p">):</span>
+        <span class="n">region_radius</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+    <span class="k">elif</span> <span class="n">region</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;box:&quot;</span><span class="p">):</span>
+        <span class="n">dims</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">region</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="n">dims</span> <span class="o">*=</span> <span class="mi">3</span>
+        <span class="n">region_radius</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">dims</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown region spec: </span><span class="si">{</span><span class="n">region</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ── Determine neighbour cutoff from covalent radii ───────────────────</span>
+    <span class="n">radii</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="n">_cov_radius_ang</span><span class="p">(</span><span class="n">a</span><span class="p">)</span> <span class="k">for</span> <span class="n">a</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">])</span>
+    <span class="n">pair_sums</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+        <span class="n">ra</span> <span class="o">+</span> <span class="n">rb</span> <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">ra</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">radii</span><span class="p">)</span> <span class="k">for</span> <span class="n">rb</span> <span class="ow">in</span> <span class="n">radii</span><span class="p">[</span><span class="n">i</span><span class="p">:]</span>
+    <span class="p">)</span>
+    <span class="n">median_sum</span> <span class="o">=</span> <span class="n">pair_sums</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">pair_sums</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span><span class="p">]</span>
+    <span class="n">ang_cutoff</span> <span class="o">=</span> <span class="n">cov_scale</span> <span class="o">*</span> <span class="n">maxent_cutoff_scale</span> <span class="o">*</span> <span class="n">median_sum</span>
+
+    <span class="c1"># ── Gradient descent on angular repulsion potential ──────────────────</span>
+    <span class="n">pts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">positions</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+    <span class="c1"># Pin to origin initially</span>
+    <span class="n">pts</span> <span class="o">-=</span> <span class="n">pts</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">maxent_steps</span><span class="p">):</span>
+        <span class="n">grad</span> <span class="o">=</span> <span class="n">_angular_repulsion_gradient</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">ang_cutoff</span><span class="p">)</span>
+
+        <span class="c1"># ── Per-atom gradient clipping (unit-norm cap) ────────────────────</span>
+        <span class="n">norms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>          <span class="c1"># (n, 1)</span>
+        <span class="n">norms_safe</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">norms</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">norms</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+        <span class="n">grad_clipped</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">norms</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">grad</span> <span class="o">/</span> <span class="n">norms_safe</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
+
+        <span class="c1"># ── Gradient step ─────────────────────────────────────────────────</span>
+        <span class="n">pts</span> <span class="o">-=</span> <span class="n">maxent_lr</span> <span class="o">*</span> <span class="n">grad_clipped</span>
+
+        <span class="c1"># ── Soft restoring force: pull atoms back toward CoM ─────────────</span>
+        <span class="c1"># k_restore ramps up once an atom exceeds region_radius</span>
+        <span class="n">r_from_com</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linalg</span><span class="o">.</span><span class="n">norm</span><span class="p">(</span><span class="n">pts</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">keepdims</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>      <span class="c1"># (n, 1)</span>
+        <span class="n">excess</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">r_from_com</span> <span class="o">-</span> <span class="n">region_radius</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>         <span class="c1"># 0 inside</span>
+        <span class="n">k_restore</span> <span class="o">=</span> <span class="mf">0.1</span> <span class="o">*</span> <span class="n">maxent_lr</span>
+        <span class="n">pts</span> <span class="o">-=</span> <span class="n">k_restore</span> <span class="o">*</span> <span class="n">excess</span> <span class="o">*</span> <span class="p">(</span><span class="n">pts</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">r_from_com</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="n">r_from_com</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">))</span>
+
+        <span class="c1"># ── Re-centre to origin ───────────────────────────────────────────</span>
+        <span class="n">pts</span> <span class="o">-=</span> <span class="n">pts</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+        <span class="c1"># ── Re-enforce distance constraint ───────────────────────────────</span>
+        <span class="n">pos_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Vec3</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">]</span>
+        <span class="n">pos_list</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">relax_positions</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="n">pos_list</span><span class="p">,</span> <span class="n">cov_scale</span><span class="p">,</span> <span class="n">max_cycles</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">)</span>
+        <span class="n">pts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">pos_list</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">atoms</span><span class="p">,</span> <span class="p">[</span><span class="nb">tuple</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">pts</span><span class="p">]</span></div>
+
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By PASTED contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, PASTED contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="../../_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="../../_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

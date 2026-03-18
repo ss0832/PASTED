@@ -1,0 +1,665 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Architecture &#8212; PASTED 0.1</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=ff6474e5"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'architecture';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Changelog" href="changelog.html" />
+    <link rel="prev" title="CLI reference" href="cli.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="0.1" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">PASTED</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick start</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="api/index.html">API reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="api/generator.html">StructureGenerator &amp; generate()</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/optimizer.html">StructureOptimizer</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/placement.html">Placement functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/metrics.html">Metric functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/atoms.html">Atom utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/io.html">IO utilities</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">CLI reference</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Development</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1 current active"><a class="current reference internal" href="#">Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="changelog.html">Changelog</a></li>
+
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/ss0832/PASTED" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/ss0832/PASTED/issues/new?title=Issue%20on%20page%20%2Farchitecture.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="_sources/architecture.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Architecture</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#design-philosophy">Design philosophy</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#source-layout">Source layout</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#placement-modes">Placement modes</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#gas">gas</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chain">chain</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#shell">shell</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#maxent">maxent</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#disorder-metrics">Disorder metrics</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#c-acceleration-layer">C++ acceleration layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#relax-core-relax-positions"><code class="docutils literal notranslate"><span class="pre">_relax_core</span></code> — <code class="docutils literal notranslate"><span class="pre">relax_positions</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#maxent-core-angular-repulsion-gradient"><code class="docutils literal notranslate"><span class="pre">_maxent_core</span></code> — <code class="docutils literal notranslate"><span class="pre">angular_repulsion_gradient</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reproducibility">Reproducibility</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="architecture">
+<h1>Architecture<a class="headerlink" href="#architecture" title="Link to this heading">#</a></h1>
+<section id="design-philosophy">
+<h2>Design philosophy<a class="headerlink" href="#design-philosophy" title="Link to this heading">#</a></h2>
+<p>PASTED has one job: produce atomic structures that are strange enough to
+stress-test quantum-chemistry (QC) and machine-learning potential (MLP)
+codes, but not so malformed that they cannot be parsed at all.</p>
+<p>Three principles guide every design decision:</p>
+<p><strong>The tool does not judge.</strong>
+Physical validity is not checked beyond the minimum-distance constraint.
+Charge/multiplicity parity is validated; everything else is the engine’s
+problem.  The point is to find the engine’s breaking points, not to
+generate textbook molecules.</p>
+<p><strong>Fail gracefully, not loudly.</strong>
+The C++ acceleration layer is optional.  If the extensions are not compiled,
+the package falls back to pure Python/NumPy with no change in behaviour.
+If <code class="docutils literal notranslate"><span class="pre">relax_positions</span></code> does not converge within <code class="docutils literal notranslate"><span class="pre">max_cycles</span></code>, the best
+available structure is returned with <code class="docutils literal notranslate"><span class="pre">converged=False</span></code> — the run continues.</p>
+<p><strong>Small surface, stable interface.</strong>
+New parameters are added only when they cannot be reproduced by composing
+existing ones.  <code class="docutils literal notranslate"><span class="pre">chain_bias=0.0</span></code> is the default precisely because it
+changes nothing for existing users.  Internals can be restructured freely
+as long as the public API stays the same.</p>
+</section>
+<hr class="docutils" />
+<section id="source-layout">
+<h2>Source layout<a class="headerlink" href="#source-layout" title="Link to this heading">#</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>src/pasted/
+├── __init__.py          Public API exports and package docstring
+├── _atoms.py            Element data, covalent radii, pool/filter parsing
+├── _generator.py        StructureGenerator class and generate() function
+├── _io.py               XYZ serialisation (format_xyz)
+├── _metrics.py          All disorder metrics: entropy, RDF, Steinhardt, graph
+├── _optimizer.py        StructureOptimizer — basin-hopping on existing structures
+├── _placement.py        Placement algorithms + relax_positions dispatcher
+├── cli.py               argparse CLI entry point
+└── _ext/
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT flags; None fallbacks
+    ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
+    └── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
+</pre></div>
+</div>
+</section>
+<hr class="docutils" />
+<section id="placement-modes">
+<h2>Placement modes<a class="headerlink" href="#placement-modes" title="Link to this heading">#</a></h2>
+<section id="gas">
+<h3>gas<a class="headerlink" href="#gas" title="Link to this heading">#</a></h3>
+<p>Atoms are placed uniformly at random inside a sphere or axis-aligned box.
+No clash checking at placement time — <code class="docutils literal notranslate"><span class="pre">relax_positions</span></code> is called afterwards
+to resolve any distance violations.</p>
+</section>
+<section id="chain">
+<h3>chain<a class="headerlink" href="#chain" title="Link to this heading">#</a></h3>
+<p>A random-walk chain grows from the origin.  Each atom is attached to a
+randomly chosen existing tip.  Two parameters control shape:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">chain_persist</span></code> — local directional memory (cone constraint on turn angle)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">chain_bias</span></code> — global axis drift; the first bond direction becomes a bias
+axis and all subsequent steps are blended toward it</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">chain_bias=0.0</span></code> (the default) reproduces the behaviour of versions prior
+to 0.1.6 exactly.</p>
+</section>
+<section id="shell">
+<h3>shell<a class="headerlink" href="#shell" title="Link to this heading">#</a></h3>
+<p>A central atom is placed at the origin, surrounded by <code class="docutils literal notranslate"><span class="pre">coord_num</span></code> shell
+atoms at a random radial distance.  Remaining atoms are attached as tails
+via a short random walk from shell atoms.</p>
+</section>
+<section id="maxent">
+<h3>maxent<a class="headerlink" href="#maxent" title="Link to this heading">#</a></h3>
+<p>Atoms start from a random gas placement and are iteratively repositioned by
+gradient descent on an angular repulsion potential:</p>
+<div class="math notranslate nohighlight">
+\[U = \sum_i \sum_{j,k \in N(i)} \frac{1}{1 - \cos\theta_{jk} + \varepsilon}\]</div>
+<p>The result is the constrained maximum-entropy solution: neighbour directions
+spread as uniformly over the sphere as the distance constraints allow.</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="disorder-metrics">
+<h2>Disorder metrics<a class="headerlink" href="#disorder-metrics" title="Link to this heading">#</a></h2>
+<p>All metrics are computed once per structure in <code class="docutils literal notranslate"><span class="pre">compute_all_metrics</span></code> and
+stored in <code class="docutils literal notranslate"><span class="pre">Structure.metrics</span></code>.</p>
+<div class="pst-scrollable-table-container"><table class="table">
+<thead>
+<tr class="row-odd"><th class="head"><p>Metric</p></th>
+<th class="head"><p>Range</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">H_atom</span></code></p></td>
+<td><p>≥ 0</p></td>
+<td><p>Shannon entropy of element composition</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">H_spatial</span></code></p></td>
+<td><p>≥ 0</p></td>
+<td><p>Shannon entropy of pairwise-distance histogram</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">H_total</span></code></p></td>
+<td><p>≥ 0</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">w_atom</span> <span class="pre">×</span> <span class="pre">H_atom</span> <span class="pre">+</span> <span class="pre">w_spatial</span> <span class="pre">×</span> <span class="pre">H_spatial</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">RDF_dev</span></code></p></td>
+<td><p>≥ 0</p></td>
+<td><p>RMS deviation of empirical g(r) from ideal-gas baseline</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">shape_aniso</span></code></p></td>
+<td><p>[0, 1]</p></td>
+<td><p>Relative shape anisotropy from gyration tensor (0=sphere, 1=rod)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Q4</span></code>, <code class="docutils literal notranslate"><span class="pre">Q6</span></code>, <code class="docutils literal notranslate"><span class="pre">Q8</span></code></p></td>
+<td><p>[0, 1]</p></td>
+<td><p>Steinhardt bond-order parameters</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">graph_lcc</span></code></p></td>
+<td><p>[0, 1]</p></td>
+<td><p>Largest connected-component fraction</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">graph_cc</span></code></p></td>
+<td><p>[0, 1]</p></td>
+<td><p>Mean clustering coefficient</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<hr class="docutils" />
+<section id="c-acceleration-layer">
+<h2>C++ acceleration layer<a class="headerlink" href="#c-acceleration-layer" title="Link to this heading">#</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">_ext</span></code> sub-package contains two independently compiled pybind11 modules.
+Each can be absent without affecting the other.</p>
+<section id="relax-core-relax-positions">
+<h3><code class="docutils literal notranslate"><span class="pre">_relax_core</span></code> — <code class="docutils literal notranslate"><span class="pre">relax_positions</span></code><a class="headerlink" href="#relax-core-relax-positions" title="Link to this heading">#</a></h3>
+<p>Resolves distance violations by iterative Gauss-Seidel pair repulsion.</p>
+<ul class="simple">
+<li><p><strong>N &lt; 64</strong>: O(N²) full-pair loop</p></li>
+<li><p><strong>N ≥ 64</strong>: O(N) flat Cell List — a linked-list grid with cell width
+<code class="docutils literal notranslate"><span class="pre">cov_scale</span> <span class="pre">×</span> <span class="pre">2</span> <span class="pre">×</span> <span class="pre">max(radii)</span></code></p></li>
+</ul>
+<p>The cell grid is a flat <code class="docutils literal notranslate"><span class="pre">vector&lt;int&gt;</span></code> (not <code class="docutils literal notranslate"><span class="pre">unordered_map</span></code>) to avoid
+per-cycle heap allocation.</p>
+</section>
+<section id="maxent-core-angular-repulsion-gradient">
+<h3><code class="docutils literal notranslate"><span class="pre">_maxent_core</span></code> — <code class="docutils literal notranslate"><span class="pre">angular_repulsion_gradient</span></code><a class="headerlink" href="#maxent-core-angular-repulsion-gradient" title="Link to this heading">#</a></h3>
+<p>Computes ∂U/∂rᵢ for the angular repulsion potential used by <code class="docutils literal notranslate"><span class="pre">place_maxent</span></code>.</p>
+<ul class="simple">
+<li><p><strong>N &lt; 32</strong>: O(N³) full neighbour search</p></li>
+<li><p><strong>N ≥ 32</strong>: O(N²) Cell List neighbour search (cell width = <code class="docutils literal notranslate"><span class="pre">cutoff</span></code>)</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="reproducibility">
+<h2>Reproducibility<a class="headerlink" href="#reproducibility" title="Link to this heading">#</a></h2>
+<p>All random decisions pass through a single <code class="docutils literal notranslate"><span class="pre">random.Random(seed)</span></code> instance
+created at the start of each <code class="docutils literal notranslate"><span class="pre">generate()</span></code> call.  The C++ extensions accept
+an integer <code class="docutils literal notranslate"><span class="pre">seed</span></code> for the coincident-atom RNG edge case.  With the same
+<code class="docutils literal notranslate"><span class="pre">seed</span></code>, the same <code class="docutils literal notranslate"><span class="pre">n_atoms</span></code>, and the same parameters, <code class="docutils literal notranslate"><span class="pre">generate()</span></code> returns
+bit-for-bit identical output.</p>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="cli.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">CLI reference</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="changelog.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Changelog</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#design-philosophy">Design philosophy</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#source-layout">Source layout</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#placement-modes">Placement modes</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#gas">gas</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#chain">chain</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#shell">shell</a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#maxent">maxent</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#disorder-metrics">Disorder metrics</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#c-acceleration-layer">C++ acceleration layer</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#relax-core-relax-positions"><code class="docutils literal notranslate"><span class="pre">_relax_core</span></code> — <code class="docutils literal notranslate"><span class="pre">relax_positions</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#maxent-core-angular-repulsion-gradient"><code class="docutils literal notranslate"><span class="pre">_maxent_core</span></code> — <code class="docutils literal notranslate"><span class="pre">angular_repulsion_gradient</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#reproducibility">Reproducibility</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By PASTED contributors
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2026, PASTED contributors.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
