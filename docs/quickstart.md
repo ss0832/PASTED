@@ -129,6 +129,71 @@ for i, s in enumerate(structures):
     s.write_xyz("out.xyz", append=(i > 0))
 ```
 
+### Collecting a target number of structures
+
+Use `n_success` to stop as soon as enough structures have passed all
+filters, without exhausting the full attempt budget:
+
+```python
+from pasted import StructureGenerator
+
+gen = StructureGenerator(
+    n_atoms=15,
+    charge=0,
+    mult=1,
+    mode="gas",
+    region="sphere:8",
+    elements="1-30",
+    n_success=10,     # stop when 10 structures have passed
+    n_samples=500,    # give up after 500 attempts at most
+    filters=["H_total:2.0:-"],
+    seed=42,
+)
+structures = gen.generate()   # returns up to 10 structures
+```
+
+Use `n_samples=0` for unlimited attempts — generation runs until
+`n_success` is reached:
+
+```python
+gen = StructureGenerator(
+    ...,
+    n_samples=0,      # no attempt limit
+    n_success=10,
+)
+```
+
+### Streaming output (write as you go)
+
+`stream()` yields each passing structure immediately.  This is useful when
+you want to write results to disk without waiting for all attempts to
+complete, or when an interrupted run should not lose collected structures:
+
+```python
+gen = StructureGenerator(
+    n_atoms=12,
+    charge=0,
+    mult=1,
+    mode="gas",
+    region="sphere:9",
+    elements="1-30",
+    n_success=10,
+    n_samples=500,
+    seed=42,
+)
+
+for s in gen.stream():
+    s.write_xyz("out.xyz")   # written immediately on each PASS
+```
+
+`generate()` delegates to `stream()` internally, so the two are equivalent
+when you want a list:
+
+```python
+structures = gen.generate()        # list
+structures = list(gen.stream())    # same result
+```
+
 ### Accessing metrics
 
 Each `Structure` carries a `metrics` dict:

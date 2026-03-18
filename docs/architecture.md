@@ -129,10 +129,31 @@ Computes ∂U/∂rᵢ for the angular repulsion potential used by `place_maxent`
 
 ---
 
+## Generation flow
+
+`StructureGenerator.stream()` is the single implementation of the generation
+loop.  It yields each passing structure immediately, enabling incremental
+file output and early stopping via `n_success`.
+
+`generate()` delegates to `stream()` and collects results into a list.
+`__iter__` also delegates to `stream()`, so all three call sites share the
+same loop logic.
+
+`n_success` and `n_samples` together control termination:
+
+- `n_samples > 0`, `n_success = None` — attempt exactly `n_samples` times
+  (original behaviour).
+- `n_samples > 0`, `n_success = N` — stop at N successes or `n_samples`
+  attempts, whichever comes first.
+- `n_samples = 0`, `n_success = N` — unlimited attempts; stop only when N
+  structures have passed.
+
+---
+
 ## Reproducibility
 
 All random decisions pass through a single `random.Random(seed)` instance
-created at the start of each `generate()` call.  The C++ extensions accept
+created at the start of each `stream()` call.  The C++ extensions accept
 an integer `seed` for the coincident-atom RNG edge case.  With the same
-`seed`, the same `n_atoms`, and the same parameters, `generate()` returns
-bit-for-bit identical output.
+`seed`, the same `n_atoms`, and the same parameters, `stream()` (and
+therefore `generate()`) returns bit-for-bit identical output.

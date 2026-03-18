@@ -14,7 +14,8 @@ pasted [OPTIONS]
 | `--charge C` | int | — | Total system charge (**required**) |
 | `--mult M` | int | — | Spin multiplicity 2S+1 (**required**) |
 | `--elements SPEC` | str | all Z=1–106 | Element pool: range `"1-30"`, list `"6,7,8"`, or symbol list |
-| `--n-samples N` | int | 1 | Number of structures to attempt |
+| `--n-samples N` | int | 1 | Maximum number of placement attempts. Use `0` for unlimited (requires `--n-success`) |
+| `--n-success N` | int | None | Stop as soon as N structures pass all filters |
 | `--seed S` | int | None | RNG seed for reproducibility |
 | `--output FILE` / `-o` | path | stdout | Output XYZ file (append mode) |
 | `--verbose` | flag | off | Print per-sample metrics to stderr |
@@ -83,6 +84,35 @@ Use `-` for an open bound. Multiple `--filter` flags are ANDed together.
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
 `shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`.
+
+### Collecting a fixed number of passing structures
+
+Combine `--filter` with `--n-success` to stop as soon as enough structures
+have passed, rather than running all `--n-samples` attempts:
+
+```bash
+# Collect exactly 10 structures with H_total >= 2.0, try up to 500 times
+pasted --n-atoms 15 --charge 0 --mult 1 \
+       --mode gas --region sphere:8 \
+       --elements 1-30 \
+       --filter "H_total:2.0:-" \
+       --n-success 10 --n-samples 500 \
+       -o out.xyz
+```
+
+Use `--n-samples 0` for unlimited attempts:
+
+```bash
+pasted --n-atoms 15 --charge 0 --mult 1 \
+       --mode gas --region sphere:8 \
+       --elements 1-30 \
+       --filter "H_total:2.5:-" \
+       --n-success 10 --n-samples 0 \
+       -o out.xyz
+```
+
+Output is written to `-o` immediately each time a structure passes.
+An interrupted run always produces a valid XYZ file.
 
 ## Physical constraints
 
