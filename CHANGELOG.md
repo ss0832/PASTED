@@ -10,11 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.5] - 2026-03-18
 
 ### Added
-- **`src/pasted/_ext/` サブパッケージ** — C++拡張を機能単位でファイル分割して管理：
-  - `_relax.cpp` → `_ext._relax_core` ：距離制約の緩和ループ（全モード共通）
-  - `_maxent.cpp` → `_ext._maxent_core`：角度反発勾配（maxentモード専用）
-  - `_ext/__init__.py`：モジュールごとに `HAS_RELAX` / `HAS_MAXENT` フラグを独立管理。
-    片方のビルドが失敗しても、もう片方は有効なまま部分的なフォールバックが可能。
+- `src/pasted/_ext/` Subpackage — Organizes C++ extensions into separate files based on functional units:
+   - `_relax.cpp → _ext._relax_core`  : Distance constraint relaxation loop (applicable across all modes).
+   - `_maxent.cpp → _ext._maxent_core`: Angular repulsion gradient (specific to the maxent mode).
+   - `_ext/__init__.py`: Independently manages the HAS_RELAX and HAS_MAXENT flags for each module. This configuration enables a partial fallback mechanism; a compilation failure in one module allows the other to remain operational.
 
 - **Optional C++ extension** (`pasted._ext`, built via `pybind11`):
   two inner-loop hotspots are now compiled to native code when a C++17
