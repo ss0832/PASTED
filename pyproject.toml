@@ -35,6 +35,12 @@ dev = [
     "mypy>=1.10",
     "pybind11>=2.12",
 ]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-book-theme>=1.1",
+    "myst-parser>=3.0",
+    "sphinx-autosummary-accessors",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
