@@ -1,2 +1,0 @@
-[console_scripts]
-pasted = pasted.cli:main
