@@ -123,7 +123,7 @@ def relax_positions(
         pts_out, converged = _cpp_relax_positions(
             pts, radii, cov_scale, max_cycles, seed_int
         )
-        return [tuple(row) for row in pts_out], converged  # type: ignore[misc]
+        return [tuple(row) for row in pts_out], converged
 
     # ── Pure-Python / NumPy fallback ─────────────────────────────────────
     thresh = cov_scale * (radii[:, np.newaxis] + radii[np.newaxis, :])  # (n, n)
@@ -152,7 +152,7 @@ def relax_positions(
             pts[i] += push * v
             pts[j] -= push * v
 
-    return [tuple(row) for row in pts], converged  # type: ignore[misc]
+    return [tuple(row) for row in pts], converged
 
 
 # ---------------------------------------------------------------------------

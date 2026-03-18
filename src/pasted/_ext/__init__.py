@@ -29,7 +29,7 @@ from __future__ import annotations
 # _relax_core  — repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
 try:
-    from ._relax_core import relax_positions  # type: ignore[import]
+    from ._relax_core import relax_positions  # type: ignore[import-untyped]
     HAS_RELAX: bool = True
 except ImportError:
     HAS_RELAX = False
@@ -38,7 +38,7 @@ except ImportError:
 # _maxent_core  — angular repulsion gradient (maxent placement only)
 # ---------------------------------------------------------------------------
 try:
-    from ._maxent_core import angular_repulsion_gradient  # type: ignore[import]
+    from ._maxent_core import angular_repulsion_gradient  # type: ignore[import-untyped]
     HAS_MAXENT: bool = True
 except ImportError:
     HAS_MAXENT = False
