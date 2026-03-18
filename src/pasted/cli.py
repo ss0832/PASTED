@@ -97,6 +97,19 @@ examples
         ),
     )
     mg.add_argument(
+        "--chain-bias",
+        type=float,
+        default=0.0,
+        metavar="BIAS",
+        help=(
+            "[chain] Global-axis drift strength (0.0–1.0, default: 0.0). "
+            "The first bond direction becomes the bias axis; each subsequent "
+            "step is blended toward it before normalisation. "
+            "0.0 = no bias (default); 0.3 = moderate elongation; "
+            "1.0 = strongly rod-like. Increases shape_aniso."
+        ),
+    )
+    mg.add_argument(
         "--bond-range",
         default="1.2:1.6",
         metavar="LO:HI",
@@ -367,6 +380,7 @@ def _run_sample_mode(
             region=args.region,
             branch_prob=args.branch_prob,
             chain_persist=args.chain_persist,
+            chain_bias=args.chain_bias,
             bond_range=bond_range,
             center_z=args.center_z,
             coord_range=coord_range,

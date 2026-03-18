@@ -11,6 +11,7 @@ import pytest
 from pasted import _ext
 from pasted._atoms import cov_radius_ang
 from pasted._ext import HAS_RELAX
+from pasted._metrics import compute_shape_anisotropy
 from pasted._placement import (
     add_hydrogen,
     place_chain,
@@ -109,6 +110,39 @@ class TestPlaceChain:
         atoms = ["C", "N", "O"]
         atoms_out, _ = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(9))
         assert atoms_out == atoms
+
+    def test_chain_bias_zero_unchanged(self) -> None:
+        """chain_bias=0.0 must produce exactly the same output as the default."""
+        atoms = ["C"] * 12
+        _, pos_default = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(20))
+        _, pos_bias0 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(20),
+                                   chain_bias=0.0)
+        for p1, p2 in zip(pos_default, pos_bias0, strict=True):
+            assert p1 == p2
+
+    def test_chain_bias_elongates(self) -> None:
+        """High chain_bias should produce more elongated structures on average."""
+        atoms = ["C"] * 20
+        sa_nobias, sa_bias = [], []
+        for seed in range(100):
+            _, pos0 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed),
+                                  chain_bias=0.0)
+            _, pos1 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed),
+                                  chain_bias=0.8)
+            sa_nobias.append(compute_shape_anisotropy(np.array(pos0)))
+            sa_bias.append(compute_shape_anisotropy(np.array(pos1)))
+
+        assert np.mean(sa_bias) > np.mean(sa_nobias) + 0.05
+
+    def test_chain_bias_seed_reproducible(self) -> None:
+        """chain_bias results are reproducible with the same seed."""
+        atoms = ["C"] * 15
+        _, pos1 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42),
+                              chain_bias=0.5)
+        _, pos2 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42),
+                              chain_bias=0.5)
+        for p1, p2 in zip(pos1, pos2, strict=True):
+            assert p1 == p2
 
 
 # ---------------------------------------------------------------------------

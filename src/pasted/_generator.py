@@ -169,6 +169,12 @@ class StructureGenerator:
         [chain] Branching probability (default: 0.3).
     chain_persist:
         [chain] Directional persistence ∈ [0, 1] (default: 0.5).
+    chain_bias:
+        [chain] Global-axis drift strength ∈ [0, 1] (default: 0.0).
+        The direction of the first bond becomes the bias axis; each
+        subsequent step is blended toward that axis before normalisation.
+        0.0 → no bias (backwards-compatible); higher values produce more
+        elongated structures with larger ``shape_aniso``.
     bond_range:
         [chain / shell tails] Bond-length range in Å (default: ``(1.2, 1.6)``).
     center_z:
@@ -246,6 +252,7 @@ class StructureGenerator:
         region: str | None = None,
         branch_prob: float = 0.3,
         chain_persist: float = 0.5,
+        chain_bias: float = 0.0,
         bond_range: tuple[float, float] = (1.2, 1.6),
         center_z: int | None = None,
         coord_range: tuple[int, int] = (4, 8),
@@ -277,6 +284,7 @@ class StructureGenerator:
         self.region = region
         self.branch_prob = branch_prob
         self.chain_persist = chain_persist
+        self.chain_bias = chain_bias
         self.bond_range = bond_range
         self.center_z = center_z
         self.coord_range = coord_range
@@ -404,6 +412,7 @@ class StructureGenerator:
                 self.branch_prob,
                 self.chain_persist,
                 rng,
+                chain_bias=self.chain_bias,
             )
         elif self.mode == "maxent":
             assert self.region is not None
@@ -567,6 +576,7 @@ def generate(
     region: str | None = None,
     branch_prob: float = 0.3,
     chain_persist: float = 0.5,
+    chain_bias: float = 0.0,
     bond_range: tuple[float, float] = (1.2, 1.6),
     center_z: int | None = None,
     coord_range: tuple[int, int] = (4, 8),
@@ -620,6 +630,7 @@ def generate(
         region=region,
         branch_prob=branch_prob,
         chain_persist=chain_persist,
+        chain_bias=chain_bias,
         bond_range=bond_range,
         center_z=center_z,
         coord_range=coord_range,
