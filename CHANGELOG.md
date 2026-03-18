@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-03-18
+
+### Added
+- **Cell List spatial partitioning in `_relax.cpp` and `_maxent.cpp`**
+
+  Both C++ extension modules now use a flat 3-D Cell List to limit
+  neighbour searches to a 27-cell neighbourhood instead of scanning all
+  atoms.  A linked-list style flat `vector<int>` grid is used (no
+  `unordered_map` per cycle) to keep per-cycle allocation cost minimal.
+
+  Automatic strategy selection per call:
+
+  | N | `_relax_core` | `_maxent_core` |
+  |:---:|:---:|:---:|
+  | < 64 | O(N²) full-pair loop | O(N³) full-pair |
+  | ≥ 64 | O(N) Cell List | O(N²) Cell List |
+
+  Cell size is computed automatically: `cov_scale × 2 × max(radii)` for
+  `_relax_core`; `cutoff` for `_maxent_core`.  No new API parameters.
+
+  Measured speed-ups vs pure-Python/NumPy fallback:
+
+  `relax_positions`:
+
+  | N | Python (ms) | C++ (ms) | Speed-up |
+  |:---:|:---:|:---:|:---:|
+  | 20 | 2.1 | 0.09 | 22× |
+  | 200 | 87 | 13 | 6.6× |
+  | 500 | 544 | 43 | 12.7× |
+  | 1000 | 2237 | 113 | **19.8×** |
+
+  `angular_repulsion_gradient`:
+
+  | N | Python (ms) | C++ (ms) | Speed-up |
+  |:---:|:---:|:---:|:---:|
+  | 30 | 10.8 | 0.07 | 153× |
+  | 100 | 154 | 3.0 | 52× |
+  | 200 | 881 | 19 | **46×** |
+
+### Changed
+- `pyproject.toml`: version bumped to `0.1.6`.
+- `_relax.cpp`: Cell List threshold changed from 32 to 64 after benchmarking
+  showed that `unordered_map`-based grid reconstruction at N ≈ 32–63 is
+  slower than the full-pair loop; the flat `FlatCellList` struct eliminates
+  heap allocation per cycle and moves the crossover to N ≈ 64.
+- Distance violation check uses `d >= thr` (not `d² >= thr²`) throughout to
+  avoid a floating-point precision bug where atoms exactly at threshold
+  distance are incorrectly flagged as violating in the next cycle.
+
+### Added
+- **`chain_bias` parameter for `place_chain` / `StructureGenerator` / `generate`**
+  (`chain_bias: float = 0.0`, CLI: `--chain-bias`).
+
+  The direction of the **first bond** placed becomes a global *bias axis*.
+  Every subsequent step direction is blended toward that axis before
+  normalisation:
+
+  ```
+  d_biased = d + axis × chain_bias
+  d_final  = d_biased / |d_biased|
+  ```
+
+  Effect on `shape_aniso ≥ 0.5` rate (n = 20, branch_prob = 0.0):
+
+  | `chain_bias` | mean shape_aniso | ≥ 0.5 rate |
+  |:---:|:---:|:---:|
+  | 0.0 (default) | 0.40 | 33 % |
+  | 0.3 | 0.55 | 63 % |
+  | 0.6 | 0.74 | 92 % |
+  | 1.0 | 0.89 | 100 % |
+
+  Default is `0.0` — **fully backwards-compatible**; existing scripts and
+  seeds produce identical output unless `chain_bias` is explicitly set.
+
 ## [0.1.5] - 2026-03-18
 
 ### Added
