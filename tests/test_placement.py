@@ -8,6 +8,7 @@ import random
 import numpy as np
 import pytest
 
+from pasted import _ext
 from pasted._atoms import cov_radius_ang
 from pasted._ext import HAS_RELAX
 from pasted._placement import (
@@ -212,8 +213,6 @@ class TestRelaxPositions:
         We verify the shared contract: all min-distance constraints are
         satisfied by both implementations.
         """
-        import pasted._ext as _ext
-
         atoms = ["C", "N", "O", "Fe", "H"]
         rng = np.random.default_rng(42)
         pos = [tuple(float(x) for x in rng.uniform(0.1, 0.5, 3)) for _ in atoms]
