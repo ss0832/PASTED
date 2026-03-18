@@ -35,6 +35,8 @@ Quick start
            --mode gas --region sphere:9 --n-samples 50 -o out.xyz
 """
 
+import importlib.metadata
+
 from ._atoms import (
     ALL_METRICS,
     ATOMIC_NUMBERS,
@@ -50,7 +52,10 @@ from ._metrics import compute_all_metrics, compute_angular_entropy, compute_stei
 from ._optimizer import StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
 
-__version__ = "0.1.7"
+try:
+    __version__: str = importlib.metadata.version("pasted")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"
 
 __all__ = [
     # High-level API
