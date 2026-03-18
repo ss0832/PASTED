@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61", "wheel"]
+requires = ["setuptools>=61", "wheel", "pybind11>=2.12"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.1.4"
+version = "0.1.5"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
     "mypy>=1.10",
+    "pybind11>=2.12",
 ]
 
 [tool.setuptools.packages.find]

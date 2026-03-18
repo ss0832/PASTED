@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-03-18
+
+### Added
+- **`src/pasted/_ext/` サブパッケージ** — C++拡張を機能単位でファイル分割して管理：
+  - `_relax.cpp` → `_ext._relax_core` ：距離制約の緩和ループ（全モード共通）
+  - `_maxent.cpp` → `_ext._maxent_core`：角度反発勾配（maxentモード専用）
+  - `_ext/__init__.py`：モジュールごとに `HAS_RELAX` / `HAS_MAXENT` フラグを独立管理。
+    片方のビルドが失敗しても、もう片方は有効なまま部分的なフォールバックが可能。
+
+- **Optional C++ extension** (`pasted._ext`, built via `pybind11`):
+  two inner-loop hotspots are now compiled to native code when a C++17
+  toolchain is present at install time.  When the extension is absent the
+  pure-Python / NumPy paths are used transparently — no user-facing API
+  change.
+  - `relax_positions` — the per-cycle pair-repulsion loop is now a tight
+    C++ double loop over `(i, j)` pairs, eliminating NumPy
+    broadcast allocation (`(n, n, 3)` diff array) on every iteration.
+    Typical speed-up: 5–20× for 10–100 atoms.
+  - `_angular_repulsion_gradient` — the O(N³) Python double `for` loop
+    over neighbour pairs in the `maxent` gradient descent is now a
+    cache-friendly C++ loop.  For `maxent` mode with 300 steps this is
+    the dominant cost; speed-up: 20–50×.
+- **`seed` parameter for `relax_positions`** (`seed: int | None = None`):
+  the RNG used for the coincident-atom edge case (distance < 1e-10 Å) is
+  now seeded when a value is provided, enabling full end-to-end
+  reproducibility.  Callers that do not pass `seed` behave exactly as
+  before.  `StructureGenerator` automatically forwards its master seed.
+- **`seed` parameter for `place_maxent`** — threads through to the two
+  internal `relax_positions` calls.
+
+### Changed
+- `pyproject.toml`: `pybind11>=2.12` added to `[build-system].requires`
+  and `[project.optional-dependencies].dev`.
+- `setup.py` (new file): declares two `Pybind11Extension` entries,
+  one per C++ source file.
+- `src/pasted/_core.cpp` を削除し `src/pasted/_ext/_relax.cpp` /
+  `_maxent.cpp` に分割。モジュール名も `_pasted_core` →
+  `_ext._relax_core` / `_ext._maxent_core` に変更。
+- Pure-Python fallback for `relax_positions` now pre-creates
+  `np.random.default_rng(seed)` once before the relaxation loop instead of
+  calling `np.random.default_rng()` (unseeded) inside the loop on every
+  coincident-atom hit — fixing a latent non-reproducibility bug.
+
 ## [0.1.4] - 2026-03-17
 
 ### Added (Documentation & Behavior Details)

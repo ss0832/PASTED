@@ -5,9 +5,11 @@ from __future__ import annotations
 import math
 import random
 
+import numpy as np
 import pytest
 
 from pasted._atoms import cov_radius_ang
+from pasted._ext import HAS_RELAX
 from pasted._placement import (
     add_hydrogen,
     place_chain,
@@ -169,6 +171,85 @@ class TestRelaxPositions:
         # Place all atoms at origin
         pos = [(0.0, 0.0, 0.0)] * 3
         result, _ = relax_positions(atoms, pos, 1.0, max_cycles=2000)
+        n = len(atoms)
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
+                threshold = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
+                assert d >= threshold - 1e-5
+
+    def test_seed_reproducible(self) -> None:
+        """Same seed → same result; different seed may differ (coincident case)."""
+        atoms = ["C", "C"]
+        pos = [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]  # coincident: needs RNG
+
+        r1, ok1 = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=7)
+        r2, ok2 = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=7)
+        assert ok1 and ok2
+        for p1, p2 in zip(r1, r2, strict=True):
+            assert p1 == pytest.approx(p2, abs=1e-12)
+
+    def test_seed_none_still_converges(self) -> None:
+        """seed=None (non-deterministic) must still produce a valid structure."""
+        atoms = ["C", "C"]
+        pos = [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=None)
+        assert converged
+        d = math.sqrt(sum((a - b) ** 2 for a, b in zip(result[0], result[1], strict=True)))
+        r_sum = cov_radius_ang("C") + cov_radius_ang("C")
+        assert d >= r_sum - 1e-6
+
+    @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
+    def test_cpp_and_python_agree(self) -> None:
+        """C++ and Python paths must both converge and enforce min distances.
+
+        Exact coordinate agreement is *not* expected: the Python fallback uses
+        a Jacobi-style update (distance matrix frozen for the whole cycle),
+        while the C++ path uses a Gauss-Seidel-style update (positions updated
+        immediately within each cycle).  Both strategies are correct but produce
+        different trajectories.
+
+        We verify the shared contract: all min-distance constraints are
+        satisfied by both implementations.
+        """
+        import pasted._ext as _ext
+
+        atoms = ["C", "N", "O", "Fe", "H"]
+        rng = np.random.default_rng(42)
+        pos = [tuple(float(x) for x in rng.uniform(0.1, 0.5, 3)) for _ in atoms]
+
+        original = _ext.HAS_RELAX
+        try:
+            _ext.HAS_RELAX = False
+            py_result, py_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)
+        finally:
+            _ext.HAS_RELAX = original
+
+        cpp_result, cpp_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)
+
+        # Both must converge
+        assert py_conv and cpp_conv
+
+        # Both must satisfy all pairwise minimum distances
+        for result, label in [(py_result, "python"), (cpp_result, "cpp")]:
+            n = len(atoms)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    d = math.sqrt(
+                        sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
+                    )
+                    thr = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
+                    assert d >= thr - 1e-5, (
+                        f"{label}: pair ({atoms[i]},{atoms[j]}) d={d:.6f} < thr={thr:.6f}"
+                    )
+
+    @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
+    def test_cpp_coincident_converges(self) -> None:
+        """C++ path must converge for coincident atoms regardless of RNG path."""
+        atoms = ["C", "N", "O"]
+        pos = [(0.0, 0.0, 0.0)] * 3
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=2000, seed=99)
+        assert converged
         n = len(atoms)
         for i in range(n):
             for j in range(i + 1, n):
