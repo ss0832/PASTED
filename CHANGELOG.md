@@ -7,7 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.16] - 2026-03-19
+## [0.1.17] - 2026-03-19
+
+### Added
+
+- **`allow_displacements` parameter for `StructureOptimizer`.**
+
+  Controls whether atomic-position moves (fragment moves) are performed
+  during optimisation.
+
+  | Value | Behaviour |
+  |---|---|
+  | `True` (default) | Fragment moves (atomic displacements) are included in the MC step pool — unchanged from v0.1.16 |
+  | `False` | Only composition moves (element-type swaps) are executed; atomic coordinates are held fixed for the entire run |
+
+  Use `allow_displacements=False` when exploring compositional disorder on
+  a pre-relaxed geometry (e.g. a fixed lattice).  Passing both
+  `allow_displacements=False` and `allow_composition_moves=False`
+  simultaneously raises a `ValueError` because no move type would remain
+  enabled.
+
+  Applies to all three optimisation methods: `"annealing"`,
+  `"basin_hopping"`, and `"parallel_tempering"`.
+
+  CLI: `--no-displacements` flag added to the `--optimize` mode.
+
+  ```python
+  opt = StructureOptimizer(
+      n_atoms=50, charge=0, mult=1,
+      objective={"H_atom": 1.0, "Q6": -2.0},
+      elements=["Cr", "Mn", "Fe", "Co", "Ni"],
+      allow_displacements=False,   # composition-only optimisation
+      max_steps=5000, seed=42,
+  )
+  result = opt.run(initial=fixed_geometry)
+  ```
+
+### Fixed
+
+- **`OptimizationResult.method` docstring** now lists all three valid
+  methods (`"annealing"`, `"basin_hopping"`, `"parallel_tempering"`);
+  previously `"parallel_tempering"` was omitted.
+
+
 
 ### Added
 

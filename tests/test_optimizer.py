@@ -687,3 +687,151 @@ class TestAllowCompositionMoves:
             warnings.simplefilter("ignore")
             result = opt.run(initial=initial)
         assert sorted(result.best.atoms) == initial_composition
+
+# ---------------------------------------------------------------------------
+# allow_displacements
+# ---------------------------------------------------------------------------
+
+
+class TestAllowDisplacements:
+    def _opt(self, **kwargs: object) -> StructureOptimizer:
+        defaults: dict[str, object] = {
+            "n_atoms": 6,
+            "charge": 0,
+            "mult": 1,
+            "objective": {"H_atom": 1.0},
+            "elements": "6,7,8",
+            "max_steps": 50,
+            "seed": 0,
+        }
+        defaults.update(kwargs)
+        return StructureOptimizer(**defaults)  # type: ignore[arg-type]
+
+    # ── Attribute defaults ────────────────────────────────────────────────
+
+    def test_default_is_true(self) -> None:
+        opt = self._opt()
+        assert opt.allow_displacements is True
+
+    # ── Mutual-exclusion validation ───────────────────────────────────────
+
+    def test_both_false_raises(self) -> None:
+        """allow_displacements=False + allow_composition_moves=False must raise ValueError."""
+        with pytest.raises(ValueError, match="cannot both be False"):
+            self._opt(allow_displacements=False, allow_composition_moves=False)
+
+    # ── Positions are frozen ──────────────────────────────────────────────
+
+    def test_disabled_preserves_positions(self) -> None:
+        """With displacements off, atom coordinates must not change."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=11,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_gen = gen.generate()
+        if not result_gen:
+            pytest.skip("Could not generate initial structure")
+        initial = result_gen[0]
+
+        import numpy as np
+
+        initial_positions = [tuple(p) for p in initial.positions]
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=True,
+            max_steps=200,
+            seed=11,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+
+        best_positions = [tuple(p) for p in result.best.positions]
+        np.testing.assert_allclose(
+            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+            err_msg="Positions changed despite allow_displacements=False",
+        )
+
+    def test_disabled_still_optimises(self) -> None:
+        """Composition-only optimisation should still return an OptimizationResult."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self._opt(allow_displacements=False, max_steps=100).run()
+        assert isinstance(result, OptimizationResult)
+        assert len(result) > 0
+
+    def test_repr_mentions_flag_when_disabled(self) -> None:
+        opt = self._opt(allow_displacements=False)
+        assert "allow_displacements=False" in repr(opt)
+
+    def test_repr_silent_when_enabled(self) -> None:
+        opt = self._opt(allow_displacements=True)
+        assert "allow_displacements" not in repr(opt)
+
+    # ── Basin-hopping respects flag ───────────────────────────────────────
+
+    def test_basin_hopping_preserves_positions(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=22,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]
+
+        import numpy as np
+
+        initial_positions = [tuple(p) for p in initial.positions]
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            objective={"H_atom": 1.0},
+            elements="6,7,8",
+            method="basin_hopping",
+            allow_displacements=False,
+            max_steps=50, n_restarts=1, seed=22,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+        best_positions = [tuple(p) for p in result.best.positions]
+        np.testing.assert_allclose(
+            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+        )
+
+    # ── Parallel Tempering respects flag ─────────────────────────────────
+
+    def test_parallel_tempering_preserves_positions(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=33,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]
+
+        import numpy as np
+
+        initial_positions = [tuple(p) for p in initial.positions]
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            objective={"H_atom": 1.0},
+            elements="6,7,8",
+            method="parallel_tempering",
+            allow_displacements=False,
+            max_steps=50, n_replicas=2, n_restarts=1, seed=33,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+        best_positions = [tuple(p) for p in result.best.positions]
+        np.testing.assert_allclose(
+            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+        )

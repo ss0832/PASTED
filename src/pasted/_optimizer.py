@@ -108,8 +108,8 @@ class OptimizationResult:
         Number of restarts that were actually run (may be less than
         ``n_restarts`` when initial-structure generation fails).
     method:
-        The optimization method used (``"annealing"`` or
-        ``"basin_hopping"``).
+        The optimization method used (``"annealing"``,
+        ``"basin_hopping"``, or ``"parallel_tempering"``).
 
     Examples
     --------
@@ -402,6 +402,13 @@ class StructureOptimizer:
     pt_swap_interval:
         Attempt a replica-exchange swap every this many MC steps
         (default: 10).  Ignored for other methods.
+    allow_displacements:
+        When ``True`` (default), atomic-position moves (fragment moves) are
+        included in the MC step pool.  When ``False``, only composition moves
+        are performed — atomic coordinates are held fixed and only element
+        types are optimised.  Set to ``False`` when exploring compositional
+        disorder at fixed geometry (e.g. a pre-relaxed lattice).
+        Cannot be ``False`` simultaneously with *allow_composition_moves*.
     allow_composition_moves:
         When ``True`` (default), each MC step randomly chooses between a
         **fragment move** (atomic displacement) and a **composition move**
@@ -410,6 +417,7 @@ class StructureOptimizer:
         atomic positions are optimised.  Set to ``False`` when the
         composition is predetermined and should not change during
         optimisation.
+        Cannot be ``False`` simultaneously with *allow_displacements*.
     frag_threshold:
         Local Q6 threshold for fragment selection (default: 0.3).
         Atoms with local Q6 > threshold are preferentially displaced.
@@ -482,6 +490,7 @@ class StructureOptimizer:
         frag_threshold: float = 0.3,
         move_step: float = 0.5,
         allow_composition_moves: bool = True,
+        allow_displacements: bool = True,
         lcc_threshold: float = 0.0,
         cov_scale: float = 1.0,
         relax_cycles: int = 1500,
@@ -501,6 +510,12 @@ class StructureOptimizer:
                 f"'parallel_tempering', got {method!r}"
             )
 
+        if not allow_displacements and not allow_composition_moves:
+            raise ValueError(
+                "allow_displacements and allow_composition_moves cannot both be False: "
+                "at least one move type must be enabled."
+            )
+
         self.n_atoms = n_atoms
         self.charge = charge
         self.mult = mult
@@ -512,6 +527,7 @@ class StructureOptimizer:
         self.frag_threshold = frag_threshold
         self.move_step = move_step
         self.allow_composition_moves = allow_composition_moves
+        self.allow_displacements = allow_displacements
         self.lcc_threshold = lcc_threshold
         self.cov_scale = cov_scale
         self.relax_cycles = relax_cycles
@@ -732,7 +748,11 @@ class StructureOptimizer:
                 radii_k = replicas_radii[k]
 
                 # Propose move
-                if not self.allow_composition_moves or rng.random() < 0.5:
+                _do_fragment = (
+                    self.allow_displacements
+                    and (not self.allow_composition_moves or rng.random() < 0.5)
+                )
+                if _do_fragment:
                     new_positions = _fragment_move(
                         positions, q6_k, self.frag_threshold, self.move_step, rng
                     )
@@ -924,7 +944,11 @@ class StructureOptimizer:
             T = self._temperature(step)
 
             # ── Move ─────────────────────────────────────────────────────
-            if not self.allow_composition_moves or rng.random() < 0.5:
+            _do_fragment = (
+                self.allow_displacements
+                and (not self.allow_composition_moves or rng.random() < 0.5)
+            )
+            if _do_fragment:
                 new_positions = _fragment_move(
                     positions, per_atom_q6, self.frag_threshold, self.move_step, rng
                 )
@@ -1158,11 +1182,12 @@ class StructureOptimizer:
             else ""
         )
         comp_info = "" if self.allow_composition_moves else ", allow_composition_moves=False"
+        disp_info = "" if self.allow_displacements else ", allow_displacements=False"
         return (
             f"StructureOptimizer("
             f"n_atoms={self.n_atoms}, method={self.method!r}, "
             f"max_steps={self.max_steps}, "
             f"T_start={self.T_start}, T_end={self.T_end}, "
             f"pool_size={len(self._element_pool)}"
-            f"{pt_info}{comp_info})"
+            f"{pt_info}{comp_info}{disp_info})"
         )

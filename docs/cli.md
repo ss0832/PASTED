@@ -175,6 +175,7 @@ randomly.  All sampling-mode options (`--n-atoms`, `--charge`, `--mult`,
 | `--frag-threshold Q` | 0.3 | Local Q6 threshold for fragment selection |
 | `--move-step A` | 0.5 | Maximum displacement per step (Å) |
 | `--no-composition-moves` | flag | Disable element-type swaps; only atomic positions are moved |
+| `--no-displacements` | flag | Disable atomic-position moves; only element-type swaps are performed. Cannot be combined with `--no-composition-moves` |
 | `--lcc-threshold L` | 0.0 | Minimum `graph_lcc` for step acceptance (0 = disabled) |
 | `--n-replicas N` | 4 | Temperature replicas for `parallel_tempering` |
 | `--pt-swap-interval N` | 10 | Replica-exchange attempt interval |
@@ -186,6 +187,14 @@ pasted --n-atoms 50 --charge 0 --mult 1 --elements 24,25,26,27,28 \
     --optimize --method annealing --max-steps 5000 \
     --no-composition-moves \
     --objective H_atom:1.0 --objective H_spatial:1.0 --objective Q6:-2.0 \
+    --seed 42 -o best.xyz
+
+# Composition-only SA — coordinates fixed, only element types explored
+pasted --n-atoms 50 --charge 0 --mult 1 --elements 24,25,26,27,28 \
+    --optimize --method annealing --max-steps 5000 \
+    --no-displacements \
+    --initial-xyz fixed_geometry.xyz \
+    --objective H_atom:1.0 --objective Q6:-2.0 \
     --seed 42 -o best.xyz
 
 # Cantor-alloy optimisation with composition moves (default)

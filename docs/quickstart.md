@@ -478,3 +478,43 @@ print(result.best)
 # Composition is identical to initial; only positions have changed
 assert sorted(result.best.atoms) == sorted(initial.atoms)
 ```
+
+---
+
+## Composition-only optimisation (StructureOptimizer)
+
+Set `allow_displacements=False` to fix the atomic coordinates and only
+optimise element types.  This is useful when exploring compositional
+disorder on a pre-relaxed geometry (e.g. a fixed lattice):
+
+```python
+from pasted import StructureOptimizer, Structure
+
+# Load a geometry with a fixed set of coordinates
+initial = Structure.from_xyz("fixed_geometry.xyz")
+
+opt = StructureOptimizer(
+    n_atoms=len(initial),
+    charge=initial.charge,
+    mult=initial.mult,
+    elements=["Cr", "Mn", "Fe", "Co", "Ni"],  # Cantor alloy pool
+    objective={"H_atom": 1.0, "Q6": -2.0},
+    allow_displacements=False,   # composition-only; coordinates fixed
+    method="annealing",
+    max_steps=5000,
+    seed=42,
+)
+
+result = opt.run(initial=initial)
+print(result.best)
+# Positions are identical to initial; only element labels have changed
+import numpy as np
+np.testing.assert_allclose(
+    np.array(result.best.positions), np.array(initial.positions)
+)
+```
+
+> **Note**: `allow_displacements=False` and `allow_composition_moves=False`
+> cannot both be set — at least one move type must be enabled.  Attempting
+> to do so raises a `ValueError`.
+

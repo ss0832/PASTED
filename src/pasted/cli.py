@@ -370,6 +370,18 @@ examples
         ),
     )
     optg.add_argument(
+        "--no-displacements",
+        action="store_true",
+        dest="no_displacements",
+        help=(
+            "Disable atomic-position moves (fragment moves) during optimization. "
+            "Only element-type swaps are performed; coordinates are held fixed. "
+            "Useful for exploring compositional disorder at fixed geometry. "
+            "Cannot be combined with --no-composition-moves. "
+            "Default: displacements enabled."
+        ),
+    )
+    optg.add_argument(
         "--n-replicas",
         type=int,
         default=4,
@@ -406,6 +418,15 @@ examples
 
 def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None) -> None:
     """Handle --optimize mode."""
+    # Mutual-exclusion check before constructing the optimizer
+    if getattr(args, "no_displacements", False) and getattr(args, "no_composition_moves", False):
+        print(
+            "[ERROR] --no-displacements and --no-composition-moves cannot both be set: "
+            "at least one move type must be enabled.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     try:
         objective = parse_objective_spec(args.objectives)
     except ValueError as exc:
@@ -436,6 +457,7 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
             frag_threshold=args.frag_threshold,
             move_step=args.move_step,
             allow_composition_moves=not args.no_composition_moves,
+            allow_displacements=not getattr(args, "no_displacements", False),
             lcc_threshold=args.lcc_threshold,
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
