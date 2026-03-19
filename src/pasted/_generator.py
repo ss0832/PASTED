@@ -27,7 +27,7 @@ from ._atoms import (
     parse_filter,
     validate_charge_mult,
 )
-from ._io import _fmt, format_xyz
+from ._io import _fmt, format_xyz, parse_xyz
 from ._metrics import compute_all_metrics, passes_filters
 from ._placement import (
     Vec3,
@@ -135,6 +135,119 @@ class Structure:
     def __len__(self) -> int:
         return len(self.atoms)
 
+    # ------------------------------------------------------------------ #
+    # XYZ import                                                           #
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def from_xyz(
+        cls,
+        source: str | Path,
+        *,
+        frame: int = 0,
+        recompute_metrics: bool = True,
+        cutoff: float | None = None,
+        n_bins: int = 20,
+        w_atom: float = 0.5,
+        w_spatial: float = 0.5,
+        cov_scale: float = 1.0,
+    ) -> Structure:
+        """Load a :class:`Structure` from an XYZ file or string.
+
+        Supports both plain XYZ and PASTED extended XYZ (with ``charge=``,
+        ``mult=``, and metric tokens on the comment line).  When
+        *recompute_metrics* is ``True`` (default), all disorder metrics are
+        recomputed from the loaded geometry so that the returned structure
+        is fully usable as optimizer input or for filtering.
+
+        Parameters
+        ----------
+        source:
+            Path to an XYZ file **or** a raw XYZ string.
+        frame:
+            Zero-based frame index when *source* contains multiple
+            concatenated structures (default: first frame).
+        recompute_metrics:
+            Recompute all disorder metrics after loading.  Set to ``False``
+            to skip the recomputation and return the structure with whatever
+            metric values were embedded in the extended XYZ comment (or an
+            empty dict for plain XYZ).
+        cutoff:
+            Distance cutoff (Å) for metric computation.  Auto-computed from
+            the element pool when ``None``.
+        n_bins:
+            Histogram bins for ``H_spatial`` / ``RDF_dev`` (default: 20).
+        w_atom:
+            Weight of ``H_atom`` in ``H_total`` (default: 0.5).
+        w_spatial:
+            Weight of ``H_spatial`` in ``H_total`` (default: 0.5).
+        cov_scale:
+            Minimum distance scale factor used for metrics (default: 1.0).
+
+        Returns
+        -------
+        Structure
+
+        Raises
+        ------
+        ValueError
+            When the file / string cannot be parsed, or *frame* is out of
+            range.
+
+        Examples
+        --------
+        Load and immediately use as optimizer initial structure::
+
+            from pasted import Structure, StructureOptimizer
+
+            s = Structure.from_xyz("my_structure.xyz")
+            opt = StructureOptimizer(
+                n_atoms=len(s), charge=s.charge, mult=s.mult,
+                objective={"H_total": 1.0},
+                elements=[sym for sym in set(s.atoms)],
+                max_steps=2000, seed=42,
+            )
+            result = opt.run(initial=s)
+        """
+        p = Path(source) if not isinstance(source, str) or "\n" not in str(source) else None
+        if p is not None and p.exists():
+            text = p.read_text()
+        else:
+            text = str(source)
+
+        frames = parse_xyz(text)
+        if not frames:
+            raise ValueError("No frames found in XYZ source.")
+        if frame < 0 or frame >= len(frames):
+            raise ValueError(
+                f"frame={frame} out of range; source contains {len(frames)} frame(s)."
+            )
+
+        atoms, positions, charge, mult, embedded_metrics = frames[frame]
+
+        if recompute_metrics:
+            if cutoff is None:
+                radii = [_cov_radius_ang(a) for a in atoms]
+                pair_sums = sorted(
+                    ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
+                )
+                median_sum = pair_sums[len(pair_sums) // 2]
+                cutoff = cov_scale * 1.5 * median_sum
+            metrics = compute_all_metrics(
+                atoms, positions, n_bins, w_atom, w_spatial, cutoff, cov_scale
+            )
+        else:
+            metrics = embedded_metrics
+
+        return cls(
+            atoms=list(atoms),
+            positions=list(positions),
+            charge=charge,
+            mult=mult,
+            metrics=metrics,
+            mode="loaded_xyz",
+        )
+
     def __repr__(self) -> str:
         counts = Counter(self.atoms)
         comp = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))
@@ -225,6 +338,44 @@ class GenerationResult:
     def __bool__(self) -> bool:
         return bool(self.structures)
 
+    def __add__(self, other: GenerationResult) -> GenerationResult:
+        """Merge two :class:`GenerationResult` objects into one.
+
+        Combines structures and accumulates all counters so that batch
+        workflows can collect results across multiple calls and treat them
+        as a single result::
+
+            r1 = generate(..., n_samples=20, seed=0)
+            r2 = generate(..., n_samples=20, seed=1)
+            combined = r1 + r2
+            print(len(combined))          # up to 40
+            print(combined.summary())
+
+        Parameters
+        ----------
+        other:
+            Another :class:`GenerationResult` to merge into this one.
+
+        Returns
+        -------
+        GenerationResult
+            New result containing all structures from both operands.
+            ``n_success_target`` is taken from *self* when set, otherwise
+            from *other*.
+        """
+        if not isinstance(other, GenerationResult):
+            return NotImplemented
+        return GenerationResult(
+            structures=self.structures + other.structures,
+            n_attempted=self.n_attempted + other.n_attempted,
+            n_passed=self.n_passed + other.n_passed,
+            n_rejected_parity=self.n_rejected_parity + other.n_rejected_parity,
+            n_rejected_filter=self.n_rejected_filter + other.n_rejected_filter,
+            n_success_target=self.n_success_target
+            if self.n_success_target is not None
+            else other.n_success_target,
+        )
+
     def __repr__(self) -> str:
         return (
             f"GenerationResult("
@@ -302,6 +453,34 @@ class StructureGenerator:
     elements:
         Element pool.  A spec string such as ``"1-30"`` or ``"6,7,8"``, an
         explicit list of element symbols, or ``None`` for all Z = 1–106.
+    element_fractions:
+        Relative sampling weights for elements in the pool, as a
+        ``{symbol: weight}`` dict (e.g. ``{"C": 0.5, "N": 0.3, "O": 0.2}``).
+        Weights are *relative* — they are normalised internally and need not
+        sum to 1.  Elements absent from the dict receive a weight of 1.0.
+        When ``None`` (default), every element in the pool is sampled with
+        equal probability.
+    element_min_counts:
+        Minimum number of atoms per element guaranteed in every generated
+        structure (e.g. ``{"C": 2, "N": 1}``).  The required atoms are
+        placed first; remaining slots are filled by weighted random sampling.
+        ``None`` (default) → no lower bounds.  The sum of all minimum counts
+        must not exceed ``n_atoms``.
+    element_max_counts:
+        Maximum number of atoms allowed per element
+        (e.g. ``{"N": 5, "O": 3}``).  Elements that have reached their
+        cap are excluded from sampling for the remaining slots.
+        ``None`` (default) → no upper bounds.
+
+        .. note::
+            When both *element_min_counts* and *element_max_counts* are
+            given, each element's min must be ≤ its max.
+
+        .. note::
+            The automatic hydrogen augmentation step (``add_hydrogen=True``)
+            runs *after* the constrained sampling and may temporarily exceed
+            *element_max_counts* for H.  Set ``add_hydrogen=False`` if H
+            count limits are critical.
     cov_scale:
         Minimum-distance scale factor: ``d_min(i,j) = cov_scale × (r_i + r_j)``
         using Pyykkö (2009) single-bond covalent radii.  Default: ``1.0``.
@@ -388,8 +567,16 @@ class StructureGenerator:
         coord_range: tuple[int, int] = (4, 8),
         shell_radius: tuple[float, float] = (1.8, 2.5),
         elements: str | list[str] | None = None,
+        element_fractions: dict[str, float] | None = None,
+        element_min_counts: dict[str, int] | None = None,
+        element_max_counts: dict[str, int] | None = None,
         cov_scale: float = 1.0,
         relax_cycles: int = 1500,
+        maxent_steps: int = 300,
+        maxent_lr: float = 0.05,
+        maxent_cutoff_scale: float = 2.5,
+        trust_radius: float = 0.5,
+        convergence_tol: float = 1e-3,
         add_hydrogen: bool = True,
         n_samples: int = 1,
         n_success: int | None = None,
@@ -422,6 +609,11 @@ class StructureGenerator:
         self.shell_radius = shell_radius
         self.cov_scale = cov_scale
         self.relax_cycles = relax_cycles
+        self.maxent_steps = maxent_steps
+        self.maxent_lr = maxent_lr
+        self.maxent_cutoff_scale = maxent_cutoff_scale
+        self.trust_radius = trust_radius
+        self.convergence_tol = convergence_tol
         self._add_hydrogen = add_hydrogen
         self.n_samples = n_samples
         self.n_success = n_success
@@ -447,6 +639,64 @@ class StructureGenerator:
             self._element_pool = parse_element_spec(elements)
         else:
             self._element_pool = list(elements)
+
+        # ── Element fractions ────────────────────────────────────────────
+        # Build a normalised weight list aligned with self._element_pool.
+        # Unknown keys in the dict raise ValueError immediately.
+        if element_fractions is not None:
+            unknown = set(element_fractions) - set(self._element_pool)
+            if unknown:
+                raise ValueError(
+                    f"element_fractions contains symbols not in the element pool: "
+                    f"{sorted(unknown)}"
+                )
+            weights = [float(element_fractions.get(sym, 1.0)) for sym in self._element_pool]
+            if any(w < 0 for w in weights):
+                raise ValueError("element_fractions weights must be non-negative.")
+            total = sum(weights)
+            if total == 0:
+                raise ValueError("element_fractions weights must not all be zero.")
+            self._element_weights: list[float] = [w / total for w in weights]
+        else:
+            n = len(self._element_pool)
+            self._element_weights = [1.0 / n] * n
+
+        # ── Element min/max counts ───────────────────────────────────────
+        # Validate and store; actual enforcement happens in stream().
+        if element_min_counts is not None:
+            unknown_min = set(element_min_counts) - set(self._element_pool)
+            if unknown_min:
+                raise ValueError(
+                    f"element_min_counts contains symbols not in the element pool: "
+                    f"{sorted(unknown_min)}"
+                )
+            if any(v < 0 for v in element_min_counts.values()):
+                raise ValueError("element_min_counts values must be non-negative.")
+            total_min = sum(element_min_counts.values())
+            if total_min > n_atoms:
+                raise ValueError(
+                    f"Sum of element_min_counts ({total_min}) exceeds n_atoms ({n_atoms})."
+                )
+        if element_max_counts is not None:
+            unknown_max = set(element_max_counts) - set(self._element_pool)
+            if unknown_max:
+                raise ValueError(
+                    f"element_max_counts contains symbols not in the element pool: "
+                    f"{sorted(unknown_max)}"
+                )
+            if any(v < 0 for v in element_max_counts.values()):
+                raise ValueError("element_max_counts values must be non-negative.")
+        if element_min_counts is not None and element_max_counts is not None:
+            for sym in element_min_counts:
+                lo = element_min_counts[sym]
+                hi = element_max_counts.get(sym, lo)
+                if lo > hi:
+                    raise ValueError(
+                        f"element_min_counts[{sym!r}]={lo} > "
+                        f"element_max_counts[{sym!r}]={hi}."
+                    )
+        self._element_min_counts: dict[str, int] = dict(element_min_counts or {})
+        self._element_max_counts: dict[str, int] = dict(element_max_counts or {})
 
         # ── Filters ─────────────────────────────────────────────────────
         self._filters: list[tuple[str, float, float]] = [parse_filter(f) for f in (filters or [])]
@@ -498,6 +748,83 @@ class StructureGenerator:
                 f"median(r_i+r_j)={median_sum:.3f} Å)"
             )
         return cutoff
+
+    def _sample_atoms(self, rng: random.Random) -> list[str]:
+        """Sample *n_atoms* element symbols respecting fractions and count bounds.
+
+        Algorithm
+        ---------
+        1. If no fractions/min/max are configured, falls back to the
+           original uniform ``rng.choice`` per atom (preserves seed parity).
+        2. Otherwise: place the guaranteed minimum-count atoms first
+           (``element_min_counts``), fill remaining slots by weighted random
+           sampling (``element_fractions``), excluding elements that have
+           reached their ``element_max_counts`` cap, then shuffle.
+
+        Raises
+        ------
+        RuntimeError
+            When the constraints cannot be satisfied (e.g. all remaining
+            elements are capped and there are still slots to fill).
+        """
+        pool = self._element_pool
+        min_c = self._element_min_counts
+        max_c = self._element_max_counts
+        n = len(pool)
+        uniform = (n > 0 and all(abs(w - 1.0 / n) < 1e-12 for w in self._element_weights))
+
+        # Fast path: uniform weights, no bounds → identical to original behaviour
+        if uniform and not min_c and not max_c:
+            return [rng.choice(pool) for _ in range(self.n_atoms)]
+
+        weights = self._element_weights
+
+        # ── Step 1: fill guaranteed minimum counts ──────────────────────
+        counts: dict[str, int] = {sym: min_c.get(sym, 0) for sym in pool}
+        atoms: list[str] = []
+        for sym in pool:
+            atoms.extend([sym] * counts[sym])
+
+        remaining = self.n_atoms - len(atoms)
+
+        # ── Step 2: weighted sampling for remaining slots ────────────────
+        for _ in range(remaining):
+            # Build eligible pool (not yet capped)
+            eligible: list[str] = []
+            eligible_w: list[float] = []
+            for sym, w in zip(pool, weights, strict=True):
+                cap = max_c.get(sym, None)
+                if cap is None or counts.get(sym, 0) < cap:
+                    eligible.append(sym)
+                    eligible_w.append(w)
+
+            if not eligible:
+                raise RuntimeError(
+                    "element_max_counts constraints cannot be satisfied: "
+                    "all elements are capped before n_atoms is reached."
+                )
+
+            # Normalise eligible weights and do a weighted choice
+            total_w = sum(eligible_w)
+            cum: list[float] = []
+            acc = 0.0
+            for w in eligible_w:
+                acc += w / total_w
+                cum.append(acc)
+
+            r = rng.random()
+            chosen = eligible[-1]
+            for sym, c in zip(eligible, cum, strict=True):
+                if r <= c:
+                    chosen = sym
+                    break
+
+            counts[chosen] = counts.get(chosen, 0) + 1
+            atoms.append(chosen)
+
+        # ── Step 3: shuffle so forced atoms don't cluster at front ───────
+        rng.shuffle(atoms)
+        return atoms
 
     # ------------------------------------------------------------------ #
     # Public properties                                                    #
@@ -562,6 +889,11 @@ class StructureGenerator:
                 self.region,
                 self.cov_scale,
                 rng,
+                maxent_steps=self.maxent_steps,
+                maxent_lr=self.maxent_lr,
+                maxent_cutoff_scale=self.maxent_cutoff_scale,
+                trust_radius=self.trust_radius,
+                convergence_tol=self.convergence_tol,
                 seed=self.seed,
             )
         else:  # shell
@@ -649,7 +981,7 @@ class StructureGenerator:
             i = n_attempted
             n_attempted += 1
 
-            atoms_list = [rng.choice(self._element_pool) for _ in range(self.n_atoms)]
+            atoms_list = self._sample_atoms(rng)
             if do_add_h:
                 atoms_list = add_hydrogen(atoms_list, rng)
 
@@ -717,25 +1049,20 @@ class StructureGenerator:
             )
 
         # ── warnings.warn for noteworthy outcomes ─────────────────────────
-        # These fire regardless of verbose so that downstream consumers
+        # Fires regardless of verbose so that downstream consumers
         # (ASE, HT pipelines) receive machine-visible signals even when
         # PASTED is not in verbose mode.
+        #
+        # Parity warnings fire only when n_passed == 0 (complete failure).
+        # Partial parity rejection where some structures still passed is
+        # expected behaviour for mixed-element pools and does not require
+        # a warning — the verbose summary line already reports the counts.
         if n_invalid > 0 and n_passed == 0:
             warnings.warn(
                 f"All {n_attempted} attempt(s) were rejected by the charge/"
                 f"multiplicity parity check ({n_invalid} invalid). "
                 f"No structures were generated. "
                 f"Check that your element pool can satisfy "
-                f"charge={self.charge}, mult={self.mult}.",
-                UserWarning,
-                stacklevel=4,
-            )
-        elif n_invalid > 0:
-            warnings.warn(
-                f"{n_invalid} of {n_attempted} attempt(s) were rejected by "
-                f"the charge/multiplicity parity check. "
-                f"Consider narrowing the element pool to elements whose "
-                f"electron counts are compatible with "
                 f"charge={self.charge}, mult={self.mult}.",
                 UserWarning,
                 stacklevel=4,
@@ -854,6 +1181,111 @@ class StructureGenerator:
 # ---------------------------------------------------------------------------
 
 
+def read_xyz(
+    source: str | Path,
+    *,
+    recompute_metrics: bool = True,
+    cutoff: float | None = None,
+    n_bins: int = 20,
+    w_atom: float = 0.5,
+    w_spatial: float = 0.5,
+    cov_scale: float = 1.0,
+) -> list[Structure]:
+    """Read one or more structures from an XYZ file or string.
+
+    Convenience wrapper around :meth:`Structure.from_xyz` that reads **all
+    frames** from a (possibly multi-frame) XYZ source and returns them as a
+    list.  Both plain XYZ and PASTED extended XYZ are supported.
+
+    Parameters
+    ----------
+    source:
+        Path to an XYZ file **or** a raw XYZ string.
+    recompute_metrics:
+        Recompute all disorder metrics after loading each structure
+        (default: ``True``).
+    cutoff:
+        Distance cutoff (Å) for metric computation.  Auto-computed from
+        each structure's element pool when ``None``.
+    n_bins:
+        Histogram bins for ``H_spatial`` / ``RDF_dev`` (default: 20).
+    w_atom:
+        Weight of ``H_atom`` in ``H_total`` (default: 0.5).
+    w_spatial:
+        Weight of ``H_spatial`` in ``H_total`` (default: 0.5).
+    cov_scale:
+        Minimum distance scale factor used for metrics (default: 1.0).
+
+    Returns
+    -------
+    list[Structure]
+        One :class:`Structure` per frame, in file order.
+
+    Examples
+    --------
+    Load a PASTED output file and pass the first structure to the
+    optimizer::
+
+        from pasted import read_xyz, StructureOptimizer
+
+        structs = read_xyz("results.xyz")
+        opt = StructureOptimizer(
+            n_atoms=len(structs[0]),
+            charge=structs[0].charge,
+            mult=structs[0].mult,
+            objective={"H_total": 1.0},
+            elements=list(set(structs[0].atoms)),
+            max_steps=3000,
+            seed=42,
+        )
+        result = opt.run(initial=structs[0])
+
+    Compose with :class:`GenerationResult` via ``+``::
+
+        from pasted import read_xyz, generate
+
+        existing = generate(n_atoms=10, charge=0, mult=1,
+                            mode="gas", region="sphere:9",
+                            elements="6,7,8", n_samples=5, seed=0)
+        loaded   = read_xyz("previous_run.xyz")
+        # loaded is a list[Structure]; wrap manually if needed:
+        from pasted import GenerationResult
+        all_structs = existing + GenerationResult(structures=loaded,
+                                                  n_passed=len(loaded),
+                                                  n_attempted=len(loaded))
+    """
+    p = Path(source) if not isinstance(source, str) or "\n" not in str(source) else None
+    text = p.read_text() if (p is not None and p.exists()) else str(source)
+
+    frames = parse_xyz(text)
+    result: list[Structure] = []
+    for atoms, positions, charge, mult, embedded_metrics in frames:
+        if recompute_metrics:
+            cut = cutoff
+            if cut is None:
+                radii = [_cov_radius_ang(a) for a in atoms]
+                pair_sums = sorted(
+                    ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
+                )
+                median_sum = pair_sums[len(pair_sums) // 2]
+                cut = cov_scale * 1.5 * median_sum
+            metrics = compute_all_metrics(
+                atoms, positions, n_bins, w_atom, w_spatial, cut, cov_scale
+            )
+        else:
+            metrics = embedded_metrics
+
+        result.append(Structure(
+            atoms=list(atoms),
+            positions=list(positions),
+            charge=charge,
+            mult=mult,
+            metrics=metrics,
+            mode="loaded_xyz",
+        ))
+    return result
+
+
 def generate(
     *,
     n_atoms: int,
@@ -869,8 +1301,16 @@ def generate(
     coord_range: tuple[int, int] = (4, 8),
     shell_radius: tuple[float, float] = (1.8, 2.5),
     elements: str | list[str] | None = None,
+    element_fractions: dict[str, float] | None = None,
+    element_min_counts: dict[str, int] | None = None,
+    element_max_counts: dict[str, int] | None = None,
     cov_scale: float = 1.0,
     relax_cycles: int = 1500,
+    maxent_steps: int = 300,
+    maxent_lr: float = 0.05,
+    maxent_cutoff_scale: float = 2.5,
+    trust_radius: float = 0.5,
+    convergence_tol: float = 1e-3,
     add_hydrogen: bool = True,
     n_samples: int = 1,
     n_success: int | None = None,
@@ -942,8 +1382,16 @@ def generate(
         coord_range=coord_range,
         shell_radius=shell_radius,
         elements=elements,
+        element_fractions=element_fractions,
+        element_min_counts=element_min_counts,
+        element_max_counts=element_max_counts,
         cov_scale=cov_scale,
         relax_cycles=relax_cycles,
+        maxent_steps=maxent_steps,
+        maxent_lr=maxent_lr,
+        maxent_cutoff_scale=maxent_cutoff_scale,
+        trust_radius=trust_radius,
+        convergence_tol=convergence_tol,
         add_hydrogen=add_hydrogen,
         n_samples=n_samples,
         n_success=n_success,

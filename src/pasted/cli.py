@@ -18,7 +18,7 @@ from ._atoms import (
     parse_lo_hi,
     validate_charge_mult,
 )
-from ._generator import StructureGenerator
+from ._generator import StructureGenerator, read_xyz
 from ._optimizer import StructureOptimizer, parse_objective_spec
 
 # ---------------------------------------------------------------------------
@@ -167,6 +167,40 @@ examples
         metavar="SPEC",
         help="Element pool by atomic number (default: all Z=1-106).",
     )
+    eg.add_argument(
+        "--element-fractions",
+        action="append",
+        default=[],
+        dest="element_fractions",
+        metavar="SYM:WEIGHT",
+        help=(
+            "Relative sampling weight for one element, e.g. 'C:0.5'. "
+            "Repeatable.  Weights are normalised; elements omitted from the "
+            "list receive weight 1.0.  Default: uniform."
+        ),
+    )
+    eg.add_argument(
+        "--element-min-counts",
+        action="append",
+        default=[],
+        dest="element_min_counts",
+        metavar="SYM:N",
+        help=(
+            "Minimum number of atoms guaranteed for one element, e.g. 'C:2'. "
+            "Repeatable.  Default: no lower bound."
+        ),
+    )
+    eg.add_argument(
+        "--element-max-counts",
+        action="append",
+        default=[],
+        dest="element_max_counts",
+        metavar="SYM:N",
+        help=(
+            "Maximum number of atoms allowed for one element, e.g. 'N:5'. "
+            "Repeatable.  Default: no upper bound."
+        ),
+    )
 
     pg = p.add_argument_group("placement")
     pg.add_argument(
@@ -277,9 +311,12 @@ examples
     )
     optg.add_argument(
         "--method",
-        choices=["annealing", "basin_hopping"],
+        choices=["annealing", "basin_hopping", "parallel_tempering"],
         default="annealing",
-        help="Optimization method (default: annealing).",
+        help=(
+            "Optimization method (default: annealing). "
+            "Use parallel_tempering for replica-exchange MC."
+        ),
     )
     optg.add_argument(
         "--max-steps",
@@ -322,6 +359,42 @@ examples
             "Set to 0.8 to enforce connectivity."
         ),
     )
+    optg.add_argument(
+        "--no-composition-moves",
+        action="store_true",
+        dest="no_composition_moves",
+        help=(
+            "Disable element-type swaps during optimization. "
+            "Only atomic positions are moved; composition is held fixed. "
+            "Default: composition moves enabled."
+        ),
+    )
+    optg.add_argument(
+        "--n-replicas",
+        type=int,
+        default=4,
+        dest="n_replicas",
+        help="Number of temperature replicas for parallel_tempering (default: 4).",
+    )
+    optg.add_argument(
+        "--pt-swap-interval",
+        type=int,
+        default=10,
+        dest="pt_swap_interval",
+        help="Attempt replica exchange every N steps for parallel_tempering (default: 10).",
+    )
+    optg.add_argument(
+        "--initial-xyz",
+        type=str,
+        default=None,
+        dest="initial_xyz",
+        metavar="FILE",
+        help=(
+            "XYZ file to use as the initial structure for optimization. "
+            "Overrides automatic gas-mode initialization. "
+            "Supports plain and extended XYZ; metrics are recomputed on load."
+        ),
+    )
 
     return p
 
@@ -362,6 +435,7 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
             T_end=args.T_end,
             frag_threshold=args.frag_threshold,
             move_step=args.move_step,
+            allow_composition_moves=not args.no_composition_moves,
             lcc_threshold=args.lcc_threshold,
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
@@ -370,6 +444,8 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
             w_atom=args.w_atom,
             w_spatial=args.w_spatial,
             n_restarts=args.n_samples,
+            n_replicas=args.n_replicas,
+            pt_swap_interval=args.pt_swap_interval,
             seed=args.seed,
             verbose=True,
         )
@@ -377,7 +453,28 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    best = opt.run().best
+    # Load initial structure from --initial-xyz if provided
+    initial_structure = None
+    if getattr(args, "initial_xyz", None):
+        try:
+            loaded = read_xyz(args.initial_xyz)
+            if not loaded:
+                print(
+                f"[ERROR] --initial-xyz: no structures found in {args.initial_xyz!r}",
+                file=sys.stderr,
+            )
+                sys.exit(1)
+            initial_structure = loaded[0]
+            print(
+                f"[optimize] loaded initial structure from "
+                f"{args.initial_xyz!r}: {initial_structure}",
+                file=sys.stderr,
+            )
+        except (ValueError, OSError) as exc:
+            print(f"[ERROR] --initial-xyz: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    best = opt.run(initial=initial_structure).best
     output_text = best.to_xyz() + "\n"
     _write_output(output_text, args.output)
     if args.output:
@@ -407,6 +504,9 @@ def _run_sample_mode(
             coord_range=coord_range,
             shell_radius=shell_radius,
             elements=element_pool,
+            element_fractions=args.parsed_element_fractions,
+            element_min_counts=args.parsed_element_min_counts,
+            element_max_counts=args.parsed_element_max_counts,
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
             add_hydrogen=not args.no_add_hydrogen,
@@ -488,6 +588,75 @@ def main() -> None:
         else f"all Z=1-106 ({len(default_element_pool())} elements)"
     )
     print(f"[pool] {pool_label}", file=sys.stderr)
+
+    # Parse --element-fractions SYM:WEIGHT ...
+    parsed_element_fractions: dict[str, float] | None = None
+    if args.element_fractions:
+        parsed_element_fractions = {}
+        for spec in args.element_fractions:
+            parts = spec.split(":")
+            if len(parts) != 2:
+                print(
+                    f"[ERROR] --element-fractions: expected 'SYM:WEIGHT', got {spec!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            sym, weight_s = parts
+            try:
+                parsed_element_fractions[sym] = float(weight_s)
+            except ValueError:
+                print(
+                    f"[ERROR] --element-fractions: weight must be a number, got {weight_s!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    args.parsed_element_fractions = parsed_element_fractions
+
+    # Parse --element-min-counts SYM:N ...
+    parsed_element_min_counts: dict[str, int] | None = None
+    if args.element_min_counts:
+        parsed_element_min_counts = {}
+        for spec in args.element_min_counts:
+            parts = spec.split(":")
+            if len(parts) != 2:
+                print(
+                    f"[ERROR] --element-min-counts: expected 'SYM:N', got {spec!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            sym, n_s = parts
+            try:
+                parsed_element_min_counts[sym] = int(n_s)
+            except ValueError:
+                print(
+                    f"[ERROR] --element-min-counts: count must be an integer, got {n_s!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    args.parsed_element_min_counts = parsed_element_min_counts
+
+    # Parse --element-max-counts SYM:N ...
+    parsed_element_max_counts: dict[str, int] | None = None
+    if args.element_max_counts:
+        parsed_element_max_counts = {}
+        for spec in args.element_max_counts:
+            parts = spec.split(":")
+            if len(parts) != 2:
+                print(
+                    f"[ERROR] --element-max-counts: expected 'SYM:N', got {spec!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            sym, n_s = parts
+            try:
+                parsed_element_max_counts[sym] = int(n_s)
+            except ValueError:
+                print(
+                    f"[ERROR] --element-max-counts: count must be an integer, got {n_s!r}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    args.parsed_element_max_counts = parsed_element_max_counts
 
     # --validate: quick sanity check then exit
     if args.validate:

@@ -360,3 +360,105 @@ Available metrics: all keys in `pasted.ALL_METRICS` —
 `H_atom`, `H_spatial`, `H_total`, `RDF_dev`, `shape_aniso`,
 `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
 `ring_fraction`, `charge_frustration`, `moran_I_chi`.
+
+---
+
+## Element sampling control (StructureGenerator)
+
+### Biased element fractions
+
+By default each element is sampled with equal probability.  Pass
+`element_fractions` to shift the distribution:
+
+```python
+from pasted import StructureGenerator
+
+gen = StructureGenerator(
+    n_atoms=20, charge=0, mult=1,
+    mode="gas", region="sphere:10",
+    elements="6,7,8",
+    element_fractions={"C": 0.6, "N": 0.3, "O": 0.1},  # C-rich
+    n_samples=50, seed=0,
+)
+result = gen.generate()
+```
+
+Weights are *relative* — they are normalised internally.
+`{"C": 6, "N": 3, "O": 1}` is equivalent to the above.
+Elements absent from the dict receive weight `1.0`.
+
+### Element count bounds
+
+Use `element_min_counts` and `element_max_counts` to guarantee or cap the
+number of specific atoms in each generated structure:
+
+```python
+gen = StructureGenerator(
+    n_atoms=15, charge=0, mult=1,
+    mode="gas", region="sphere:10",
+    elements="6,7,8,15,16",          # C, N, O, P, S
+    element_min_counts={"C": 4},      # always at least 4 carbons
+    element_max_counts={"N": 3, "O": 3},  # cap nitrogen and oxygen
+    n_samples=100, seed=42,
+)
+result = gen.generate()
+
+from collections import Counter
+for s in result:
+    c = Counter(s.atoms)
+    assert c["C"] >= 4
+    assert c.get("N", 0) <= 3
+    assert c.get("O", 0) <= 3
+```
+
+Bounds are enforced during atom sampling, before the parity check.
+A `ValueError` is raised at construction time when constraints are
+inconsistent (sum of mins > `n_atoms`, or min > max for any element).
+
+### Combining fractions and bounds
+
+All three parameters can be used together:
+
+```python
+gen = StructureGenerator(
+    n_atoms=12, charge=0, mult=1,
+    mode="chain",
+    elements="6,7,8",
+    element_fractions={"C": 5, "N": 2, "O": 1},
+    element_min_counts={"C": 2},
+    element_max_counts={"N": 4},
+    n_samples=30, seed=7,
+)
+```
+
+---
+
+## Position-only optimisation (StructureOptimizer)
+
+Set `allow_composition_moves=False` to fix the composition and only
+optimise atomic positions.  This is useful when the stoichiometry is
+predetermined:
+
+```python
+from pasted import StructureOptimizer, Structure
+
+# Load a structure with a fixed composition
+initial = Structure.from_xyz("my_structure.xyz")
+
+opt = StructureOptimizer(
+    n_atoms=len(initial),
+    charge=initial.charge,
+    mult=initial.mult,
+    elements=list(set(initial.atoms)),
+    objective={"H_total": 1.0, "Q6": -2.0},
+    allow_composition_moves=False,   # position-only
+    method="annealing",
+    max_steps=5000,
+    seed=42,
+)
+
+result = opt.run(initial=initial)
+print(result.best)
+# Composition is identical to initial; only positions have changed
+assert sorted(result.best.atoms) == sorted(initial.atoms)
+```

@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-03-19
+
+### Added
+
+- **`allow_composition_moves` parameter for `StructureOptimizer`.**
+
+  Controls whether element-type swaps are performed during optimisation.
+
+  | Value | Behaviour |
+  |---|---|
+  | `True` (default) | Each MC step randomly chooses between a fragment move (position change) and a composition move (element-type swap) with equal probability — unchanged from v0.1.15 |
+  | `False` | Only fragment moves are executed; element types are held fixed for the entire run |
+
+  Use `allow_composition_moves=False` when the composition is predetermined
+  and should not be modified during optimisation (e.g. optimising the
+  geometry of a fixed stoichiometry).
+
+  Applies to all three optimisation methods: `"annealing"`,
+  `"basin_hopping"`, and `"parallel_tempering"`.
+
+  CLI: `--no-composition-moves` flag added to the `--optimize` mode.
+
+  ```python
+  opt = StructureOptimizer(
+      n_atoms=12, charge=0, mult=1,
+      objective={"H_total": 1.0, "Q6": -2.0},
+      elements="24,25,26,27,28",
+      allow_composition_moves=False,   # position-only optimisation
+      max_steps=5000, seed=42,
+  )
+  result = opt.run(initial=my_structure)
+  ```
+
+- **`element_fractions` parameter for `StructureGenerator` / `generate()`.**
+
+  Specifies relative sampling weights per element as a `{symbol: weight}`
+  dict.  Weights are normalised internally; elements absent from the dict
+  receive weight `1.0`.  Default (`None`) keeps the original uniform
+  sampling.
+
+  ```python
+  gen = StructureGenerator(
+      n_atoms=20, charge=0, mult=1,
+      mode="gas", region="sphere:10",
+      elements="6,7,8",
+      element_fractions={"C": 0.6, "N": 0.3, "O": 0.1},
+      n_samples=50, seed=0,
+  )
+  ```
+
+  CLI: `--element-fractions SYM:WEIGHT` (repeatable).
+
+  ```
+  pasted --n-atoms 20 --elements 6,7,8 --charge 0 --mult 1 \
+      --mode gas --region sphere:10 --n-samples 50 \
+      --element-fractions C:0.6 --element-fractions N:0.3 --element-fractions O:0.1
+  ```
+
+- **`element_min_counts` and `element_max_counts` parameters for
+  `StructureGenerator` / `generate()`.**
+
+  Hard per-element atom count bounds enforced at sampling time.
+
+  | Parameter | Type | Effect |
+  |---|---|---|
+  | `element_min_counts` | `dict[str, int] \| None` | Guaranteed lower bound; atoms are placed first, remaining slots filled by weighted sampling |
+  | `element_max_counts` | `dict[str, int] \| None` | Upper bound; elements that have reached their cap are excluded from further sampling |
+
+  Both default to `None` (no bounds).  The generator raises `ValueError`
+  at construction time when constraints are inconsistent (sum of mins
+  exceeds `n_atoms`, or any min > its paired max).  A `RuntimeError` is
+  raised during sampling if all elements are simultaneously capped before
+  `n_atoms` is reached.
+
+  ```python
+  gen = StructureGenerator(
+      n_atoms=15, charge=0, mult=1,
+      mode="gas", region="sphere:10",
+      elements="6,7,8,15,16",
+      element_min_counts={"C": 4},        # at least 4 carbon atoms
+      element_max_counts={"N": 3, "O": 3}, # at most 3 N and 3 O
+      n_samples=100, seed=42,
+  )
+  ```
+
+  CLI: `--element-min-counts SYM:N` and `--element-max-counts SYM:N`
+  (both repeatable).
+
+  ```
+  pasted --n-atoms 15 --elements 6,7,8,15,16 --charge 0 --mult 1 \
+      --mode gas --region sphere:10 --n-samples 100 \
+      --element-min-counts C:4 \
+      --element-max-counts N:3 --element-max-counts O:3
+  ```
+
+- **20 new tests** across `test_generator.py` and `test_optimizer.py`:
+  - `TestElementFractions` (6 tests) — bias validation, unknown/negative/zero
+    weight errors, uniform-weight seed parity, functional-API forwarding.
+  - `TestElementMinMaxCounts` (8 tests) — min/max enforcement, combined
+    constraints, sum-exceeds-n_atoms error, min > max error, unknown element
+    errors, impossible-cap RuntimeError.
+  - `TestAllowCompositionMoves` (6 tests) — default True, composition
+    preservation when disabled (SA and PT), still optimises, `repr`
+    behaviour.
+
 ## [0.1.15] - 2026-03-19
 
 ### Changed

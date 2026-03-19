@@ -246,7 +246,7 @@ static double eval_angular(const double* p, int n,
 F64Array place_maxent_cpp_impl(
     F64Array pts_in, F64Array radii_in,
     double cov_scale, double region_radius, double ang_cutoff,
-    int maxent_steps, double trust_radius, long long seed)
+    int maxent_steps, double trust_radius, double convergence_tol, long long seed)
 {
     auto pb=pts_in.request(); auto rb=radii_in.request();
     const int n=int(pb.shape[0]);
@@ -332,6 +332,14 @@ F64Array place_maxent_cpp_impl(
          double sy=sn.dot(yn),ss=sn.norm2();
          if(sy>1e-10*ss){sb[bptr].copy_from(sn);yb[bptr].copy_from(yn);rho[bptr]=1.0/sy;
              bptr=(bptr+1)%m;bcnt=std::min(bcnt+1,m);}}
+
+        // Early termination: converged when RMS gradient per atom < tol
+        if(convergence_tol > 0.0) {
+            double gnorm2 = 0.0;
+            for(int i=0;i<dim;++i) gnorm2 += gn[i]*gn[i];
+            double rms = std::sqrt(gnorm2 / n);
+            if(rms < convergence_tol) break;
+        }
     }
 
     x.copy_to(outp); return out;
@@ -356,7 +364,7 @@ PYBIND11_MODULE(_maxent_core, m) {
         "pasted._ext._maxent_core (v0.1.15)\n"
         "angular_repulsion_gradient(pts, cutoff) -> grad ndarray(n,3)\n"
         "place_maxent_cpp(pts, radii, cov_scale, region_radius, ang_cutoff,\n"
-        "                 maxent_steps, trust_radius=0.5, seed=-1) -> ndarray(n,3)\n";
+        "                 maxent_steps, trust_radius=0.5, convergence_tol=1e-3, seed=-1) -> ndarray(n,3)\n";
 
     m.def("angular_repulsion_gradient",&angular_repulsion_gradient_cpp,
         py::arg("pts"),py::arg("cutoff"),
@@ -365,7 +373,8 @@ PYBIND11_MODULE(_maxent_core, m) {
     m.def("place_maxent_cpp",&place_maxent_cpp_impl,
         py::arg("pts"),py::arg("radii"),
         py::arg("cov_scale"),py::arg("region_radius"),py::arg("ang_cutoff"),
-        py::arg("maxent_steps"),py::arg("trust_radius")=0.5,py::arg("seed")=-1LL,
+        py::arg("maxent_steps"),py::arg("trust_radius")=0.5,
+        py::arg("convergence_tol")=1e-3,py::arg("seed")=-1LL,
         R"(Full maxent gradient-descent loop in C++ with L-BFGS and trust-radius cap.
 
 Parameters

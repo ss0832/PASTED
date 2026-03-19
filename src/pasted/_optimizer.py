@@ -402,6 +402,14 @@ class StructureOptimizer:
     pt_swap_interval:
         Attempt a replica-exchange swap every this many MC steps
         (default: 10).  Ignored for other methods.
+    allow_composition_moves:
+        When ``True`` (default), each MC step randomly chooses between a
+        **fragment move** (atomic displacement) and a **composition move**
+        (element-type swap) with equal probability.  When ``False``, only
+        fragment moves are performed — element types are held fixed and only
+        atomic positions are optimised.  Set to ``False`` when the
+        composition is predetermined and should not change during
+        optimisation.
     frag_threshold:
         Local Q6 threshold for fragment selection (default: 0.3).
         Atoms with local Q6 > threshold are preferentially displaced.
@@ -473,6 +481,7 @@ class StructureOptimizer:
         T_end: float = 0.01,
         frag_threshold: float = 0.3,
         move_step: float = 0.5,
+        allow_composition_moves: bool = True,
         lcc_threshold: float = 0.0,
         cov_scale: float = 1.0,
         relax_cycles: int = 1500,
@@ -502,6 +511,7 @@ class StructureOptimizer:
         self.T_end = T_end
         self.frag_threshold = frag_threshold
         self.move_step = move_step
+        self.allow_composition_moves = allow_composition_moves
         self.lcc_threshold = lcc_threshold
         self.cov_scale = cov_scale
         self.relax_cycles = relax_cycles
@@ -722,7 +732,7 @@ class StructureOptimizer:
                 radii_k = replicas_radii[k]
 
                 # Propose move
-                if rng.random() < 0.5:
+                if not self.allow_composition_moves or rng.random() < 0.5:
                     new_positions = _fragment_move(
                         positions, q6_k, self.frag_threshold, self.move_step, rng
                     )
@@ -914,7 +924,7 @@ class StructureOptimizer:
             T = self._temperature(step)
 
             # ── Move ─────────────────────────────────────────────────────
-            if rng.random() < 0.5:
+            if not self.allow_composition_moves or rng.random() < 0.5:
                 new_positions = _fragment_move(
                     positions, per_atom_q6, self.frag_threshold, self.move_step, rng
                 )
@@ -1147,11 +1157,12 @@ class StructureOptimizer:
             if self.method == "parallel_tempering"
             else ""
         )
+        comp_info = "" if self.allow_composition_moves else ", allow_composition_moves=False"
         return (
             f"StructureOptimizer("
             f"n_atoms={self.n_atoms}, method={self.method!r}, "
             f"max_steps={self.max_steps}, "
             f"T_start={self.T_start}, T_end={self.T_end}, "
             f"pool_size={len(self._element_pool)}"
-            f"{pt_info})"
+            f"{pt_info}{comp_info})"
         )

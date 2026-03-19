@@ -476,6 +476,7 @@ def place_maxent(
     maxent_lr: float = 0.05,
     maxent_cutoff_scale: float = 2.5,
     trust_radius: float = 0.5,
+    convergence_tol: float = 1e-3,
     seed: int | None = None,
 ) -> tuple[list[str], list[Vec3]]:
     """Place atoms to maximise angular entropy subject to distance constraints.
@@ -532,6 +533,11 @@ def place_maxent(
         Per-atom maximum displacement per step (Å, default: 0.5).  Used by
         the C++ L-BFGS loop; steepest-descent fallback uses unit-norm clip
         scaled by *maxent_lr* instead.
+    convergence_tol:
+        Early-termination threshold: the loop stops when the RMS gradient
+        per atom falls below this value (Å⁻¹·a.u., default: 1e-3).  Set to
+        ``0`` to disable early termination and always run *maxent_steps*
+        iterations.  Ignored by the Python steepest-descent fallback.
     seed:
         Optional integer seed forwarded to the steric-clash relaxation for the
         coincident-atom edge case.  ``None`` → non-deterministic (default).
@@ -573,7 +579,7 @@ def place_maxent(
         seed_int: int = -1 if seed is None else int(seed)
         pts = _cpp_place_maxent(
             pts, radii, cov_scale, region_radius, ang_cutoff,
-            maxent_steps, trust_radius, seed_int,
+            maxent_steps, trust_radius, convergence_tol, seed_int,
         )
         return atoms, [tuple(row) for row in pts]
 

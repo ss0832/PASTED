@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -561,3 +562,246 @@ class TestGenerationResult:
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(user_warns) == 0
+
+
+# ---------------------------------------------------------------------------
+# GenerationResult.__add__
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationResultAdd:
+    def test_add_combines_structures(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            r1 = generate(
+                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+                elements="6,8", n_samples=3, seed=0,
+            )
+            r2 = generate(
+                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+                elements="6,8", n_samples=4, seed=1,
+            )
+        combined = r1 + r2
+        assert len(combined) == len(r1) + len(r2)
+        assert isinstance(combined, GenerationResult)
+
+    def test_add_accumulates_counters(self) -> None:
+        r1 = GenerationResult(
+            structures=[], n_attempted=10, n_passed=4,
+            n_rejected_parity=2, n_rejected_filter=4,
+        )
+        r2 = GenerationResult(
+            structures=[], n_attempted=8, n_passed=3,
+            n_rejected_parity=1, n_rejected_filter=4,
+        )
+        combined = r1 + r2
+        assert combined.n_attempted == 18
+        assert combined.n_passed == 7
+        assert combined.n_rejected_parity == 3
+        assert combined.n_rejected_filter == 8
+
+    def test_add_preserves_n_success_target_from_left(self) -> None:
+        r1 = GenerationResult(structures=[], n_success_target=10)
+        r2 = GenerationResult(structures=[], n_success_target=20)
+        assert (r1 + r2).n_success_target == 10
+
+    def test_add_takes_right_when_left_is_none(self) -> None:
+        r1 = GenerationResult(structures=[], n_success_target=None)
+        r2 = GenerationResult(structures=[], n_success_target=5)
+        assert (r1 + r2).n_success_target == 5
+
+    def test_add_returns_notimplemented_for_non_result(self) -> None:
+        r = GenerationResult(structures=[])
+        result = r.__add__([])  # type: ignore[arg-type]
+        assert result is NotImplemented
+
+
+# ---------------------------------------------------------------------------
+# parity warning threshold
+# ---------------------------------------------------------------------------
+
+
+class TestParityWarningThreshold:
+    def test_no_warn_on_partial_parity_failure(self) -> None:
+        # C/N/O mix: N has odd Z → some parity failures, but some pass
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = generate(
+                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+                elements="6,7,8", n_samples=20, seed=0,
+            )
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        # Warning should fire only when n_passed == 0; partial failures are silent
+        assert len(result) > 0, "Expected some structures to pass"
+        assert len(user_warns) == 0, f"Unexpected warnings: {[str(x.message) for x in user_warns]}"
+
+    def test_warn_on_complete_parity_failure(self) -> None:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = generate(
+                n_atoms=6, charge=99, mult=1, mode="gas", region="sphere:6",
+                elements="6,7,8", n_samples=5, seed=0,
+            )
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(result) == 0
+        assert len(user_warns) >= 1
+        assert "parity" in str(user_warns[0].message).lower()
+
+
+# ---------------------------------------------------------------------------
+# Element fractions / min counts / max counts
+# ---------------------------------------------------------------------------
+
+
+class TestElementFractions:
+    def _gen(self, **kwargs: object) -> StructureGenerator:
+        defaults: dict[str, object] = {
+            "n_atoms": 12,
+            "charge": 0,
+            "mult": 1,
+            "mode": "gas",
+            "region": "sphere:8",
+            "elements": "6,7,8",
+            "n_samples": 10,
+            "seed": 42,
+        }
+        defaults.update(kwargs)
+        return StructureGenerator(**defaults)  # type: ignore[arg-type]
+
+    def test_fractions_biases_toward_heavy_element(self) -> None:
+        """C-heavy fractions should produce more C atoms than uniform sampling."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_biased = self._gen(
+                element_fractions={"C": 10.0, "N": 1.0, "O": 1.0},
+                n_samples=30,
+            ).generate()
+            result_uniform = self._gen(n_samples=30).generate()
+
+        def c_fraction(r: GenerationResult) -> float:
+            total = sum(len(s.atoms) for s in r)
+            c_count = sum(Counter(s.atoms).get("C", 0) for s in r)
+            return c_count / total if total else 0.0
+
+        assert c_fraction(result_biased) > c_fraction(result_uniform), (
+            "C-heavy fractions should produce more C than uniform"
+        )
+
+    def test_fractions_unknown_element_raises(self) -> None:
+        with pytest.raises(ValueError, match="element pool"):
+            self._gen(element_fractions={"Fe": 1.0})
+
+    def test_fractions_negative_raises(self) -> None:
+        with pytest.raises(ValueError, match="non-negative"):
+            self._gen(element_fractions={"C": -1.0, "N": 1.0})
+
+    def test_fractions_all_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="all be zero"):
+            self._gen(element_fractions={"C": 0.0, "N": 0.0, "O": 0.0})
+
+    def test_fractions_uniform_equivalent_to_none(self) -> None:
+        """Equal weights should behave the same as no fractions (same atoms)."""
+        gen_none = self._gen(seed=7)
+        gen_uniform = self._gen(
+            seed=7, element_fractions={"C": 1.0, "N": 1.0, "O": 1.0}
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            r_none = gen_none.generate()
+            r_uniform = gen_uniform.generate()
+        # Same seed + equal weights → same atoms lists
+        assert [s.atoms for s in r_none] == [s.atoms for s in r_uniform]
+
+    def test_fractions_passed_to_generate_functional(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate(
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:7",
+                elements="6,7,8",
+                element_fractions={"C": 5.0, "N": 1.0, "O": 1.0},
+                n_samples=10,
+                seed=0,
+            )
+        assert len(result) >= 0  # no crash; fractions accepted
+
+
+class TestElementMinMaxCounts:
+    def _gen(self, **kwargs: object) -> StructureGenerator:
+        defaults: dict[str, object] = {
+            "n_atoms": 10,
+            "charge": 0,
+            "mult": 1,
+            "mode": "gas",
+            "region": "sphere:8",
+            "elements": "6,7,8",
+            "n_samples": 10,
+            "seed": 0,
+        }
+        defaults.update(kwargs)
+        return StructureGenerator(**defaults)  # type: ignore[arg-type]
+
+    def test_min_counts_respected(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self._gen(element_min_counts={"C": 3}, n_samples=20).generate()
+        assert len(result) > 0
+        for s in result:
+            assert Counter(s.atoms).get("C", 0) >= 3, (
+                f"C min violated: {Counter(s.atoms)}"
+            )
+
+    def test_max_counts_respected(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self._gen(element_max_counts={"N": 2}, n_samples=20).generate()
+        assert len(result) > 0
+        for s in result:
+            assert Counter(s.atoms).get("N", 0) <= 2, (
+                f"N max violated: {Counter(s.atoms)}"
+            )
+
+    def test_min_and_max_together(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self._gen(
+                element_min_counts={"C": 2},
+                element_max_counts={"C": 4, "N": 3},
+                n_samples=20,
+            ).generate()
+        assert len(result) > 0
+        for s in result:
+            c = Counter(s.atoms)
+            assert c.get("C", 0) >= 2
+            assert c.get("C", 0) <= 4
+            assert c.get("N", 0) <= 3
+
+    def test_min_exceeds_n_atoms_raises(self) -> None:
+        with pytest.raises(ValueError, match="n_atoms"):
+            self._gen(element_min_counts={"C": 8, "N": 5})
+
+    def test_min_gt_max_raises(self) -> None:
+        with pytest.raises(ValueError, match="element_min_counts"):
+            self._gen(
+                element_min_counts={"C": 5},
+                element_max_counts={"C": 3},
+            )
+
+    def test_unknown_min_element_raises(self) -> None:
+        with pytest.raises(ValueError, match="element pool"):
+            self._gen(element_min_counts={"Fe": 1})
+
+    def test_unknown_max_element_raises(self) -> None:
+        with pytest.raises(ValueError, match="element pool"):
+            self._gen(element_max_counts={"Fe": 2})
+
+    def test_impossible_cap_raises_runtime_error(self) -> None:
+        """Cap every element to 0 → RuntimeError during sampling."""
+        gen = self._gen(element_max_counts={"C": 0, "N": 0, "O": 0})
+        with pytest.raises(RuntimeError, match="capped"):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                list(gen.stream())

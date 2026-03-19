@@ -48,8 +48,8 @@ from ._atoms import (
     pauling_electronegativity,
     validate_charge_mult,
 )
-from ._generator import GenerationResult, Structure, StructureGenerator, generate
-from ._io import format_xyz
+from ._generator import GenerationResult, Structure, StructureGenerator, generate, read_xyz
+from ._io import format_xyz, parse_xyz
 from ._metrics import (
     compute_all_metrics,
     compute_angular_entropy,
@@ -75,6 +75,8 @@ __all__ = [
     "StructureOptimizer",
     "generate",
     "parse_objective_spec",
+    "read_xyz",
+    "parse_xyz",
     # Atomic data / utilities
     "ATOMIC_NUMBERS",
     "ALL_METRICS",
