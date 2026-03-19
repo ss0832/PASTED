@@ -45,7 +45,8 @@ src/pasted/
     ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
     ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
     ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
-    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi (N≥64, cutoff-based)
+    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration,
+                                moran_I_chi, h_spatial, rdf_dev — all O(N·k)
 ```
 
 ---
@@ -91,14 +92,16 @@ spread as uniformly over the sphere as the distance constraints allow.
 ## Disorder metrics
 
 All metrics are computed once per structure in `compute_all_metrics` and
-stored in `Structure.metrics`.
+stored in `Structure.metrics`.  Since v0.1.14, every metric uses cutoff-based
+local pair enumeration (O(N·k)) — the O(N²) `scipy.spatial.distance.pdist`
+path has been removed entirely.
 
 | Metric | Range | Description |
 |---|---|---|
 | `H_atom` | ≥ 0 | Shannon entropy of element composition |
-| `H_spatial` | ≥ 0 | Shannon entropy of pairwise-distance histogram |
+| `H_spatial` | ≥ 0 | Shannon entropy of pair-distance histogram within *cutoff* |
 | `H_total` | ≥ 0 | `w_atom × H_atom + w_spatial × H_spatial` |
-| `RDF_dev` | ≥ 0 | RMS deviation of empirical g(r) from ideal-gas baseline |
+| `RDF_dev` | ≥ 0 | RMS deviation of empirical g(r) from ideal-gas baseline within *cutoff* |
 | `shape_aniso` | [0, 1] | Relative shape anisotropy from gyration tensor (0=sphere, 1=rod) |
 | `Q4`, `Q6`, `Q8` | [0, 1] | Steinhardt bond-order parameters |
 | `graph_lcc` | [0, 1] | Largest connected-component fraction |
@@ -107,12 +110,23 @@ stored in `Structure.metrics`.
 | `charge_frustration` | ≥ 0 | Variance of \|Δχ\| across cutoff-adjacent pairs |
 | `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random |
 
+### Unified adjacency definition
+
+All nine cutoff-based metrics (`H_spatial`, `RDF_dev`, `Q4/Q6/Q8`,
+`graph_lcc`, `graph_cc`, `ring_fraction`, `charge_frustration`,
+`moran_I_chi`) treat a pair (i, j) as connected when `d_ij ≤ cutoff`.
+Prior to v0.1.13, `ring_fraction` and `charge_frustration` used a
+`cov_scale × (r_i + r_j)` bond-detection threshold that was structurally
+never satisfied in relaxed structures (since `relax_positions` guarantees
+`d_ij ≥ cov_scale × (r_i + r_j)` on convergence), causing both metrics to
+return 0.0 for every PASTED output.
+
 ---
 
 ## C++ acceleration layer
 
-The `_ext` sub-package contains three independently compiled pybind11 modules.
-Each can be absent without affecting the others.
+The `_ext` sub-package contains four independently compiled pybind11
+modules.  Each can be absent without affecting the others.
 
 ### `_relax_core` — `relax_positions`
 
@@ -129,18 +143,30 @@ implemented in C++17 standard library with no external dependencies.
 Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
 for dense 5000-atom structures.
 
-### `_graph_core` — graph / ring / charge / Moran metrics
+### `_graph_core` — graph / ring / charge / Moran / RDF metrics
 
-Computes all five cutoff-based metrics in a single O(N·k) FlatCellList pass
-(N ≥ 64) or O(N²) full-pair (N < 64): `graph_lcc`, `graph_cc`,
-`ring_fraction`, `charge_frustration`, and `moran_I_chi`.
+Exposes two functions, each performing a single O(N·k) `FlatCellList` pass
+(N ≥ 64) or O(N²) full-pair scan (N < 64):
 
-**All five metrics share a single adjacency definition**: a pair (i, j) is
-considered connected when `d_ij ≤ cutoff`.  This replaces the previous
-`cov_scale × (r_i + r_j)` bond-detection threshold used by
-`ring_fraction` and `charge_frustration`, which produced structurally zero
-values in all relaxed structures (since `relax_positions` guarantees
-`d_ij ≥ cov_scale × (r_i + r_j)`).
+**`graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)`**
+returns `{graph_lcc, graph_cc, ring_fraction, charge_frustration,
+moran_I_chi}` — all five cutoff-based graph metrics in one call.
+
+**`rdf_h_cpp(pts, cutoff, n_bins)`** (added in v0.1.14)
+returns `{h_spatial, rdf_dev}` — Shannon entropy and RDF deviation of the
+pair-distance histogram within *cutoff*, replacing the former O(N²)
+`scipy.spatial.distance.pdist` path.
+
+All metrics share the unified adjacency `d_ij ≤ cutoff`.
+
+Performance at N = 10 000 (v0.1.13 → v0.1.14):
+
+| Path | v0.1.13 | v0.1.14 | Speed-up |
+|---|:---:|:---:|:---:|
+| `pdist` + `squareform` (removed) | ~2 880 ms | — | — |
+| `graph_metrics_cpp` | ~4 ms | ~4 ms | — |
+| `rdf_h_cpp` (new) | — | ~2 ms | — |
+| **`compute_all_metrics` total** | **~2 880 ms** | **~194 ms** | **~15×** |
 
 ### `_maxent_core` — `angular_repulsion_gradient`
 
@@ -161,7 +187,8 @@ Spherical harmonics are evaluated via the associated Legendre polynomial
 three-term recurrence with no scipy call in the hot loop.  The symmetry
 `|Y_l^{-m}|² = |Y_l^m|²` halves harmonic evaluations by computing only
 m = 0..l.  When absent, `_steinhardt_per_atom_sparse` provides the same
-O(N·k) complexity using `np.bincount` for accumulation.
+O(N·k) complexity using `scipy.spatial.cKDTree` for neighbor enumeration
+and `np.bincount` for accumulation.
 
 | Path | N=2000 | Speed-up vs dense Python |
 |---|:---:|:---:|

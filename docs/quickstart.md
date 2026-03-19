@@ -19,6 +19,11 @@ from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH
 print(HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH)  # True True True True
 ```
 
+When `HAS_GRAPH` is `True`, both `graph_metrics_cpp` (graph / ring / charge /
+Moran metrics) and `rdf_h_cpp` (`H_spatial` and `RDF_dev`) are active.
+`compute_all_metrics` selects the C++ path automatically — no configuration
+required.
+
 ---
 
 ## CLI
