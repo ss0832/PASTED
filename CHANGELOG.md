@@ -263,7 +263,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     geometric temperature ladder, `n_replicas` parameter, `repr`,
     bad-method error, PT improves over baseline, multi-restart accumulation.
 
-
+## [0.1.14] - 2026-03-19
 
 ### Changed
 
@@ -338,7 +338,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-
+## [0.1.13] - 2026-03-19
 
 ### Changed
 
