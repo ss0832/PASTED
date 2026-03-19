@@ -7,7 +7,7 @@ name = "pasted"
 version = "0.1.15"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 keywords = ["quantum chemistry", "structure generation", "fuzzing", "machine learning potentials"]
 classifiers = [
