@@ -317,7 +317,7 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 def compute_ring_fraction(
     atoms: list[str],
     dmat: np.ndarray,
-    cov_scale: float,
+    cutoff: float,
 ) -> float:
     """Fraction of atoms that belong to at least one ring.
 
@@ -330,11 +330,14 @@ def compute_ring_fraction(
     Parameters
     ----------
     atoms:
-        Element symbols.
+        Element symbols (unused; retained for API symmetry with other metrics).
     dmat:
         Full n×n pairwise distance matrix (Å).
-    cov_scale:
-        Bond detection threshold scale factor.
+    cutoff:
+        Distance cutoff (Å) — same parameter used by graph_lcc/cc and moran_I_chi.
+        A pair is counted as connected when d_ij <= cutoff.  Using the cutoff
+        rather than cov_scale*(r_i+r_j) ensures non-zero values in relaxed
+        structures, where relax_positions guarantees d_ij >= cov_scale*(r_i+r_j).
 
     Returns
     -------
@@ -369,10 +372,8 @@ def compute_ring_fraction(
 
     in_ring = [False] * n
     for i in range(n):
-        ri = _cov_radius_ang(atoms[i])
         for j in range(i + 1, n):
-            ideal = ri + _cov_radius_ang(atoms[j])
-            if dmat[i, j] < cov_scale * ideal:
+            if 1e-6 < dmat[i, j] <= cutoff:
                 if not _union(i, j):  # back-edge → cycle detected
                     in_ring[i] = True
                     in_ring[j] = True
@@ -383,7 +384,7 @@ def compute_ring_fraction(
 def compute_charge_frustration(
     atoms: list[str],
     dmat: np.ndarray,
-    cov_scale: float,
+    cutoff: float,
 ) -> float:
     """Variance of Pauling electronegativity differences across bonded pairs.
 
@@ -404,11 +405,14 @@ def compute_charge_frustration(
     Parameters
     ----------
     atoms:
-        Element symbols.
+        Element symbols (unused; retained for API symmetry with other metrics).
     dmat:
         Full n×n pairwise distance matrix (Å).
-    cov_scale:
-        Bond detection threshold scale factor.
+    cutoff:
+        Distance cutoff (Å) — same parameter used by graph_lcc/cc and moran_I_chi.
+        A pair is counted as connected when d_ij <= cutoff.  Using the cutoff
+        rather than cov_scale*(r_i+r_j) ensures non-zero values in relaxed
+        structures, where relax_positions guarantees d_ij >= cov_scale*(r_i+r_j).
 
     Returns
     -------
@@ -421,10 +425,8 @@ def compute_charge_frustration(
     en = [_pauling_en(sym) for sym in atoms]
     diffs: list[float] = []
     for i in range(n):
-        ri = _cov_radius_ang(atoms[i])
         for j in range(i + 1, n):
-            ideal = ri + _cov_radius_ang(atoms[j])
-            if dmat[i, j] < cov_scale * ideal:
+            if 1e-6 < dmat[i, j] <= cutoff:
                 diffs.append(abs(en[i] - en[j]))
     if len(diffs) < 2:
         return 0.0
@@ -503,8 +505,8 @@ def _compute_graph_ring_charge(
     dmat = _squareform(_pdist(pts))
     return {
         **compute_graph_metrics(dmat, cutoff),
-        "ring_fraction": compute_ring_fraction(atoms, dmat, cov_scale),
-        "charge_frustration": compute_charge_frustration(atoms, dmat, cov_scale),
+        "ring_fraction": compute_ring_fraction(atoms, dmat, cutoff),
+        "charge_frustration": compute_charge_frustration(atoms, dmat, cutoff),
         "moran_I_chi": compute_moran_I_chi(atoms, dmat, cutoff),
     }
 
@@ -544,9 +546,9 @@ def compute_all_metrics(
         Distance cutoff (Å) for Steinhardt and graph metrics.
     cov_scale:
         Bond detection threshold scale factor for the MM-level descriptors
-        :func:`compute_ring_fraction`,
-        :func:`compute_charge_frustration`, and
-        :func:`compute_moran_I_chi`.  Defaults to ``1.0``.
+        :func:`compute_ring_fraction` and
+        :func:`compute_charge_frustration` now use *cutoff* instead;
+        ``cov_scale`` is retained for API compatibility.  Defaults to ``1.0``.
 
     Returns
     -------

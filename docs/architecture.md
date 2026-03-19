@@ -41,11 +41,11 @@ src/pasted/
 ├── _placement.py        Placement algorithms + relax_positions dispatcher
 ├── cli.py               argparse CLI entry point
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT flags; None fallbacks
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH flags; None fallbacks
     ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
     ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
     ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
-    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration (N≥64)
+    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi (N≥64, cutoff-based)
 ```
 
 ---
@@ -103,8 +103,8 @@ stored in `Structure.metrics`.
 | `Q4`, `Q6`, `Q8` | [0, 1] | Steinhardt bond-order parameters |
 | `graph_lcc` | [0, 1] | Largest connected-component fraction |
 | `graph_cc` | [0, 1] | Mean clustering coefficient |
-| `ring_fraction` | [0, 1] | Fraction of atoms belonging to at least one ring (Union-Find detection) |
-| `charge_frustration` | ≥ 0 | Variance of Pauling electronegativity differences across bonded pairs |
+| `ring_fraction` | [0, 1] | Fraction of atoms in at least one cycle in the cutoff-adjacency graph |
+| `charge_frustration` | ≥ 0 | Variance of \|Δχ\| across cutoff-adjacent pairs |
 | `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random |
 
 ---
@@ -129,16 +129,18 @@ implemented in C++17 standard library with no external dependencies.
 Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
 for dense 5000-atom structures.
 
-### `_graph_core` — graph / ring / charge metrics
+### `_graph_core` — graph / ring / charge / Moran metrics
 
-Computes `graph_lcc`, `graph_cc`, `ring_fraction`, and `charge_frustration`
-in a single O(N·k) pass using `FlatCellList` (N ≥ 64) or O(N²) full-pair
-(N < 64).  A bonded-pair adjacency list and a cutoff-distance adjacency list
-are built simultaneously so the spatial index is queried only once per
-`compute_all_metrics` call.
+Computes all five cutoff-based metrics in a single O(N·k) FlatCellList pass
+(N ≥ 64) or O(N²) full-pair (N < 64): `graph_lcc`, `graph_cc`,
+`ring_fraction`, `charge_frustration`, and `moran_I_chi`.
 
-`bond_strain_rms` is intentionally absent: `relax_positions` guarantees no
-overlaps on convergence, so the metric is structurally zero and uninformative.
+**All five metrics share a single adjacency definition**: a pair (i, j) is
+considered connected when `d_ij ≤ cutoff`.  This replaces the previous
+`cov_scale × (r_i + r_j)` bond-detection threshold used by
+`ring_fraction` and `charge_frustration`, which produced structurally zero
+values in all relaxed structures (since `relax_positions` guarantees
+`d_ij ≥ cov_scale × (r_i + r_j)`).
 
 ### `_maxent_core` — `angular_repulsion_gradient`
 

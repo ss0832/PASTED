@@ -170,17 +170,21 @@ py::dict graph_metrics_cpp(
     // Adjacency lists: bonded (for ring/charge metrics) and cutoff (for graph)
     std::vector<std::vector<int>> bond_adj(n), graph_adj(n);
 
+    // Both ring_fraction/charge_frustration and graph_lcc/cc/moran_I use the
+    // same cutoff-based adjacency.  Using cov_scale*(r_i+r_j) for bond
+    // detection is structurally zero after relax_positions convergence, because
+    // relax guarantees d_ij >= cov_scale*(r_i+r_j) for every pair.
+    // The cutoff (~1.5× median covalent diameter) captures genuine nearest-
+    // neighbour contacts in the relaxed structure and produces informative
+    // non-zero values for ring_fraction and charge_frustration.
     auto accumulate = [&](int i, int j) {
         const double dx = pts[3*i  ]-pts[3*j  ];
         const double dy = pts[3*i+1]-pts[3*j+1];
         const double dz = pts[3*i+2]-pts[3*j+2];
         const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
-        const double thr = cov_scale*(radii[i]+radii[j]);
-        if (d < thr) {
+        if (d <= cutoff && d > 1e-6) {
             bond_adj[i].push_back(j);
             bond_adj[j].push_back(i);
-        }
-        if (d <= cutoff && d > 0.0) {
             graph_adj[i].push_back(j);
             graph_adj[j].push_back(i);
         }

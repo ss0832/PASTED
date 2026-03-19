@@ -85,7 +85,7 @@ Use `-` for an open bound. Multiple `--filter` flags are ANDed together.
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
 `shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
-`bond_strain_rms`, `ring_fraction`, `charge_frustration`.
+`ring_fraction`, `charge_frustration`, `moran_I_chi`.
 
 ### Collecting a fixed number of passing structures
 

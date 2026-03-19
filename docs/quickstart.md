@@ -15,8 +15,8 @@ If none is available the package still installs and runs on pure Python/NumPy.
 Verify that the C++ extensions compiled successfully:
 
 ```python
-from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT
-print(HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT)   # True True True  → all acceleration active
+from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH
+print(HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH)  # True True True True
 ```
 
 ---
@@ -70,7 +70,7 @@ pasted --n-atoms 15 --charge 0 --mult 1 \
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
 `shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
-`bond_strain_rms`, `ring_fraction`, `charge_frustration`.
+`ring_fraction`, `charge_frustration`, `moran_I_chi`.
 
 ### Shell mode with a fixed center atom
 

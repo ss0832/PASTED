@@ -166,27 +166,36 @@ class TestComputeRingFraction:
         return squareform(pdist(np.array(pos)))
 
     def test_triangle_all_in_ring(self) -> None:
-        # Union-Find back-edge marks only the two endpoints of the back-edge,
-        # so a 3-atom triangle yields exactly 2/3 atoms marked.
+        # Triangle with side 1.4 Å < cutoff 2.13: all three pairs connected.
+        # Union-Find back-edge marks 2/3 atoms (both endpoints of the cycle edge).
         dmat = self._dmat(_RING_POS)
-        result = compute_ring_fraction(_RING_ATOMS, dmat, cov_scale=1.3)
+        result = compute_ring_fraction(_RING_ATOMS, dmat, cutoff=2.13)
         assert result == pytest.approx(2 / 3, rel=1e-6)
 
     def test_linear_chain_no_ring(self) -> None:
+        # Linear chain: atoms at 0, 1.4, 2.8 Å.
+        # Pairs 0-1 and 1-2 are within cutoff=2.13; pair 0-2 (d=2.8) is not.
+        # Spanning tree: no back-edges → ring_fraction = 0.
         pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0), (2.8, 0.0, 0.0)]
         dmat = self._dmat(pos)
-        result = compute_ring_fraction(["C", "C", "C"], dmat, cov_scale=1.3)
+        result = compute_ring_fraction(["C", "C", "C"], dmat, cutoff=2.13)
         assert result == pytest.approx(0.0)
 
     def test_range(self) -> None:
         dmat = self._dmat(FOUR_POS)
-        result = compute_ring_fraction(FOUR_ATOMS, dmat, cov_scale=1.3)
+        result = compute_ring_fraction(FOUR_ATOMS, dmat, cutoff=2.13)
         assert 0.0 <= result <= 1.0
 
     def test_fewer_than_three_atoms_zero(self) -> None:
         pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0)]
         dmat = self._dmat(pos)
-        assert compute_ring_fraction(["C", "C"], dmat, cov_scale=1.3) == pytest.approx(0.0)
+        assert compute_ring_fraction(["C", "C"], dmat, cutoff=2.13) == pytest.approx(0.0)
+
+    def test_no_bonds_returns_zero(self) -> None:
+        # All atoms far apart: no pairs within cutoff
+        pos = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (20.0, 0.0, 0.0)]
+        dmat = self._dmat(pos)
+        assert compute_ring_fraction(["C", "C", "C"], dmat, cutoff=2.13) == pytest.approx(0.0)
 
 
 class TestComputeChargeFrustration:
@@ -194,11 +203,28 @@ class TestComputeChargeFrustration:
         return squareform(pdist(np.array(pos)))
 
     def test_homoatomic_zero_variance(self) -> None:
-        # All C: |ΔEN| = 0 for every pair → variance = 0
+        # All C within cutoff: |ΔEN| = 0 for every pair → variance = 0
         pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0), (2.8, 0.0, 0.0)]
         dmat = self._dmat(pos)
-        result = compute_charge_frustration(["C", "C", "C"], dmat, cov_scale=1.3)
+        result = compute_charge_frustration(["C", "C", "C"], dmat, cutoff=2.13)
         assert result == pytest.approx(0.0, abs=1e-10)
+
+    def test_non_negative(self) -> None:
+        dmat = self._dmat(FOUR_POS)
+        result = compute_charge_frustration(FOUR_ATOMS, dmat, cutoff=2.13)
+        assert result >= 0.0
+
+    def test_no_bonds_returns_zero(self) -> None:
+        pos = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)]
+        dmat = self._dmat(pos)
+        assert compute_charge_frustration(["C", "N"], dmat, cutoff=2.13) == pytest.approx(0.0)
+
+    def test_mixed_system_positive(self) -> None:
+        # C(EN=2.55) and F(EN=3.98) within cutoff → non-zero variance
+        pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0), (0.7, 1.2, 0.0)]
+        dmat = self._dmat(pos)
+        result = compute_charge_frustration(["C", "F", "C"], dmat, cutoff=2.13)
+        assert result > 0.0
 
 
 
@@ -262,8 +288,8 @@ class TestGraphCoreCpp:
         en_vals = np.array([pauling_electronegativity(a) for a in atoms])
 
         cpp     = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
-        py_ring = compute_ring_fraction(atoms, dmat, 1.0)
-        py_charge = compute_charge_frustration(atoms, dmat, 1.0)
+        py_ring = compute_ring_fraction(atoms, dmat, 2.13)
+        py_charge = compute_charge_frustration(atoms, dmat, 2.13)
 
         assert cpp["ring_fraction"]      == pytest.approx(py_ring,   abs=1e-9)
         assert cpp["charge_frustration"] == pytest.approx(py_charge, abs=1e-9)

@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-03-19
+
+### Changed
+
+- **`ring_fraction` and `charge_frustration` now use `cutoff` for adjacency
+  instead of `cov_scale × (r_i + r_j)`.**
+
+  Previously these metrics defined a bond as any pair satisfying
+  `d_ij < cov_scale × (r_i + r_j)`.  Because `relax_positions` guarantees
+  `d_ij >= cov_scale × (r_i + r_j)` for every pair on convergence, this
+  criterion was *structurally never satisfied* in relaxed structures — both
+  metrics returned 0.0 for every output of PASTED, carrying no information.
+
+  **New definition:** a pair (i, j) is adjacent when `d_ij <= cutoff`,
+  the same cutoff used by `graph_lcc`, `graph_cc`, and `moran_I_chi`.
+  All five cutoff-based metrics now share a single unified adjacency.
+
+  **Physical interpretation of the updated metrics:**
+
+  - `ring_fraction` — fraction of atoms that belong to at least one cycle
+    in the cutoff-adjacency graph.  A high value indicates that atoms are
+    densely connected enough to form closed loops at the chosen interaction
+    radius, reflecting structural compactness or clustering.
+  - `charge_frustration` — variance of |Δχ| (absolute Pauling
+    electronegativity difference) across all cutoff-adjacent pairs.
+    High values indicate that each atom is surrounded by a mix of
+    electronegative and electropositive neighbours — i.e. the local
+    electrostatic environment is inconsistent, analogous to geometric
+    frustration in spin systems.  Low values indicate compositionally
+    homogeneous neighbourhoods.
+
+  Both metrics now produce informative non-zero values for typical PASTED
+  structures (N = 100, mixed elements, auto cutoff ~2.13 Å).
+
+  **API change:** the `cov_scale` parameter of `compute_ring_fraction` and
+  `compute_charge_frustration` has been renamed to `cutoff`.  The parameter
+  was previously forwarded from `compute_all_metrics`; callers who pass
+  keyword arguments need to update to `cutoff=...`.
+
+- `compute_all_metrics` no longer forwards `cov_scale` to ring/charge
+  functions; it now forwards `cutoff` instead.  `cov_scale` is retained in
+  the `compute_all_metrics` signature for backward compatibility.
+
+- `_graph_core.cpp` updated to build a single unified adjacency list
+  (`d_ij <= cutoff`) shared by all five metrics, removing the separate
+  `cov_scale`-based bond list.
+
+- **README.md** fully rewritten to reflect the current feature set
+  (v0.1.12+), including the `maxent` mode, `StructureOptimizer`, `n_success`,
+  `moran_I_chi`, unified cutoff, noble gas EN values, and C++ acceleration
+  flags (`HAS_GRAPH`).
+
+- `pyproject.toml`: version bumped to `0.1.13`.
+
+---
+
 ## [0.1.12] - 2026-03-19
 
 ### Added
