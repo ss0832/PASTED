@@ -1,33 +1,40 @@
 /**
- * pasted._ext._graph_core  (v0.1.12)
+ * pasted._ext._graph_core  (v0.1.14)
  * ====================================
- * C++17 implementations of the three bonded-pair graph metrics that were
- * the dominant bottlenecks in compute_all_metrics (N=1000 profile):
+ * C++17 O(N·k) implementations of five graph-based disorder metrics and two
+ * distance-histogram metrics, all sharing a FlatCellList spatial index.
  *
- *   ring_fraction      — O(N·α(N))  Union-Find ring detection
- *   charge_frustration — O(N·k)     variance of |Δχ| over bonded pairs
- *   graph_metrics      — O(N·k)     LCC fraction + mean clustering coefficient
+ * Graph / bond metrics (graph_metrics_cpp, single FlatCellList pass):
+ *   ring_fraction      — O(N·alpha(N))  Union-Find ring detection
+ *   charge_frustration — O(N·k)         variance of |delta-chi| over pairs
+ *   graph_lcc          — O(N·k)         largest-connected-component fraction
+ *   graph_cc           — O(N·k^2)       mean clustering coefficient (k small)
+ *   moran_I_chi        — O(N·k)         Moran's I spatial autocorrelation
  *
- * All three share a single O(N) bonded-pair enumeration via FlatCellList
- * (same design as _relax_core / _steinhardt_core).  The Python fallbacks
- * used O(N²) full-matrix walks; the C++ paths are O(N·k) where k is the
- * mean bonded-pair count per atom (~constant for typical structures).
+ * Distance-histogram metrics (rdf_h_cpp, one FlatCellList pass):
+ *   h_spatial          — O(N·k)  Shannon entropy of distance histogram
+ *   rdf_dev            — O(N·k)  RMS deviation of g(r) from ideal gas
  *
- * bond_strain_rms (previously in _metrics.py) is intentionally omitted:
- * after relax_positions converges, d_ij >= cov_scale*(r_i+r_j) for every
- * pair by construction, so the metric is structurally zero and carries no
- * information.
+ * All functions use FlatCellList for N >= CELL_LIST_THRESHOLD (64); an O(N^2)
+ * full-pair loop is used for smaller structures.
+ *
+ * bond_strain_rms is intentionally omitted: after relax_positions converges,
+ * d_ij >= cov_scale*(r_i+r_j) for every pair by construction, so the metric
+ * is structurally zero and carries no information.
  *
  * Dependencies: C++17 stdlib + pybind11 only.  No Eigen, no OpenMP.
  *
  * Python API
  * ----------
  *   graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)
- *       -> dict{"graph_lcc": float, "graph_cc": float,
- *               "ring_fraction": float, "charge_frustration": float}
+ *       -> dict{graph_lcc, graph_cc, ring_fraction, charge_frustration,
+ *               moran_I_chi}
  *
- * All four values are returned in a single call so the FlatCellList and
- * bonded-pair list are built only once.
+ *   rdf_h_cpp(pts, cutoff, n_bins)
+ *       -> dict{h_spatial, rdf_dev}
+ *
+ *   moran_I_chi_cpp(pts, en_vals, cutoff)  [retained for backward compat]
+ *       -> float
  */
 
 #include <pybind11/pybind11.h>
@@ -44,7 +51,8 @@ namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 using I32Array = py::array_t<int32_t, py::array::c_style | py::array::forcecast>;
 
-static constexpr int CELL_LIST_THRESHOLD = 64;
+static constexpr int    CELL_LIST_THRESHOLD = 64;
+static constexpr double PI                  = 3.14159265358979323846;
 
 // ===========================================================================
 // FlatCellList  (identical pattern to _relax_core / _steinhardt_core)
@@ -80,6 +88,7 @@ struct FlatCellList {
         }
     }
 
+    // Enumerate unique unordered pairs (i, j) with i < j within the cell radius.
     template<typename F>
     void for_each_pair(int /*n*/, F process) const {
         for (int cz=0;cz<nz;++cz)
@@ -131,16 +140,17 @@ struct UnionFind {
 };
 
 // ===========================================================================
-// Main computation
+// graph_metrics_cpp
 // ===========================================================================
-// Collects all bonded pairs once, then computes all four metrics in O(N·k).
+// Collects all bonded pairs once via FlatCellList, then computes all five
+// metrics in O(N·k).
 
 py::dict graph_metrics_cpp(
     F64Array pts_in,
     F64Array radii_in,
     double   cov_scale,
-    F64Array en_in,       // per-atom Pauling electronegativity
-    double   cutoff)      // adjacency cutoff for graph_lcc / graph_cc
+    F64Array en_in,   // per-atom Pauling electronegativity
+    double   cutoff)  // adjacency cutoff for all five metrics
 {
     auto pts_buf = pts_in.request();
     auto rad_buf = radii_in.request();
@@ -150,33 +160,31 @@ py::dict graph_metrics_cpp(
     const double* radii  = static_cast<const double*>(rad_buf.ptr);
     const double* en     = static_cast<const double*>(en_buf.ptr);
 
-    // ── Trivial cases ──────────────────────────────────────────────────────
+    // Trivial cases
     if (n < 2) {
         py::dict result;
         result["graph_lcc"]          = (n == 1) ? 1.0 : 0.0;
         result["graph_cc"]           = 0.0;
         result["ring_fraction"]      = 0.0;
         result["charge_frustration"] = 0.0;
+        result["moran_I_chi"]        = 0.0;
         return result;
     }
 
-    // ── Build bonded-pair list via FlatCellList (O(N)) or O(N²) ──────────
-    // Cell size = max possible bonded-pair threshold for bond detection,
-    // extended to also cover the graph_metrics cutoff.
-    double max_r = *std::max_element(radii, radii + n);
+    // Cell size covers both the cov_scale bond threshold and the cutoff.
+    double max_r    = *std::max_element(radii, radii + n);
     double bond_cell = std::max(1e-6, cov_scale * 2.0 * max_r);
     double cell_size = std::max(bond_cell, cutoff);
 
-    // Adjacency lists: bonded (for ring/charge metrics) and cutoff (for graph)
+    // Unified adjacency list: d_ij <= cutoff.
+    // Using cov_scale*(r_i+r_j) for bond detection is structurally zero after
+    // relax_positions convergence, because relax guarantees
+    // d_ij >= cov_scale*(r_i+r_j) for every pair.  The cutoff (~1.5x median
+    // covalent diameter) captures genuine nearest-neighbor contacts in the
+    // relaxed structure and produces informative non-zero values for
+    // ring_fraction and charge_frustration.
     std::vector<std::vector<int>> bond_adj(n), graph_adj(n);
 
-    // Both ring_fraction/charge_frustration and graph_lcc/cc/moran_I use the
-    // same cutoff-based adjacency.  Using cov_scale*(r_i+r_j) for bond
-    // detection is structurally zero after relax_positions convergence, because
-    // relax guarantees d_ij >= cov_scale*(r_i+r_j) for every pair.
-    // The cutoff (~1.5× median covalent diameter) captures genuine nearest-
-    // neighbour contacts in the relaxed structure and produces informative
-    // non-zero values for ring_fraction and charge_frustration.
     auto accumulate = [&](int i, int j) {
         const double dx = pts[3*i  ]-pts[3*j  ];
         const double dy = pts[3*i+1]-pts[3*j+1];
@@ -200,14 +208,14 @@ py::dict graph_metrics_cpp(
                 accumulate(i, j);
     }
 
-    // ── ring_fraction: Union-Find on bond graph ────────────────────────────
+    // ring_fraction: Union-Find on bond graph
     double ring_fraction = 0.0;
     if (n >= 3) {
         UnionFind uf(n);
         std::vector<bool> in_ring(n, false);
         for (int i = 0; i < n; ++i) {
             for (int j : bond_adj[i]) {
-                if (j <= i) continue;          // process each edge once
+                if (j <= i) continue;
                 if (!uf.unite(i, j)) {
                     in_ring[i] = true;
                     in_ring[j] = true;
@@ -219,7 +227,7 @@ py::dict graph_metrics_cpp(
         ring_fraction = static_cast<double>(ring_count) / n;
     }
 
-    // ── charge_frustration: variance of |Δχ| over bonded pairs ────────────
+    // charge_frustration: variance of |delta-chi| over bonded pairs
     double charge_frustration = 0.0;
     {
         std::vector<double> diffs;
@@ -235,13 +243,12 @@ py::dict graph_metrics_cpp(
             for (double v : diffs) mean += v;
             mean /= m;
             double var = 0.0;
-            for (double v : diffs) { double d = v-mean; var += d*d; }
-            charge_frustration = var / m;   // population variance (matches Python)
+            for (double v : diffs) { double d = v - mean; var += d * d; }
+            charge_frustration = var / m;  // population variance (matches Python)
         }
     }
 
-    // ── graph_metrics: LCC + mean clustering coefficient ──────────────────
-    // LCC via Union-Find on graph adjacency
+    // graph_lcc + graph_cc: LCC via Union-Find; CC via triangle counting
     double graph_lcc = 0.0;
     double graph_cc  = 0.0;
     {
@@ -252,32 +259,30 @@ py::dict graph_metrics_cpp(
 
         std::vector<int> comp_size(n, 0);
         for (int i = 0; i < n; ++i) ++comp_size[uf.find(i)];
-        graph_lcc = static_cast<double>(*std::max_element(comp_size.begin(), comp_size.end())) / n;
+        graph_lcc = static_cast<double>(
+            *std::max_element(comp_size.begin(), comp_size.end())) / n;
 
-        // Clustering coefficient: for each node count triangles / possible
         double cc_sum = 0.0;
         int    cc_cnt = 0;
         for (int i = 0; i < n; ++i) {
             const auto& nb = graph_adj[i];
             const int   k  = static_cast<int>(nb.size());
             if (k < 2) continue;
-            // Count triangles using neighbour set lookup (O(k²) per node, k small)
             int tri = 0;
             for (int a = 0; a < k; ++a)
-                for (int b = a+1; b < k; ++b) {
-                    // Check if nb[a] and nb[b] are connected
+                for (int b = a + 1; b < k; ++b) {
                     const auto& nb_a = graph_adj[nb[a]];
                     if (std::find(nb_a.begin(), nb_a.end(), nb[b]) != nb_a.end())
                         ++tri;
                 }
-            cc_sum += static_cast<double>(tri) / (k * (k-1) / 2);
+            cc_sum += static_cast<double>(tri) / (k * (k - 1) / 2);
             ++cc_cnt;
         }
         if (cc_cnt > 0) graph_cc = cc_sum / cc_cnt;
     }
 
-    // ── moran_I_chi: spatial autocorrelation for electronegativity ──────────
-    // Reuses the same pts/cutoff/en arrays; no extra FlatCellList build needed.
+    // moran_I_chi: spatial autocorrelation for electronegativity
+    // Reuses graph_adj (same cutoff adjacency) — no extra FlatCellList build.
     double moran_I = 0.0;
     {
         double chi_bar = 0.0;
@@ -291,7 +296,6 @@ py::dict graph_metrics_cpp(
             denom_m += dev_v[i] * dev_v[i];
         }
         if (denom_m > 1e-30) {
-            // Reuse graph_adj (cutoff-based adjacency) for Moran weights
             double numer_m = 0.0, W_sum_m = 0.0;
             for (int i = 0; i < n; ++i) {
                 for (int j : graph_adj[i]) {
@@ -316,37 +320,122 @@ py::dict graph_metrics_cpp(
 }
 
 // ===========================================================================
+// rdf_h_cpp
+// ===========================================================================
+// Enumerates all pairs within cutoff via FlatCellList and computes:
+//   h_spatial  — Shannon entropy of the pair-distance histogram over [0, cutoff]
+//   rdf_dev    — RMS deviation of the empirical g(r) from an ideal-gas baseline
+//
+// Both metrics previously used scipy pdist (O(N^2) condensed array) and
+// np.histogram over all N*(N-1)/2 distances.  This function achieves O(N*k)
+// complexity (k = mean neighbors per atom within cutoff, roughly constant)
+// and avoids allocating the O(N^2) distance array entirely.
+//
+// RDF normalization:
+//   rho     = N / (4/3 * pi * r_bound^3)   where r_bound = max |r_i - centroid|
+//   ideal_b = rho * 4*pi * r_b^2 * bw * N/2   (expected pairs in bin b)
+//   rdf_dev = sqrt( mean_b [ (count_b / ideal_b - 1)^2 ] )  over bins with ideal>0
 
-// Helper: compute cell size from pts bounding box and cutoff
-static double cell_size_from(const double* pts, int n, double cutoff) {
-    (void)pts; (void)n;
-    return std::max(1e-6, cutoff);
+py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
+    auto buf = pts_in.request();
+    const int     n   = static_cast<int>(buf.shape[0]);
+    const double* pts = static_cast<const double*>(buf.ptr);
+
+    py::dict result;
+    result["h_spatial"] = 0.0;
+    result["rdf_dev"]   = 0.0;
+
+    if (n < 2 || cutoff <= 0.0 || n_bins < 1) return result;
+
+    // Accumulate pair distances within cutoff
+    std::vector<double> pair_dists;
+    pair_dists.reserve(static_cast<std::size_t>(n) * 10);
+
+    const double cutoff2 = cutoff * cutoff;
+
+    auto accum = [&](int i, int j) {
+        const double dx = pts[3*i  ] - pts[3*j  ];
+        const double dy = pts[3*i+1] - pts[3*j+1];
+        const double dz = pts[3*i+2] - pts[3*j+2];
+        const double d2 = dx*dx + dy*dy + dz*dz;
+        if (d2 <= cutoff2 && d2 > 1e-20)
+            pair_dists.push_back(std::sqrt(d2));
+    };
+
+    if (n >= CELL_LIST_THRESHOLD) {
+        FlatCellList cl;
+        cl.build(pts, n, cutoff);
+        cl.for_each_pair(n, accum);
+    } else {
+        for (int i = 0; i < n - 1; ++i)
+            for (int j = i + 1; j < n; ++j)
+                accum(i, j);
+    }
+
+    if (pair_dists.empty()) return result;
+
+    // Build histogram over [0, cutoff]
+    const double bin_width = cutoff / n_bins;
+    std::vector<int> hist(static_cast<std::size_t>(n_bins), 0);
+    for (double d : pair_dists) {
+        int b = static_cast<int>(d / bin_width);
+        if (b >= n_bins) b = n_bins - 1;
+        ++hist[static_cast<std::size_t>(b)];
+    }
+
+    // h_spatial: Shannon entropy of the histogram
+    const double total = static_cast<double>(pair_dists.size());
+    double h_spatial = 0.0;
+    for (int c : hist) {
+        if (c > 0) {
+            const double p = c / total;
+            h_spatial -= p * std::log(p);
+        }
+    }
+
+    // rdf_dev: RMS deviation from ideal gas
+    // r_bound = max distance from the centroid
+    double cx = 0.0, cy = 0.0, cz = 0.0;
+    for (int i = 0; i < n; ++i) { cx += pts[3*i]; cy += pts[3*i+1]; cz += pts[3*i+2]; }
+    cx /= n; cy /= n; cz /= n;
+    double r_bound = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const double dx = pts[3*i] - cx;
+        const double dy = pts[3*i+1] - cy;
+        const double dz = pts[3*i+2] - cz;
+        r_bound = std::max(r_bound, std::sqrt(dx*dx + dy*dy + dz*dz));
+    }
+
+    double rdf_dev = 0.0;
+    if (r_bound > 0.0) {
+        const double rho = n / (4.0 / 3.0 * PI * r_bound * r_bound * r_bound);
+        double sum_sq = 0.0;
+        int    valid  = 0;
+        for (int b = 0; b < n_bins; ++b) {
+            const double centre = (b + 0.5) * bin_width;
+            const double ideal  = rho * 4.0 * PI * centre * centre * bin_width
+                                  * static_cast<double>(n) / 2.0;
+            if (ideal > 0.0) {
+                const double ratio = hist[static_cast<std::size_t>(b)] / ideal - 1.0;
+                sum_sq += ratio * ratio;
+                ++valid;
+            }
+        }
+        if (valid > 0) rdf_dev = std::sqrt(sum_sq / valid);
+    }
+
+    result["h_spatial"] = h_spatial;
+    result["rdf_dev"]   = rdf_dev;
+    return result;
 }
 
-
 // ===========================================================================
-// moran_I_chi_cpp
+// moran_I_chi_cpp  (retained for backward compatibility)
 // ===========================================================================
-// Moran's I spatial autocorrelation for Pauling electronegativity.
-//
-//   I = (N / W) * (Σ_{i≠j} w_ij (χ_i−χ̄)(χ_j−χ̄)) / (Σ_i (χ_i−χ̄)²)
-//
-// Spatial weight w_ij = 1 when r_ij <= cutoff (step function), 0 otherwise.
-// FlatCellList for N >= CELL_LIST_THRESHOLD (O(N·k)), full-pair otherwise.
-//
-// Returns: float in (-1, 1].
-//   I ≈  0 : random (desired for PASTED structures)
-//   I >  0 : same-electronegativity atoms cluster spatially
-//   I <  0 : alternating high/low electronegativity (NaCl-like order)
-//
-// Returns 0.0 when all atoms share the same electronegativity (denominator=0)
-// or when no pair falls within cutoff (W_sum=0).
 
-double moran_I_chi_cpp(
-    F64Array pts_in,
-    F64Array en_in,   // per-atom Pauling electronegativity
-    double   cutoff)
-{
+static double _cell_size(double cutoff) { return std::max(1e-6, cutoff); }
+
+double moran_I_chi_cpp(F64Array pts_in, F64Array en_in, double cutoff) {
     auto pts_buf = pts_in.request();
     auto en_buf  = en_in.request();
     const int     n   = static_cast<int>(pts_buf.shape[0]);
@@ -355,23 +444,19 @@ double moran_I_chi_cpp(
 
     if (n < 2) return 0.0;
 
-    // Mean electronegativity
     double chi_bar = 0.0;
     for (int i = 0; i < n; ++i) chi_bar += en[i];
     chi_bar /= n;
 
-    // Denominator: Σ (χ_i - χ̄)²
     double denom = 0.0;
     std::vector<double> dev(n);
     for (int i = 0; i < n; ++i) {
         dev[i] = en[i] - chi_bar;
         denom += dev[i] * dev[i];
     }
-    if (denom < 1e-30) return 0.0;  // all same electronegativity
+    if (denom < 1e-30) return 0.0;
 
-    // Accumulate W_sum and cross-term over bonded pairs within cutoff
-    double numer  = 0.0;
-    double W_sum  = 0.0;
+    double numer = 0.0, W_sum = 0.0;
 
     auto accumulate = [&](int i, int j) {
         const double dx = pts[3*i  ] - pts[3*j  ];
@@ -379,35 +464,83 @@ double moran_I_chi_cpp(
         const double dz = pts[3*i+2] - pts[3*j+2];
         const double d  = std::sqrt(dx*dx + dy*dy + dz*dz);
         if (d > 1e-6 && d <= cutoff) {
-            // Symmetric: pair (i,j) contributes twice to the full-sum
-            const double contrib = dev[i] * dev[j];
-            numer += 2.0 * contrib;
+            numer += 2.0 * dev[i] * dev[j];
             W_sum += 2.0;
         }
     };
 
     if (n >= CELL_LIST_THRESHOLD) {
         FlatCellList cl;
-        cl.build(pts, n, cell_size_from(pts, n, cutoff));
+        cl.build(pts, n, _cell_size(cutoff));
         cl.for_each_pair(n, accumulate);
     } else {
-        for (int i = 0; i < n-1; ++i)
-            for (int j = i+1; j < n; ++j)
+        for (int i = 0; i < n - 1; ++i)
+            for (int j = i + 1; j < n; ++j)
                 accumulate(i, j);
     }
 
     if (W_sum < 1e-30) return 0.0;
-
     return (static_cast<double>(n) / W_sum) * (numer / denom);
 }
 
+// ===========================================================================
+// Module bindings
+// ===========================================================================
 
 PYBIND11_MODULE(_graph_core, m) {
     m.doc() =
-        "pasted._ext._graph_core (v0.1.12)\n"
-        "O(N·k) graph metrics: graph_lcc, graph_cc, ring_fraction, charge_frustration.\n"
+        "pasted._ext._graph_core (v0.1.14)\n"
+        "O(N*k) graph and distance-histogram metrics via FlatCellList.\n"
         "FlatCellList spatial index for N >= 64; O(N^2) full-pair for N < 64.\n"
         "bond_strain_rms is intentionally excluded (always 0 after relax).";
+
+    m.def(
+        "graph_metrics_cpp", &graph_metrics_cpp,
+        py::arg("pts"), py::arg("radii"), py::arg("cov_scale"),
+        py::arg("en_vals"), py::arg("cutoff"),
+        R"(
+Compute graph_lcc, graph_cc, ring_fraction, charge_frustration, and
+moran_I_chi in O(N*k) using a single FlatCellList pass.
+
+Parameters
+----------
+pts       : (n, 3) float64  -- atom positions in Angstrom
+radii     : (n,)   float64  -- covalent radii in Angstrom
+cov_scale : float           -- bond detection threshold scale (retained for
+                               API compatibility; adjacency now uses cutoff)
+en_vals   : (n,)   float64  -- per-atom Pauling electronegativity
+cutoff    : float           -- distance cutoff for all five metrics (Ang)
+
+Returns
+-------
+dict with keys: graph_lcc, graph_cc, ring_fraction, charge_frustration,
+                moran_I_chi
+        )"
+    );
+
+    m.def(
+        "rdf_h_cpp", &rdf_h_cpp,
+        py::arg("pts"), py::arg("cutoff"), py::arg("n_bins"),
+        R"(
+Compute h_spatial and rdf_dev using O(N*k) FlatCellList pair enumeration.
+
+Replaces the O(N^2) scipy pdist + np.histogram path for both metrics.
+Only pairs within *cutoff* are included in the distance histogram, which
+matches the locality assumption used by all other metrics.
+
+Parameters
+----------
+pts    : (n, 3) float64  -- atom positions in Angstrom
+cutoff : float           -- neighbor distance cutoff (Ang)
+n_bins : int             -- number of histogram bins
+
+Returns
+-------
+dict with keys:
+  h_spatial : float  -- Shannon entropy of the pair-distance histogram
+  rdf_dev   : float  -- RMS deviation of g(r) from an ideal-gas baseline
+        )"
+    );
 
     m.def(
         "moran_I_chi_cpp", &moran_I_chi_cpp,
@@ -415,38 +548,18 @@ PYBIND11_MODULE(_graph_core, m) {
         R"(
 Moran's I spatial autocorrelation for Pauling electronegativity.
 
-  I = (N/W) * sum_{i!=j} w_ij*(chi_i-chi_bar)*(chi_j-chi_bar) / sum_i (chi_i-chi_bar)^2
-
-w_ij = 1 when d_ij <= cutoff (step function), 0 otherwise.
-Returns float in (-1, 1]:  0=random, +1=clustered, -1=alternating.
-Returns 0.0 when all atoms share the same electronegativity or W=0.
+Retained for backward compatibility.  graph_metrics_cpp computes the same
+value as part of a single FlatCellList pass and is preferred.
 
 Parameters
 ----------
 pts     : (n, 3) float64  -- atom positions in Angstrom
 en_vals : (n,)   float64  -- per-atom Pauling electronegativity
 cutoff  : float           -- distance cutoff (Ang)
-        )"
-    );
-
-    m.def(
-        "graph_metrics_cpp", &graph_metrics_cpp,
-        py::arg("pts"), py::arg("radii"), py::arg("cov_scale"),
-        py::arg("en_vals"), py::arg("cutoff"),
-        R"(
-Compute graph_lcc, graph_cc, ring_fraction, and charge_frustration in O(N·k).
-
-Parameters
-----------
-pts       : (n, 3) float64  -- atom positions in Angstrom
-radii     : (n,)   float64  -- covalent radii in Angstrom
-cov_scale : float           -- bond detection threshold scale
-en_vals   : (n,)   float64  -- per-atom Pauling electronegativity
-cutoff    : float           -- distance cutoff for graph_lcc / graph_cc (Ang)
 
 Returns
 -------
-dict with keys: graph_lcc, graph_cc, ring_fraction, charge_frustration
+float  -- Moran's I in (-1, 1]:  0=random, +1=clustered, -1=alternating.
         )"
     );
 }

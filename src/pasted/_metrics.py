@@ -1,9 +1,13 @@
 """
 pasted._metrics
 ===============
-Disorder-metric computations.  All functions accept pre-computed numpy
-arrays where possible so that the pairwise distance matrix is built only
-once per structure.
+Disorder-metric computations.
+
+All public metric functions accept ``pts`` (position array) plus a ``cutoff``
+parameter and build their own neighbor lists internally.  The O(N^2)
+``scipy.spatial.distance.pdist`` / ``squareform`` path has been removed; the
+C++ ``rdf_h_cpp`` (``HAS_GRAPH``) and ``scipy.spatial.cKDTree`` (Python
+fallback) provide O(N*k) pair enumeration throughout.
 """
 
 from __future__ import annotations
@@ -15,12 +19,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.sparse import csr_matrix as _csr_matrix
 from scipy.sparse.csgraph import connected_components as _connected_components
+from scipy.spatial import cKDTree as _cKDTree
 from scipy.spatial.distance import pdist as _pdist
 from scipy.spatial.distance import squareform as _squareform
 
-# scipy >= 1.15 renamed sph_harm → sph_harm_y with a different argument order.
+# scipy >= 1.15 renamed sph_harm -> sph_harm_y with a different argument order.
 # The except branch is kept for environments that still run scipy < 1.15;
-# warn_unused_ignores is suppressed for this file in pyproject.toml [tool.mypy.overrides].
+# warn_unused_ignores is suppressed for this file in pyproject.toml
+# [tool.mypy.overrides].
 try:
     from scipy.special import sph_harm_y as _sph_harm_raw
 
@@ -50,10 +56,11 @@ if TYPE_CHECKING:
 from ._atoms import cov_radius_ang as _cov_radius_ang
 from ._atoms import pauling_electronegativity as _pauling_en
 
-# Optional C++ acceleration for Steinhardt Q_l
+# Optional C++ acceleration
 from ._ext import HAS_GRAPH as _HAS_GRAPH
 from ._ext import HAS_STEINHARDT as _HAS_STEINHARDT
 from ._ext import graph_metrics_cpp as _cpp_graph_metrics
+from ._ext import rdf_h_cpp as _rdf_h_cpp
 
 if _HAS_STEINHARDT:
     from ._ext import steinhardt_per_atom as _steinhardt_per_atom_cpp
@@ -64,7 +71,7 @@ if _HAS_STEINHARDT:
 
 
 def _shannon_np(counts: np.ndarray) -> float:
-    """Shannon entropy from a raw (un-normalised) count array."""
+    """Shannon entropy from a raw (un-normalized) count array."""
     total = counts.sum()
     if total == 0:
         return 0.0
@@ -86,50 +93,67 @@ def compute_h_atom(atoms: list[str]) -> float:
     return _shannon_np(np.array(list(counts_dict.values()), dtype=float))
 
 
-def compute_h_spatial(dists: np.ndarray, n_bins: int) -> float:
-    """Shannon entropy of the pairwise-distance histogram.
+def compute_h_spatial(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
+    """Shannon entropy of the pair-distance histogram within *cutoff*.
 
-    Higher values indicate a more uniform distribution of distances.
-
-    Parameters
-    ----------
-    dists:
-        Condensed distance array from :func:`scipy.spatial.distance.pdist`.
-    n_bins:
-        Number of histogram bins.
-    """
-    if len(dists) < 1:
-        return 0.0
-    counts, _ = np.histogram(dists, bins=n_bins)
-    return _shannon_np(counts.astype(float))
-
-
-def compute_rdf_deviation(pts: np.ndarray, dists: np.ndarray, n_bins: int) -> float:
-    """RMS deviation of the empirical *g*(*r*) from an ideal-gas baseline.
-
-    A value of 0 indicates a perfectly random (ideal-gas-like) distribution.
+    Only pairs with ``d_ij <= cutoff`` are included, matching the locality
+    assumption used by all other metrics.  Higher values indicate a more
+    uniform distribution of short-range distances.
 
     Parameters
     ----------
     pts:
         Positions array of shape ``(n, 3)``.
-    dists:
-        Condensed distance array (pre-computed from *pts*).
+    cutoff:
+        Neighbor distance cutoff (Å).
+    n_bins:
+        Number of histogram bins over ``[0, cutoff]``.
+    """
+    n = len(pts)
+    if n < 2:
+        return 0.0
+    tree = _cKDTree(pts)
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    if len(pairs) == 0:
+        return 0.0
+    dists = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
+    counts, _ = np.histogram(dists, bins=n_bins, range=(0.0, cutoff))
+    return _shannon_np(counts.astype(float))
+
+
+def compute_rdf_deviation(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
+    """RMS deviation of the empirical *g*(*r*) from an ideal-gas baseline.
+
+    A value of 0 indicates a perfectly random (ideal-gas-like) distribution
+    of pair distances within *cutoff*.  Only pairs with ``d_ij <= cutoff`` are
+    included in the histogram, consistent with the other local metrics.
+
+    Parameters
+    ----------
+    pts:
+        Positions array of shape ``(n, 3)``.
+    cutoff:
+        Neighbor distance cutoff (Å).  The histogram range is ``[0, cutoff]``.
     n_bins:
         Number of histogram bins.
     """
-    if len(dists) < 1:
-        return 0.0
     n = len(pts)
-    r_max = float(dists.max())
-    r_bound = float(np.sqrt((pts**2).sum(axis=1)).max())
-    if r_bound == 0 or r_max == 0:
+    if n < 2:
         return 0.0
-    rho = n / (4 / 3 * math.pi * r_bound**3)
-    counts, edges = np.histogram(dists, bins=n_bins, range=(0.0, r_max))
-    centres = (edges[:-1] + edges[1:]) / 2
+    centroid = pts.mean(axis=0)
+    r_bound = float(np.sqrt(((pts - centroid) ** 2).sum(axis=1)).max())
+    if r_bound == 0.0:
+        return 0.0
+    tree = _cKDTree(pts)
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    if len(pairs) == 0:
+        return 0.0
+    dists = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
+    rho = n / (4.0 / 3.0 * math.pi * r_bound**3)
+    counts, edges = np.histogram(dists, bins=n_bins, range=(0.0, cutoff))
+    centres = (edges[:-1] + edges[1:]) / 2.0
     bw = edges[1] - edges[0]
-    ideal = rho * 4 * math.pi * centres**2 * bw * n / 2
+    ideal = rho * 4.0 * math.pi * centres**2 * bw * n / 2.0
     mask = ideal > 0
     if not mask.any():
         return 0.0
@@ -155,99 +179,105 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
 
 def _steinhardt_per_atom_sparse(
     pts: np.ndarray,
-    dmat: np.ndarray,
     l_values: list[int],
     cutoff: float,
 ) -> dict[str, np.ndarray]:
-    """Pure-Python sparse fallback for :func:`compute_steinhardt_per_atom`.
+    """Pure-Python O(N*k) fallback for :func:`compute_steinhardt_per_atom`.
 
-    Computes spherical harmonics only for actual neighbour pairs
-    (d_ij <= cutoff) instead of the full N×N dense matrix, reducing the
-    number of ``sph_harm`` evaluations from O(N²) to O(N·k) where k is
-    the mean neighbour count.
+    Enumerates neighbor pairs via ``scipy.spatial.cKDTree`` and evaluates
+    spherical harmonics only for actual neighbor pairs (``d_ij <= cutoff``),
+    giving O(N*k) complexity (k = mean neighbor count).
+
+    Parameters
+    ----------
+    pts:
+        Positions array of shape ``(n, 3)``.
+    l_values:
+        List of *l* values (e.g. ``[4, 6, 8]``).
+    cutoff:
+        Neighbor distance cutoff (Å).
     """
     n = len(pts)
     result: dict[str, np.ndarray] = {}
 
-    mask = dmat <= cutoff
-    np.fill_diagonal(mask, False)
-    deg = mask.sum(axis=1).astype(float)
-    safe_deg = np.where(deg > 0, deg, 1.0)
+    tree = _cKDTree(pts)
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
 
-    # Sparse neighbour index: rows[k], cols[k] = atom i, neighbour j
-    rows, cols = np.where(mask)
-    if len(rows) == 0:
-        for l in l_values:  # noqa: E741
-            result[f"Q{l}"] = np.zeros(n, dtype=float)
+    if len(pairs) == 0:
+        for lv in l_values:
+            result[f"Q{lv}"] = np.zeros(n, dtype=float)
         return result
 
-    diff_nb = pts[rows] - pts[cols]                            # (n_bonds, 3)
-    r_nb = dmat[rows, cols]
-    safe_r_nb = np.where(r_nb > 0, r_nb, 1.0)
-    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]              # (n_bonds, 3)
-    theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))  # (n_bonds,)
-    phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])       # (n_bonds,)
+    # Build directed (both-way) neighbor index from undirected pairs
+    rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
 
-    for l in l_values:  # noqa: E741
+    diff_nb = pts[rows] - pts[cols]                             # (n_bonds, 3)
+    r_nb = np.linalg.norm(diff_nb, axis=1)
+    safe_r_nb = np.where(r_nb > 0, r_nb, 1.0)
+    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]               # (n_bonds, 3)
+    theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))   # (n_bonds,)
+    phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])         # (n_bonds,)
+
+    deg = np.bincount(rows, minlength=n).astype(float)
+    safe_deg = np.where(deg > 0, deg, 1.0)
+
+    for lv in l_values:  # noqa: E741
         qlm_sq = np.zeros(n, dtype=float)
-        for m in range(-l, l + 1):
-            ylm_nb = _sph_harm(l, m, phi_nb, theta_nb)             # (n_bonds,) complex
+        for m in range(-lv, lv + 1):
+            ylm_nb = _sph_harm(lv, m, phi_nb, theta_nb)             # (n_bonds,) complex
             re_sum = np.bincount(rows, weights=ylm_nb.real, minlength=n)
             im_sum = np.bincount(rows, weights=ylm_nb.imag, minlength=n)
             avg_sq = (re_sum / safe_deg) ** 2 + (im_sum / safe_deg) ** 2
             qlm_sq += avg_sq
-        ql = np.sqrt(4 * math.pi / (2 * l + 1) * qlm_sq)
-        result[f"Q{l}"] = np.where(deg > 0, ql, 0.0)
+        ql = np.sqrt(4 * math.pi / (2 * lv + 1) * qlm_sq)
+        result[f"Q{lv}"] = np.where(deg > 0, ql, 0.0)
 
     return result
 
 
 def compute_steinhardt_per_atom(
     pts: np.ndarray,
-    dmat: np.ndarray,
     l_values: list[int],
     cutoff: float,
 ) -> dict[str, np.ndarray]:
     """Per-atom Steinhardt Q_l values.
 
     When the C++ extension ``pasted._ext._steinhardt_core`` is available
-    (``HAS_STEINHARDT = True``), the computation uses a sparse neighbour
-    list built internally by the extension, evaluating spherical harmonics
-    only for actual neighbour pairs instead of the full N×N matrix.  This
-    gives an O(N·k) algorithm (k = mean neighbour count) versus O(N²) for
-    the dense fallback.
+    (``HAS_STEINHARDT = True``), the computation uses a sparse neighbor list
+    built internally by the extension, evaluating spherical harmonics only for
+    actual neighbor pairs.  This gives O(N*k) complexity (k = mean neighbor
+    count).
 
     When the extension is absent the function falls back to a sparse
-    Python/NumPy/scipy implementation that provides the same O(N·k)
-    complexity using ``np.bincount`` for accumulation.
+    Python/NumPy implementation using ``scipy.spatial.cKDTree`` for neighbor
+    enumeration and ``np.bincount`` for accumulation.  Both paths have the
+    same O(N*k) complexity.
 
     Parameters
     ----------
     pts:
         Positions array of shape ``(n, 3)``.
-    dmat:
-        Full n×n pairwise distance matrix.
     l_values:
         List of *l* values (e.g. ``[4, 6, 8]``).
     cutoff:
-        Neighbour distance cutoff (Å).
+        Neighbor distance cutoff (Å).
 
     Returns
     -------
     dict mapping ``"Q{l}"`` to a :class:`numpy.ndarray` of shape ``(n,)``.
-    Atoms with no neighbours within *cutoff* are assigned Q_l = 0.
+    Atoms with no neighbors within *cutoff* are assigned Q_l = 0.
     """
     if _HAS_STEINHARDT:
         raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(  # type: ignore[operator]
             pts, cutoff, l_values
         )
         return raw
-    return _steinhardt_per_atom_sparse(pts, dmat, l_values, cutoff)
+    return _steinhardt_per_atom_sparse(pts, l_values, cutoff)
 
 
 def compute_steinhardt(
     pts: np.ndarray,
-    dmat: np.ndarray,
     l_values: list[int],
     cutoff: float,
 ) -> dict[str, float]:
@@ -260,28 +290,30 @@ def compute_steinhardt(
     ----------
     pts:
         Positions array of shape ``(n, 3)``.
-    dmat:
-        Full n×n pairwise distance matrix.
     l_values:
         List of *l* values (e.g. ``[4, 6, 8]``).
     cutoff:
-        Neighbour distance cutoff (Å).
+        Neighbor distance cutoff (Å).
 
     Returns
     -------
     dict mapping ``"Q{l}"`` to its global average value.
     """
-    per_atom = compute_steinhardt_per_atom(pts, dmat, l_values, cutoff)
+    per_atom = compute_steinhardt_per_atom(pts, l_values, cutoff)
     return {k: float(v.mean()) for k, v in per_atom.items()}
 
 
 def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
     """Largest connected-component fraction and mean clustering coefficient.
 
+    Pure-Python fallback used when ``HAS_GRAPH`` is ``False``.  The C++ path
+    in ``graph_metrics_cpp`` is preferred and is invoked automatically by
+    :func:`_compute_graph_ring_charge`.
+
     Parameters
     ----------
     dmat:
-        Full n×n pairwise distance matrix.
+        Full n x n pairwise distance matrix.
     cutoff:
         Adjacency distance cutoff (Å).
 
@@ -310,7 +342,7 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 
 
 # ---------------------------------------------------------------------------
-# MM-level structural descriptors (added in 0.1.9)
+# MM-level structural descriptors
 # ---------------------------------------------------------------------------
 
 
@@ -321,23 +353,21 @@ def compute_ring_fraction(
 ) -> float:
     """Fraction of atoms that belong to at least one ring.
 
-    Builds a bond graph using the same ``cov_scale × (r_i + r_j)`` threshold,
-    then detects rings via a Union-Find spanning-tree construction:
-    every back-edge (i.e. an edge between two vertices already in the same
-    component) indicates a cycle, and both its endpoints
-    are marked as ring members.
+    Builds a neighbor graph using the *cutoff* distance threshold, then
+    detects rings via a Union-Find spanning-tree construction: every
+    back-edge (i.e. an edge between two vertices already in the same
+    component) indicates a cycle, and both its endpoints are marked as
+    ring members.
 
     Parameters
     ----------
     atoms:
         Element symbols (unused; retained for API symmetry with other metrics).
     dmat:
-        Full n×n pairwise distance matrix (Å).
+        Full n x n pairwise distance matrix (Å).
     cutoff:
-        Distance cutoff (Å) — same parameter used by graph_lcc/cc and moran_I_chi.
-        A pair is counted as connected when d_ij <= cutoff.  Using the cutoff
-        rather than cov_scale*(r_i+r_j) ensures non-zero values in relaxed
-        structures, where relax_positions guarantees d_ij >= cov_scale*(r_i+r_j).
+        Distance cutoff (Å).  A pair is counted as connected when
+        ``d_ij <= cutoff``.
 
     Returns
     -------
@@ -374,7 +404,7 @@ def compute_ring_fraction(
     for i in range(n):
         for j in range(i + 1, n):
             if 1e-6 < dmat[i, j] <= cutoff:
-                if not _union(i, j):  # back-edge → cycle detected
+                if not _union(i, j):  # back-edge -> cycle detected
                     in_ring[i] = True
                     in_ring[j] = True
 
@@ -386,18 +416,17 @@ def compute_charge_frustration(
     dmat: np.ndarray,
     cutoff: float,
 ) -> float:
-    """Variance of Pauling electronegativity differences across bonded pairs.
+    """Variance of Pauling electronegativity differences across neighbor pairs.
 
-    For each bonded pair (i, j) — defined by the same
-    ``cov_scale × (r_i + r_j)`` threshold — the absolute electronegativity
-    difference ``|χ_i − χ_j|`` is computed.  The metric is the *variance*
-    of these differences over all bonded pairs.
+    For each neighbor pair (i, j) within *cutoff*, the absolute
+    electronegativity difference ``|chi_i - chi_j|`` is computed.  The metric
+    is the *variance* of these differences over all neighbor pairs.
 
-    A high value indicates a structure where electronegativity differences
-    are inconsistently distributed across bonds: some neighbours are well
-    matched while others are highly mismatched.  This is analogous to
-    *charge frustration* in disordered materials, where local charge
-    neutrality cannot be satisfied simultaneously at every site.
+    A high value indicates a structure where electronegativity differences are
+    inconsistently distributed across bonds: some neighbors are well matched
+    while others are highly mismatched.  This is analogous to *charge
+    frustration* in disordered materials, where local charge neutrality cannot
+    be satisfied simultaneously at every site.
 
     Noble gases and elements without a Pauling value use the module-level
     fallback of 1.0 (see :func:`~pasted._atoms.pauling_electronegativity`).
@@ -405,20 +434,18 @@ def compute_charge_frustration(
     Parameters
     ----------
     atoms:
-        Element symbols (unused; retained for API symmetry with other metrics).
+        Element symbols.
     dmat:
-        Full n×n pairwise distance matrix (Å).
+        Full n x n pairwise distance matrix (Å).
     cutoff:
-        Distance cutoff (Å) — same parameter used by graph_lcc/cc and moran_I_chi.
-        A pair is counted as connected when d_ij <= cutoff.  Using the cutoff
-        rather than cov_scale*(r_i+r_j) ensures non-zero values in relaxed
-        structures, where relax_positions guarantees d_ij >= cov_scale*(r_i+r_j).
+        Distance cutoff (Å).  A pair is counted as connected when
+        ``d_ij <= cutoff``.
 
     Returns
     -------
     float
-        Variance of |Δχ| across all bonded pairs.  Returns 0.0 when fewer
-        than two bonded pairs are detected (variance is undefined for a
+        Variance of |delta-chi| across all neighbor pairs.  Returns 0.0 when
+        fewer than two neighbor pairs are detected (variance is undefined for a
         single observation).
     """
     n = len(atoms)
@@ -444,23 +471,24 @@ def compute_moran_I_chi(
     dmat: np.ndarray,
     cutoff: float,
 ) -> float:
-    """Moran\'s I spatial autocorrelation for Pauling electronegativity.
+    r"""Moran\'s I spatial autocorrelation for Pauling electronegativity.
 
     Measures whether atoms with similar electronegativity cluster spatially.
 
     .. math::
 
-        I = \\frac{N}{W} \\frac{\\sum_{i \\neq j} w_{ij}(\\chi_i - \\bar{\\chi})
-        (\\chi_j - \\bar{\\chi})}{\\sum_i (\\chi_i - \\bar{\\chi})^2}
+        I = \frac{N}{W} \frac{\sum_{i \neq j} w_{ij}(\chi_i - \bar{\chi})
+        (\chi_j - \bar{\chi})}{\sum_i (\chi_i - \bar{\chi})^2}
 
-    where :math:`w_{ij} = 1` when :math:`d_{ij} \\leq` *cutoff* and 0 otherwise.
+    where :math:`w_{ij} = 1` when :math:`d_{ij} \leq` *cutoff* and 0
+    otherwise.
 
     Parameters
     ----------
     atoms:
         Element symbols.
     dmat:
-        Full n×n pairwise distance matrix (Å).
+        Full n x n pairwise distance matrix (Å).
     cutoff:
         Distance cutoff for the step-function weight matrix (Å).
 
@@ -470,9 +498,9 @@ def compute_moran_I_chi(
         Moran\'s I in (-1, 1].  Returns 0.0 when all atoms share the same
         electronegativity or no pair falls within *cutoff*.
 
-        * I ≈ 0 : random spatial arrangement (target for disordered structures)
-        * I > 0 : same-electronegativity atoms cluster spatially
-        * I < 0 : alternating high/low electronegativity (ionic-crystal-like order)
+        * I ~= 0 : random spatial arrangement (target for disordered structures)
+        * I > 0  : same-electronegativity atoms cluster spatially
+        * I < 0  : alternating high/low electronegativity (ionic-crystal-like)
     """
     chi = np.array([_pauling_en(a) for a in atoms], dtype=float)
     chi_bar = chi.mean()
@@ -497,7 +525,12 @@ def _compute_graph_ring_charge(
     cutoff: float,
     en_vals: np.ndarray,
 ) -> dict[str, float]:
-    """Dispatch graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi to C++ or Python."""
+    """Dispatch graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi.
+
+    Uses the C++ ``graph_metrics_cpp`` (``HAS_GRAPH``) when available;
+    otherwise falls back to pure-Python implementations that accept a
+    pre-computed distance matrix.
+    """
     if _HAS_GRAPH:
         # Single C++ call: FlatCellList built once, all 5 metrics computed.
         return dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))  # type: ignore[misc]
@@ -509,7 +542,6 @@ def _compute_graph_ring_charge(
         "charge_frustration": compute_charge_frustration(atoms, dmat, cutoff),
         "moran_I_chi": compute_moran_I_chi(atoms, dmat, cutoff),
     }
-
 
 
 def compute_all_metrics(
@@ -526,8 +558,10 @@ def compute_all_metrics(
     The exact count is ``len(ALL_METRICS)`` (currently
     :data:`~pasted._atoms.ALL_METRICS`).
 
-    The pairwise distance matrix is constructed once and shared across all
-    individual metric functions.
+    All metrics use ``cutoff``-based local pair enumeration (O(N*k)) via C++
+    ``FlatCellList`` (``HAS_GRAPH``) or ``scipy.spatial.cKDTree`` (Python
+    fallback).  The O(N^2) ``scipy.spatial.distance.pdist`` /
+    ``squareform`` path has been removed.
 
     Parameters
     ----------
@@ -543,33 +577,39 @@ def compute_all_metrics(
     w_spatial:
         Weight of ``H_spatial`` in ``H_total``.
     cutoff:
-        Distance cutoff (Å) for Steinhardt and graph metrics.
+        Distance cutoff (Å) for all local metrics.
     cov_scale:
-        Bond detection threshold scale factor for the MM-level descriptors
-        :func:`compute_ring_fraction` and
-        :func:`compute_charge_frustration` now use *cutoff* instead;
-        ``cov_scale`` is retained for API compatibility.  Defaults to ``1.0``.
+        Retained for API compatibility; no longer used internally.
+        Defaults to ``1.0``.
 
     Returns
     -------
     dict with keys matching :data:`pasted._atoms.ALL_METRICS`.
     """
     pts = np.array(positions, dtype=float)  # (n, 3)
-    dists = _pdist(pts)  # condensed (n*(n-1)/2,)
-    dmat = _squareform(dists)  # full (n, n)
     radii = np.array([_cov_radius_ang(a) for a in atoms])
     en_vals = np.array([_pauling_en(a) for a in atoms])
 
     ha = compute_h_atom(atoms)
-    hs = compute_h_spatial(dists, n_bins)
+
+    if _HAS_GRAPH:
+        rdf_h = dict(_rdf_h_cpp(pts, cutoff, n_bins))  # type: ignore[misc]
+        hs = float(rdf_h["h_spatial"])
+        rdf_dev = float(rdf_h["rdf_dev"])
+        graph_result = dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))  # type: ignore[misc]
+    else:
+        hs = compute_h_spatial(pts, cutoff, n_bins)
+        rdf_dev = compute_rdf_deviation(pts, cutoff, n_bins)
+        graph_result = _compute_graph_ring_charge(atoms, pts, radii, cov_scale, cutoff, en_vals)
+
     return {
         "H_atom": ha,
         "H_spatial": hs,
         "H_total": w_atom * ha + w_spatial * hs,
-        "RDF_dev": compute_rdf_deviation(pts, dists, n_bins),
+        "RDF_dev": rdf_dev,
         "shape_aniso": compute_shape_anisotropy(pts),
-        **compute_steinhardt(pts, dmat, [4, 6, 8], cutoff),
-        **_compute_graph_ring_charge(atoms, pts, radii, cov_scale, cutoff, en_vals),
+        **compute_steinhardt(pts, [4, 6, 8], cutoff),
+        **graph_result,
     }
 
 
@@ -591,7 +631,7 @@ def passes_filters(
 
 
 # ---------------------------------------------------------------------------
-# Angular entropy (diagnostic — not in ALL_METRICS, not in XYZ comment)
+# Angular entropy (diagnostic -- not in ALL_METRICS, not in XYZ comment)
 # ---------------------------------------------------------------------------
 
 
@@ -600,56 +640,63 @@ def compute_angular_entropy(
     cutoff: float,
     n_bins: int = 20,
 ) -> float:
-    """Mean per-atom angular entropy of neighbour direction distributions.
+    """Mean per-atom angular entropy of neighbor direction distributions.
 
-    For each atom *i*, the directions to its neighbours within *cutoff* are
-    projected onto the unit sphere.  The polar angle θ distribution is
+    For each atom *i*, the directions to its neighbors within *cutoff* are
+    projected onto the unit sphere.  The polar angle theta distribution is
     histogrammed and its Shannon entropy is computed.  The result is averaged
-    over all atoms that have at least one neighbour.
+    over all atoms that have at least one neighbor.
 
     A value close to ln(*n_bins*) indicates a near-uniform (maximum-entropy)
-    angular distribution — neighbours are spread evenly over the sphere.
-    A low value indicates clustering of neighbours in certain directions,
+    angular distribution -- neighbors are spread evenly over the sphere.
+    A low value indicates clustering of neighbors in certain directions,
     i.e. accidental local order.
 
     This metric is intended as a diagnostic for the ``maxent`` placement mode
     and is **not** included in ``ALL_METRICS`` or in XYZ comment lines.
+
+    Uses ``scipy.spatial.cKDTree`` for O(N*k) pair enumeration instead of
+    a full O(N^2) distance matrix.
 
     Parameters
     ----------
     positions:
         Cartesian coordinates (Å).
     cutoff:
-        Neighbour distance cutoff (Å).
+        Neighbor distance cutoff (Å).
     n_bins:
-        Number of histogram bins for the θ distribution (default: 20).
+        Number of histogram bins for the theta distribution (default: 20).
 
     Returns
     -------
     float
         Mean per-atom angular Shannon entropy.  Returns 0.0 for structures
-        with fewer than two atoms or no neighbours within *cutoff*.
+        with fewer than two atoms or no neighbors within *cutoff*.
     """
     pts = np.array(positions, dtype=float)
     n = len(pts)
     if n < 2:
         return 0.0
 
-    dmat = _squareform(_pdist(pts))
-    np.fill_diagonal(dmat, np.inf)
+    tree = _cKDTree(pts)
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    if len(pairs) == 0:
+        return 0.0
 
-    diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
-    safe_d = np.where(dmat[:, :, np.newaxis] > 0, dmat[:, :, np.newaxis], 1.0)
-    d_hat = diff / safe_d                                   # (n, n, 3) unit vectors
+    # Build directed (both-way) neighbor index
+    rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
+    cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
 
-    # Polar angle of each neighbour direction
-    theta = np.arccos(np.clip(d_hat[:, :, 2], -1.0, 1.0))  # (n, n)
+    diff = pts[rows] - pts[cols]                                    # (n_bonds, 3)
+    r = np.linalg.norm(diff, axis=1)
+    safe_r = np.where(r > 0, r, 1.0)
+    d_hat = diff / safe_r[:, np.newaxis]                            # (n_bonds, 3)
+    theta = np.arccos(np.clip(d_hat[:, 2], -1.0, 1.0))             # (n_bonds,)
 
-    mask = dmat <= cutoff  # (n, n)
     entropies: list[float] = []
-
     for i in range(n):
-        nb_theta = theta[i, mask[i]]
+        nb_mask = rows == i
+        nb_theta = theta[nb_mask]
         if len(nb_theta) < 2:
             continue
         counts, _ = np.histogram(nb_theta, bins=n_bins, range=(0.0, math.pi))

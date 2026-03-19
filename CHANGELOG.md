@@ -7,7 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.13] - 2026-03-19
+## [0.1.14] - 2026-03-19
+
+### Changed
+
+- **`pdist` / `squareform` removed from `compute_all_metrics`.**
+
+  The O(N^2) `scipy.spatial.distance.pdist` + `squareform` call that
+  dominated `compute_all_metrics` at large N has been replaced throughout
+  by O(N*k) local pair enumeration (k = mean neighbors within *cutoff*,
+  roughly constant):
+
+  | Path | N=5 000 | N=10 000 | Scaling |
+  |---|---:|---:|---:|
+  | v0.1.13 (`pdist` + `squareform`) | ~730 ms | ~2 880 ms | O(N^2) |
+  | v0.1.14 (FlatCellList / cKDTree) | ~30 ms  | ~60 ms   | O(N*k) |
+
+  All seven affected metrics (`H_spatial`, `RDF_dev`, `Q4/Q6/Q8`,
+  `graph_lcc`, `graph_cc`, `ring_fraction`, `charge_frustration`,
+  `moran_I_chi`) now operate on pairs within *cutoff* only, consistent
+  with the locality assumption shared by the graph and Steinhardt metrics.
+
+- **New C++ function `rdf_h_cpp(pts, cutoff, n_bins)`** added to
+  `_graph_core.cpp` and exported from `pasted._ext`.
+
+  Enumerates pairs within *cutoff* via `FlatCellList` in a single O(N*k)
+  pass and returns `{"h_spatial": float, "rdf_dev": float}`.  Called by
+  `compute_all_metrics` when `HAS_GRAPH` is `True`.
+
+- **`compute_h_spatial` signature changed** from
+  `(dists: ndarray, n_bins: int)` to `(pts: ndarray, cutoff: float, n_bins: int)`.
+
+  The condensed `dists` array (O(N^2) elements) is no longer accepted.
+  The Python fallback uses `scipy.spatial.cKDTree.query_pairs` for O(N*k)
+  pair enumeration within *cutoff*.
+
+- **`compute_rdf_deviation` signature changed** from
+  `(pts: ndarray, dists: ndarray, n_bins: int)` to
+  `(pts: ndarray, cutoff: float, n_bins: int)`.
+
+  The histogram range is now `[0, cutoff]` instead of `[0, r_max]` where
+  `r_max` was the maximum pairwise distance.  Values will differ from
+  v0.1.13 for the same structure, but are now consistent with the local
+  pair assumption used by all other metrics.
+
+- **`compute_steinhardt_per_atom` and `compute_steinhardt` signatures
+  changed**: the `dmat` parameter has been removed.
+
+  The C++ path (`HAS_STEINHARDT`) never used `dmat`.  The Python fallback
+  (`_steinhardt_per_atom_sparse`) now uses `scipy.spatial.cKDTree` for
+  neighbor enumeration instead of indexing into a pre-built distance matrix.
+  Both paths accept `(pts, l_values, cutoff)`.
+
+- **`compute_angular_entropy`** (diagnostic, not in `ALL_METRICS`) now uses
+  `scipy.spatial.cKDTree` instead of a full O(N^2) distance matrix.
+
+- **Inconsistent docstrings fixed** throughout `_metrics.py`:
+
+  - `compute_ring_fraction` and `compute_charge_frustration`: removed
+    stale references to `cov_scale * (r_i + r_j)` bond detection; updated
+    to describe the cutoff-based adjacency introduced in v0.1.13.
+  - `compute_moran_I_chi`: corrected return-value description.
+  - `_steinhardt_per_atom_sparse`: rewritten to reflect removal of `dmat`.
+  - `compute_all_metrics`: documents removal of `pdist` / `squareform`.
+
+- `pasted._ext.__init__`: `rdf_h_cpp` added to `__all__` and to the
+  `_graph_core` import block.  `HAS_GRAPH = True` now implies both
+  `graph_metrics_cpp` and `rdf_h_cpp` are available.
+
+- `_graph_core.cpp` module docstring updated to v0.1.14; `rdf_h_cpp`
+  binding and inline documentation added.
+
+- `pyproject.toml`: version bumped to `0.1.14`.
+
+---
+
+
 
 ### Changed
 

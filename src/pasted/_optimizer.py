@@ -44,8 +44,6 @@ import sys
 from collections.abc import Callable
 
 import numpy as np
-from scipy.spatial.distance import pdist as _pdist
-from scipy.spatial.distance import squareform as _squareform
 
 from ._atoms import (
     ALL_METRICS,
@@ -397,13 +395,12 @@ class StructureOptimizer:
 
         # Initial evaluation
         pts = np.array(positions)
-        dmat = _squareform(_pdist(pts))
         metrics = compute_all_metrics(
             atoms, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff,
             self.cov_scale,
         )
         f_current = _eval_objective(metrics, self.objective)
-        per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, dmat, [6], self._cutoff)[
+        per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)[
             "Q6"
         ]
 
@@ -470,9 +467,8 @@ class StructureOptimizer:
                 f_current = f_new
                 # Update per_atom_q6 for next fragment selection
                 new_pts = np.array(positions)
-                new_dmat = _squareform(_pdist(new_pts))
                 per_atom_q6 = compute_steinhardt_per_atom(
-                    new_pts, new_dmat, [6], self._cutoff
+                    new_pts, [6], self._cutoff
                 )["Q6"]
 
                 if f_current > best_f:

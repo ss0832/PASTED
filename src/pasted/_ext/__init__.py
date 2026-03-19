@@ -10,10 +10,10 @@ disabling all acceleration.
 
 Public names
 ------------
-HAS_RELAX       : bool  – True when _relax_core is available
-HAS_MAXENT      : bool  – True when _maxent_core is available
-HAS_STEINHARDT  : bool  – True when _steinhardt_core is available
-HAS_GRAPH       : bool  – True when _graph_core is available
+HAS_RELAX       : bool  -- True when _relax_core is available
+HAS_MAXENT      : bool  -- True when _maxent_core is available
+HAS_STEINHARDT  : bool  -- True when _steinhardt_core is available
+HAS_GRAPH       : bool  -- True when _graph_core is available
 
 relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
     Available when HAS_RELAX is True.
@@ -27,7 +27,12 @@ steinhardt_per_atom(pts, cutoff, l_values)
 graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)
     Available when HAS_GRAPH is True.
     Returns dict with graph_lcc, graph_cc, ring_fraction,
-    charge_frustration, moran_I_chi — all in one FlatCellList pass.
+    charge_frustration, moran_I_chi -- all in one FlatCellList pass.
+
+rdf_h_cpp(pts, cutoff, n_bins)
+    Available when HAS_GRAPH is True.
+    Returns dict with h_spatial and rdf_dev computed in O(N*k) via
+    FlatCellList pair enumeration.  Replaces the O(N^2) pdist path.
 
 Callers should check the relevant flag before calling and fall back to the
 pure-Python implementations in _placement.py / _metrics.py when False.
@@ -38,7 +43,7 @@ from __future__ import annotations
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# _relax_core  — repulsion-relaxation inner loop
+# _relax_core  -- repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
 try:
     from ._relax_core import relax_positions  # type: ignore[import-untyped]
@@ -48,7 +53,7 @@ except ImportError:
     HAS_RELAX = False
 
 # ---------------------------------------------------------------------------
-# _maxent_core  — angular repulsion gradient (maxent placement only)
+# _maxent_core  -- angular repulsion gradient (maxent placement only)
 # ---------------------------------------------------------------------------
 try:
     from ._maxent_core import angular_repulsion_gradient  # type: ignore[import-untyped]
@@ -58,7 +63,7 @@ except ImportError:
     HAS_MAXENT = False
 
 # ---------------------------------------------------------------------------
-# _steinhardt_core  — sparse Steinhardt Q_l (all modes)
+# _steinhardt_core  -- sparse Steinhardt Q_l (all modes)
 # ---------------------------------------------------------------------------
 try:
     from ._steinhardt_core import steinhardt_per_atom  # type: ignore[import-untyped]
@@ -68,17 +73,19 @@ except ImportError:
     HAS_STEINHARDT = False
 
 # ---------------------------------------------------------------------------
-# _graph_core  — O(N·k) graph / ring / charge metrics + Moran's I
+# _graph_core  -- O(N*k) graph / ring / charge / Moran / RDF metrics
 # ---------------------------------------------------------------------------
 try:
     from ._graph_core import (  # type: ignore[import-untyped]
         graph_metrics_cpp,
         moran_I_chi_cpp,
+        rdf_h_cpp,
     )
     HAS_GRAPH: bool = True
 except ImportError:
     graph_metrics_cpp: Any = None  # type: ignore[no-redef]
     moran_I_chi_cpp:   Any = None  # type: ignore[no-redef]
+    rdf_h_cpp:         Any = None  # type: ignore[no-redef]
     HAS_GRAPH = False
 
 __all__ = [
@@ -91,4 +98,5 @@ __all__ = [
     "steinhardt_per_atom",
     "graph_metrics_cpp",
     "moran_I_chi_cpp",
+    "rdf_h_cpp",
 ]
