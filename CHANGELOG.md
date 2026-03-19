@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   methods (`"annealing"`, `"basin_hopping"`, `"parallel_tempering"`);
   previously `"parallel_tempering"` was omitted.
 
-
+## [0.1.16] - 2026-03-19
 
 ### Added
 
