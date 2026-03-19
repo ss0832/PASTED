@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`allow_displacements` parameter for `StructureOptimizer`.**
 
   Controls whether atomic-position moves (fragment moves) are performed
-  during optimisation.
+  during optimization.
 
-  | Value | Behaviour |
+  | Value | Behavior |
   |---|---|
   | `True` (default) | Fragment moves (atomic displacements) are included in the MC step pool — unchanged from v0.1.16 |
   | `False` | Only composition moves (element-type swaps) are executed; atomic coordinates are held fixed for the entire run |
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       n_atoms=50, charge=0, mult=1,
       objective={"H_atom": 1.0, "Q6": -2.0},
       elements=["Cr", "Mn", "Fe", "Co", "Ni"],
-      allow_displacements=False,   # composition-only optimisation
+      allow_displacements=False,   # composition-only optimization
       max_steps=5000, seed=42,
   )
   result = opt.run(initial=fixed_geometry)
