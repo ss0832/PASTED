@@ -44,6 +44,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Upgrade setuptools (PEP 639 license field support)
+        run: pip install "setuptools>=75.3"
+
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
@@ -61,6 +64,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Upgrade setuptools (PEP 639 license field support)
+        run: pip install "setuptools>=75.3"
 
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
@@ -80,7 +86,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install build
-        run: pip install build
+        run: pip install build "setuptools>=75.3"
 
       - name: Build sdist and wheel
         run: python -m build
@@ -110,6 +116,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      - name: Upgrade setuptools (PEP 639 license field support)
+        run: pip install "setuptools>=75.3"
 
       - name: Install package with docs extras
         run: pip install -e ".[docs]"
