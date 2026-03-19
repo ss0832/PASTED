@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import random
 import sys
+import warnings
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ._atoms import (
@@ -139,6 +140,121 @@ class Structure:
         comp = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))
         h_total = self.metrics.get("H_total", float("nan"))
         return f"Structure(n={len(self)}, comp={comp!r}, mode={self.mode!r}, H_total={h_total:.3f})"
+
+
+# ---------------------------------------------------------------------------
+# GenerationResult
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GenerationResult:
+    """Return value of :func:`generate` and :meth:`StructureGenerator.generate`.
+
+    Behaves like a ``list[Structure]`` in all normal usage (indexing,
+    iteration, ``len``, boolean test, ``for s in result``) while also
+    carrying metadata about how many attempts were made and why samples
+    were rejected.  This metadata is especially useful when integrating
+    PASTED into automated pipelines such as ASE or high-throughput
+    workflows, where a silent empty list would be indistinguishable from
+    a successful run that just produced no results.
+
+    Attributes
+    ----------
+    structures:
+        Structures that passed all filters.
+    n_attempted:
+        Total placement attempts made.
+    n_passed:
+        Number of structures that passed all filters (equals
+        ``len(structures)`` unless the caller mutates the list).
+    n_rejected_parity:
+        Attempts rejected by the charge/multiplicity parity check.
+    n_rejected_filter:
+        Attempts rejected by user-supplied metric filters.
+    n_success_target:
+        The ``n_success`` value that was in effect during generation
+        (``None`` when not set).
+
+    Examples
+    --------
+    Drop-in replacement for ``list[Structure]``::
+
+        result = generate(n_atoms=10, charge=0, mult=1,
+                          mode="gas", region="sphere:8",
+                          elements="6,7,8", n_samples=20, seed=0)
+        for s in result:          # iterates like a list
+            print(s.to_xyz())
+        print(len(result))        # number that passed
+
+    Inspect rejection metadata::
+
+        if result.n_rejected_parity > 0:
+            print(f"{result.n_rejected_parity} samples failed parity check")
+        print(result.summary())
+
+    Notes
+    -----
+    ``GenerationResult`` is a :func:`~dataclasses.dataclass`; downstream
+    code should treat it as immutable.  The ``structures`` field is a
+    plain ``list`` and may be sorted or sliced freely.
+    """
+
+    structures: list[Structure] = field(default_factory=list)
+    n_attempted: int = 0
+    n_passed: int = 0
+    n_rejected_parity: int = 0
+    n_rejected_filter: int = 0
+    n_success_target: int | None = None
+
+    # ------------------------------------------------------------------ #
+    # list-compatible interface                                            #
+    # ------------------------------------------------------------------ #
+
+    def __len__(self) -> int:
+        return len(self.structures)
+
+    def __iter__(self) -> Iterator[Structure]:
+        return iter(self.structures)
+
+    def __getitem__(self, index: int | slice) -> Structure | list[Structure]:
+        if isinstance(index, slice):
+            return self.structures[index]
+        return self.structures[index]
+
+    def __bool__(self) -> bool:
+        return bool(self.structures)
+
+    def __repr__(self) -> str:
+        return (
+            f"GenerationResult("
+            f"passed={self.n_passed}, "
+            f"attempted={self.n_attempted}, "
+            f"rejected_parity={self.n_rejected_parity}, "
+            f"rejected_filter={self.n_rejected_filter})"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Metadata helpers                                                     #
+    # ------------------------------------------------------------------ #
+
+    def summary(self) -> str:
+        """Return a human-readable one-line summary of the generation run.
+
+        Returns
+        -------
+        str
+            E.g. ``"passed=5  attempted=20  rejected_parity=2  rejected_filter=13"``.
+        """
+        parts = [
+            f"passed={self.n_passed}",
+            f"attempted={self.n_attempted}",
+            f"rejected_parity={self.n_rejected_parity}",
+            f"rejected_filter={self.n_rejected_filter}",
+        ]
+        if self.n_success_target is not None:
+            parts.append(f"n_success_target={self.n_success_target}")
+        return "  ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +634,7 @@ class StructureGenerator:
             )
 
         do_add_h = ("H" in self._element_pool) and self._add_hydrogen
-        n_passed = n_invalid = n_attempted = 0
+        n_passed = n_invalid = n_attempted = n_rejected_filter = 0
         unlimited = (self.n_samples == 0)
         denom = "∞" if unlimited else str(self.n_samples)
         width = len(denom)
@@ -577,6 +693,7 @@ class StructureGenerator:
                     + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
                 )
             if not passed:
+                n_rejected_filter += 1
                 continue
 
             n_passed += 1
@@ -592,36 +709,126 @@ class StructureGenerator:
                 seed=self.seed,
             )
 
+        n_skip = n_attempted - n_passed - n_invalid
         if self.verbose:
-            n_skip = n_attempted - n_passed - n_invalid
             self._log(
                 f"[summary] attempted={n_attempted}  passed={n_passed}  "
-                f"filtered_out={n_skip}  invalid_charge_mult={n_invalid}"
+                f"rejected_parity={n_invalid}  rejected_filter={n_skip}"
             )
-            if self.n_success is not None and n_passed < self.n_success:
-                self._log(
-                    f"[warning] Reached attempt limit ({n_attempted}) before collecting "
-                    f"n_success={self.n_success} structures ({n_passed} collected). "
-                    f"Try increasing n_samples or relaxing filters."
-                )
-            elif n_passed == 0:
-                self._log(
-                    "[warning] No structures passed. Try relaxing filters or increasing n_samples."
-                )
 
-    def generate(self) -> list[Structure]:
-        """Generate structures and return those that pass all filters.
+        # ── warnings.warn for noteworthy outcomes ─────────────────────────
+        # These fire regardless of verbose so that downstream consumers
+        # (ASE, HT pipelines) receive machine-visible signals even when
+        # PASTED is not in verbose mode.
+        if n_invalid > 0 and n_passed == 0:
+            warnings.warn(
+                f"All {n_attempted} attempt(s) were rejected by the charge/"
+                f"multiplicity parity check ({n_invalid} invalid). "
+                f"No structures were generated. "
+                f"Check that your element pool can satisfy "
+                f"charge={self.charge}, mult={self.mult}.",
+                UserWarning,
+                stacklevel=4,
+            )
+        elif n_invalid > 0:
+            warnings.warn(
+                f"{n_invalid} of {n_attempted} attempt(s) were rejected by "
+                f"the charge/multiplicity parity check. "
+                f"Consider narrowing the element pool to elements whose "
+                f"electron counts are compatible with "
+                f"charge={self.charge}, mult={self.mult}.",
+                UserWarning,
+                stacklevel=4,
+            )
 
-        Delegates to :meth:`stream` and collects results into a list.
+        if n_passed == 0 and n_invalid == 0:
+            warnings.warn(
+                f"No structures passed the metric filters after "
+                f"{n_attempted} attempt(s) "
+                f"({n_skip} rejected by filters). "
+                f"Try relaxing the --filter thresholds or increasing n_samples.",
+                UserWarning,
+                stacklevel=4,
+            )
+        elif (
+            self.n_success is not None
+            and n_passed < self.n_success
+            and not unlimited
+        ):
+            warnings.warn(
+                f"Attempt budget exhausted ({n_attempted} attempts) before "
+                f"reaching n_success={self.n_success}; "
+                f"only {n_passed} structure(s) collected. "
+                f"Increase n_samples or relax filters.",
+                UserWarning,
+                stacklevel=4,
+            )
+
+        # Store run statistics so generate() can build a GenerationResult
+        # without re-running the generator loop.
+        self._last_run_stats: dict[str, int] = {
+            "n_attempted": n_attempted,
+            "n_passed": n_passed,
+            "n_rejected_parity": n_invalid,
+            "n_rejected_filter": n_rejected_filter,
+        }
+
+    def generate(self) -> GenerationResult:
+        """Generate structures and return a :class:`GenerationResult`.
+
+        Collects all structures yielded by :meth:`stream`, attaches
+        generation metadata (attempt counts, rejection breakdowns), and
+        returns a :class:`GenerationResult` that behaves like a
+        ``list[Structure]`` in all normal usage while also carrying the
+        diagnostics needed for automated pipelines.
+
+        :class:`GenerationResult` supports the full ``list`` interface
+        (indexing, iteration, ``len``, ``bool``) so existing code that
+        does ``result[0]`` or ``for s in result`` continues to work
+        without modification.
+
+        Warnings are also emitted via :func:`warnings.warn` (category
+        :class:`UserWarning`) when:
+
+        - Any attempts are rejected by the charge/multiplicity parity check.
+        - No structures pass the metric filters.
+        - The attempt budget is exhausted before ``n_success`` is reached.
+
         Each call creates a fresh :class:`random.Random` seeded with
-        ``self.seed``, so repeated calls with the same seed are reproducible.
+        ``self.seed``, so repeated calls with the same seed are
+        reproducible.
 
         Returns
         -------
-        list[Structure]
-            Structures that passed all filters, in generation order.
+        GenerationResult
+            Wraps the list of passing structures together with generation
+            metadata.  Use ``result.structures`` for the raw list or
+            ``result.summary()`` for a one-line diagnostic string.
+
+        Examples
+        --------
+        Drop-in list usage::
+
+            result = gen.generate()
+            for s in result:
+                print(s.to_xyz())
+
+        Metadata access::
+
+            result = gen.generate()
+            if result.n_rejected_parity > 0:
+                print(result.summary())
         """
-        return list(self.stream())
+        structures = list(self.stream())
+        stats: dict[str, int] = getattr(self, "_last_run_stats", {})
+        return GenerationResult(
+            structures=structures,
+            n_attempted=stats.get("n_attempted", len(structures)),
+            n_passed=stats.get("n_passed", len(structures)),
+            n_rejected_parity=stats.get("n_rejected_parity", 0),
+            n_rejected_filter=stats.get("n_rejected_filter", 0),
+            n_success_target=self.n_success,
+        )
 
     # ------------------------------------------------------------------ #
     # Iteration support                                                    #
@@ -674,7 +881,7 @@ def generate(
     cutoff: float | None = None,
     filters: list[str] | None = None,
     verbose: bool = False,
-) -> list[Structure]:
+) -> GenerationResult:
     """Create a :class:`StructureGenerator` and immediately call
     :meth:`~StructureGenerator.generate`.
 
@@ -683,12 +890,21 @@ def generate(
 
     Returns
     -------
-    list[Structure]
-        Structures that passed all filters, in generation order.
+    GenerationResult
+        A list-compatible object containing the structures that passed all
+        filters plus metadata about the generation run (attempt counts,
+        rejection breakdowns).  Behaves identically to ``list[Structure]``
+        in all normal usage (indexing, iteration, ``len``, ``bool``).
+
+        :class:`UserWarning` is raised whenever:
+
+        - attempts are rejected by the charge/multiplicity parity check,
+        - no structures pass the metric filters, or
+        - the attempt budget is exhausted before ``n_success`` is reached.
 
     Examples
     --------
-    ::
+    Drop-in list usage::
 
         from pasted import generate
 
@@ -698,10 +914,19 @@ def generate(
             mode="gas", region="sphere:8",
             elements="6,7,8", n_samples=20, seed=0,
         )
-
-        # Write all to a single XYZ file
         for i, s in enumerate(structures):
             s.write_xyz("out.xyz", append=(i > 0))
+
+    Inspecting rejection metadata::
+
+        result = generate(
+            n_atoms=10, charge=0, mult=1,
+            mode="gas", region="sphere:8",
+            elements="6,7,8", n_samples=50, seed=0,
+            filters=["H_total:1.5:-"],
+        )
+        print(result.summary())
+        # e.g. "passed=3  attempted=50  rejected_parity=0  rejected_filter=47"
     """
     gen = StructureGenerator(
         n_atoms=n_atoms,

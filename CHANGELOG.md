@@ -7,7 +7,264 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.14] - 2026-03-19
+## [0.1.15] - 2026-03-19
+
+### Changed
+
+- **`place_maxent` now uses L-BFGS with a per-atom trust radius instead of
+  steepest descent.**
+
+  When `HAS_MAXENT_LOOP` is `True` (i.e. `_maxent_core.place_maxent_cpp` is
+  available), the entire gradient-descent loop runs in C++:
+
+  | Step | v0.1.14 (Python SD) | v0.1.15 (C++ L-BFGS) |
+  |---|---|---|
+  | Gradient computation | C++ `angular_repulsion_gradient` | C++ (inlined, same Cell List) |
+  | Optimiser | steepest descent, fixed `maxent_lr` | L-BFGS m=7, Armijo backtracking |
+  | Step limit | unit-norm clip × `maxent_lr` | per-atom trust radius (default 0.5 Å) |
+  | Restoring force | Python NumPy | C++ |
+  | CoM pinning | Python NumPy | C++ |
+  | Steric relaxation | Python wrapper → C++ | C++ direct (embedded PenaltyEvaluator) |
+  | list ↔ ndarray conversion | every step | none |
+
+  Measured wall-time improvement (n_atoms=8–20, n_samples=20, repeats=10):
+
+  | Scenario | v0.1.13 | v0.1.14 | v0.1.15 | speedup vs 0.1.14 |
+  |---|---:|---:|---:|---:|
+  | maxent small (n=8)   | ~157 ms | ~156 ms |  **~7 ms** | **~22×** |
+  | maxent medium (n=15) | ~310 ms | ~300 ms | **~29 ms** | **~10×** |
+  | maxent large (n=20)  | ~320 ms | ~310 ms | **~30 ms** | **~10×** |
+
+  Output quality (H_total, 30 structures, 3 seeds): C++ L-BFGS mean ≈ 1.09
+  vs Python SD mean ≈ 1.04.  L-BFGS converges to comparable or better local
+  optima with far fewer wall-clock seconds.
+
+  The L-BFGS curvature information reduces the number of steps needed for
+  convergence; the trust-radius cap (uniform step rescaling so no atom moves
+  more than `trust_radius` Å) replaces the fixed `maxent_lr` unit-norm clip
+  and provides better convergence on anisotropic landscapes.
+
+- **New C++ function `place_maxent_cpp`** added to `_maxent.cpp` and exported
+  from `pasted._ext`.  Signature:
+
+  ```
+  place_maxent_cpp(pts, radii, cov_scale, region_radius, ang_cutoff,
+                   maxent_steps, trust_radius=0.5, seed=-1) -> ndarray(n,3)
+  ```
+
+- **New flag `HAS_MAXENT_LOOP`** in `pasted._ext` (`bool`).
+  `True` when `place_maxent_cpp` is available.
+  `HAS_MAXENT` remains `True` whenever `angular_repulsion_gradient` is
+  available (unchanged semantics).
+
+- **`place_maxent` gains a `trust_radius` parameter** (float, default `0.5` Å).
+  Ignored by the steepest-descent fallback (which continues to use
+  `maxent_lr` and unit-norm clipping).  The `maxent_lr` parameter is
+  retained for backward compatibility.
+
+- **`_optimizer._run_one` patched** (Metropolis loop):
+  - `cov_radius_ang` results are pre-computed once per restart into a `radii`
+    array and reused every step, eliminating per-step dict lookups.
+  - `relax_positions` Python wrapper is bypassed; `_relax_core.relax_positions`
+    is called directly when `HAS_RELAX` is `True`, eliminating per-step
+    `list → ndarray → list` conversions.
+
+- **`_maxent.cpp` refactored**: `angular_repulsion_gradient` and
+  `place_maxent_cpp` now share a single `build_nb` / `eval_angular` pair
+  instead of duplicating neighbour-list and gradient logic.
+
+- `pyproject.toml`: version bumped to `0.1.15`; `license` field updated to
+  PEP 639 `{text = "MIT"}` format.
+
+### Added
+
+- **`OptimizationResult`** — new return type for `StructureOptimizer.run()`.
+
+  `run()` previously returned a single `Structure` (the best across all
+  restarts).  It now returns an `OptimizationResult` that collects **all
+  per-restart structures** sorted by objective value, highest first.
+
+  `OptimizationResult` is list-compatible — indexing, iteration, `len()`,
+  and `bool()` all work — while also exposing dedicated metadata:
+
+  | Attribute | Description |
+  |---|---|
+  | `best` | Highest-scoring `Structure` — equivalent to `result[0]` |
+  | `all_structures` | All per-restart structures, best-first |
+  | `objective_scores` | Scalar objective values, same order |
+  | `n_restarts_attempted` | Restarts that produced a valid initial structure |
+  | `method` | `"annealing"` or `"basin_hopping"` |
+
+  `result.summary()` returns a one-line diagnostic, e.g.:
+  ```
+  restarts=5  best_f=1.2294  worst_f=0.8123  method='annealing'
+  ```
+
+  **Migration from v0.1.14**: code that uses `opt.run()` as a `Structure`
+  must add `.best`: `opt.run().best`.  The CLI is already updated.
+  Code that only iterates or indexes the result works without changes.
+
+  A `UserWarning` is emitted when restarts are skipped due to failed
+  initial-structure generation.
+
+- **`OptimizationResult` added to `pasted.__all__`** and exported from the
+  top-level `pasted` namespace.
+
+- **`cli.py`** updated: `opt.run()` → `opt.run().best` in the
+  `--optimize` code path.
+
+- **Objective alignment verified** — SA and BH reliably improve the
+  user-supplied objective over random gas-mode baselines:
+
+  | Scenario | Baseline mean | Optimized |
+  |---|---:|---:|
+  | maximize `H_total` (n=8, C+O) | 0.495 | **1.229** (+148%) |
+  | maximize `H_spatial − 2×Q6` (n=12, C/N/O/H) | −0.108 | **+0.892** |
+
+  Temperature schedule confirmed: T decays exponentially from `T_start`
+  to `T_end` over `max_steps`.  `n_restarts` returns the global best
+  (not just the last restart's result).
+
+- **16 new tests** in `tests/test_optimizer.py`:
+  - `TestOptimizationResult` — list interface, `best`, `summary`, sort
+    order, `repr`, `n_restarts` count.
+  - `TestObjectiveAlignment` — SA and BH both beat random baseline on
+    `H_total`; negative weight reduces penalized metric; callable
+    objective works; `n_restarts=4` best ≥ any single-restart result.
+
+
+  `StructureGenerator.generate()`.
+
+  `GenerationResult` is a `dataclass` that is fully list-compatible
+  (supports indexing, iteration, `len()`, and boolean coercion) while also
+  exposing per-run rejection metadata:
+
+  | Attribute | Description |
+  |---|---|
+  | `structures` | `list[Structure]` — structures that passed all filters |
+  | `n_attempted` | Total placement attempts |
+  | `n_passed` | Structures that passed (equals `len(result)`) |
+  | `n_rejected_parity` | Attempts rejected by charge/multiplicity parity check |
+  | `n_rejected_filter` | Attempts rejected by metric filters |
+  | `n_success_target` | The `n_success` value in effect (`None` if not set) |
+
+  `result.summary()` returns a one-line diagnostic string.
+
+  **Backward compatibility:** all code that treats the return value of
+  `generate()` as a list — iteration, indexing, `len()`, `bool()` — works
+  without modification.  The only breaking change is `isinstance(result,
+  list)` returning `False`; use `isinstance(result, GenerationResult)` or
+  `hasattr(result, "structures")` instead.
+
+- **`warnings.warn` on silent-failure paths** — `stream()` now emits a
+  `UserWarning` via Python's standard `warnings` module whenever:
+
+  - any attempts are rejected by the charge/multiplicity parity check,
+  - no structures pass the metric filters after all attempts are exhausted, or
+  - the attempt budget is exhausted before `n_success` is reached.
+
+  These warnings fire regardless of the `verbose` flag.  Previously, all
+  such messages were printed to `stderr` only when `verbose=True`,
+  making a silent empty-list return indistinguishable from a successful run
+  in automated pipelines (ASE, high-throughput workflows).  A downstream
+  `IndexError` or `AttributeError` on an empty list would then point to
+  the wrong place in user code.
+
+  Callers that want to suppress the warnings can use
+  `warnings.filterwarnings("ignore", category=UserWarning, module="pasted")`.
+
+- `GenerationResult` added to `pasted.__all__` and exported from the
+  top-level `pasted` namespace.
+
+- **11 new tests** in `tests/test_generator.py` covering
+  `TestGenerationResult`: list-compatibility, indexing, `bool`, `summary`,
+  `repr`, metadata count correctness, `UserWarning` on filter rejection,
+  `UserWarning` on parity rejection, and no spurious warnings on clean runs.
+
+- **`method="parallel_tempering"`** added to `StructureOptimizer`.
+
+  Parallel Tempering (replica-exchange Monte Carlo) runs `n_replicas`
+  independent Markov chains at a geometric temperature ladder from
+  `T_end` (coldest, most selective) to `T_start` (hottest, most
+  exploratory).  Every `pt_swap_interval` steps, adjacent replica pairs
+  attempt a state exchange using the Metropolis criterion:
+
+  ```
+  ΔE = (β_k − β_{k+1}) × (f_{k+1} − f_k)
+  accept with probability min(1, exp(ΔE))
+  ```
+
+  where β = 1/T and f is the objective value (higher is better).  Hot
+  replicas cross energy barriers that trap SA; accepted swaps tunnel good
+  structures from hot replicas down to the cold replica, improving both
+  exploration and exploitation simultaneously.
+
+  New parameters:
+
+  | Parameter | Default | Description |
+  |---|---|---|
+  | `n_replicas` | `4` | Number of temperature replicas |
+  | `pt_swap_interval` | `10` | Attempt replica exchange every N steps |
+
+  `run()` returns an `OptimizationResult` containing the global best
+  (tracked across all replicas and all steps) plus each replica's final
+  state, sorted by objective value.  `n_restarts` launches independent PT
+  runs and aggregates all results.
+
+  Measured quality improvement over SA (n=10, C/N/O/P/S, `H_total − Q6`
+  objective, 6-seed mean):
+
+  | Method | wall time | H_total (↑) | Q6 (↓) |
+  |---|---:|---:|---:|
+  | SA steps=500, restarts=4 | 460 ms | 1.591 | 0.401 |
+  | BH steps=200, restarts=4 | 187 ms | 1.597 | 0.420 |
+  | **PT steps=200, rep=4, restarts=1** | **102 ms** | **1.685** | **0.403** |
+  | **PT steps=500, rep=4, restarts=2** | 579 ms | **1.713** | **0.293** |
+
+  PT at 102 ms matches SA-4restart quality at 460 ms.  PT's Q6 suppression
+  (0.293) is markedly better than either SA or BH at equivalent wall time.
+
+- **Parity-preserving composition move** (`_composition_move` Path 2).
+
+  The replace fallback — triggered when all atoms are the same element and
+  no atom-pair swap is possible — previously drew a replacement element
+  uniformly from the full pool, which violated the charge/multiplicity
+  parity constraint in up to **64 %** of calls when the pool contained a
+  mix of odd-Z and even-Z elements.
+
+  The new implementation uses the user's insight that swapping elements
+  within the same Z-parity class preserves the electron-count parity:
+
+  - **Same-Z-parity replace** (primary): replace atom `i` with an element
+    whose atomic number has the same parity as `Z(atoms[i])`.  Net ΔZ is
+    even → parity invariant.
+  - **Dual opposite-parity replace** (fallback when only odd-Z elements
+    differ): replace *two* atoms simultaneously with elements from the
+    odd-Z pool so that each ΔZ is odd but the total ΔZ is even.
+
+  Parity failure rate in the worst case (all-same composition, wide pool):
+  **64 % → 0 %**.  Normal usage (mixed composition, typical element pools)
+  was already near zero via the primary swap path and is unchanged.
+
+- **Objective alignment verified** for `Q6`, `H_total`, `moran_I_chi`,
+  and `charge_frustration`:
+
+  | Objective | Baseline | Optimized (SA, n=10) |
+  |---|---:|---:|
+  | maximize `Q6` | mean 0.081, max 0.274 | **0.801** (+192 %) |
+  | maximize `H_total` | mean 0.495 | **1.229** (+148 %) |
+  | minimize `moran_I_chi` | mean +0.06 | **−2.27** |
+  | maximize `charge_frustration` | mean 0.010 | **0.372** |
+
+  Temperature schedule (SA) confirmed as exponential decay T_start → T_end.
+  `n_restarts` correctly returns the global best across all independent runs.
+
+- **10 new tests** in `tests/test_optimizer.py`:
+  - `TestParallelTempering` — return type, best-first sort, mode label,
+    geometric temperature ladder, `n_replicas` parameter, `repr`,
+    bad-method error, PT improves over baseline, multi-restart accumulation.
+
+
 
 ### Changed
 

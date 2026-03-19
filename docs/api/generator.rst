@@ -14,3 +14,11 @@ Structure
    :members:
    :show-inheritance:
    :no-index:
+
+GenerationResult
+----------------
+
+.. autoclass:: pasted._generator.GenerationResult
+   :members:
+   :show-inheritance:
+   :no-index:

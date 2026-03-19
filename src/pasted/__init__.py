@@ -48,7 +48,7 @@ from ._atoms import (
     pauling_electronegativity,
     validate_charge_mult,
 )
-from ._generator import Structure, StructureGenerator, generate
+from ._generator import GenerationResult, Structure, StructureGenerator, generate
 from ._io import format_xyz
 from ._metrics import (
     compute_all_metrics,
@@ -58,7 +58,7 @@ from ._metrics import (
     compute_ring_fraction,
     compute_steinhardt_per_atom,
 )
-from ._optimizer import StructureOptimizer, parse_objective_spec
+from ._optimizer import OptimizationResult, StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
 
 try:
@@ -68,6 +68,8 @@ except importlib.metadata.PackageNotFoundError:
 
 __all__ = [
     # High-level API
+    "GenerationResult",
+    "OptimizationResult",
     "Structure",
     "StructureGenerator",
     "StructureOptimizer",

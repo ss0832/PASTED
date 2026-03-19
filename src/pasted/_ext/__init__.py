@@ -53,14 +53,20 @@ except ImportError:
     HAS_RELAX = False
 
 # ---------------------------------------------------------------------------
-# _maxent_core  -- angular repulsion gradient (maxent placement only)
+# _maxent_core  -- angular repulsion gradient + full loop (maxent only)
 # ---------------------------------------------------------------------------
 try:
-    from ._maxent_core import angular_repulsion_gradient  # type: ignore[import-untyped]
+    from ._maxent_core import (  # type: ignore[import-untyped]
+        angular_repulsion_gradient,
+        place_maxent_cpp,
+    )
     HAS_MAXENT: bool = True
+    HAS_MAXENT_LOOP: bool = True
 except ImportError:
     angular_repulsion_gradient: Any = None  # type: ignore[no-redef]
+    place_maxent_cpp: Any = None  # type: ignore[no-redef]
     HAS_MAXENT = False
+    HAS_MAXENT_LOOP = False
 
 # ---------------------------------------------------------------------------
 # _steinhardt_core  -- sparse Steinhardt Q_l (all modes)
@@ -91,10 +97,12 @@ except ImportError:
 __all__ = [
     "HAS_RELAX",
     "HAS_MAXENT",
+    "HAS_MAXENT_LOOP",
     "HAS_STEINHARDT",
     "HAS_GRAPH",
     "relax_positions",
     "angular_repulsion_gradient",
+    "place_maxent_cpp",
     "steinhardt_per_atom",
     "graph_metrics_cpp",
     "moran_I_chi_cpp",

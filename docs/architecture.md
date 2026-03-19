@@ -168,12 +168,35 @@ Performance at N = 10 000 (v0.1.13 → v0.1.14):
 | `rdf_h_cpp` (new) | — | ~2 ms | — |
 | **`compute_all_metrics` total** | **~2 880 ms** | **~194 ms** | **~15×** |
 
-### `_maxent_core` — `angular_repulsion_gradient`
+### `_maxent_core` — `angular_repulsion_gradient` and `place_maxent_cpp`
 
-Computes ∂U/∂rᵢ for the angular repulsion potential used by `place_maxent`.
+**`angular_repulsion_gradient(pts, cutoff)`** — computes ∂U/∂rᵢ for the
+angular repulsion potential used by `place_maxent`.
 
 - **N < 32**: O(N³) full neighbor search
 - **N ≥ 32**: O(N²) Cell List neighbor search (cell width = `cutoff`)
+
+**`place_maxent_cpp(pts, radii, cov_scale, region_radius, ang_cutoff,
+maxent_steps, trust_radius=0.5, seed=-1)`** (added in v0.1.15) — runs the
+entire maxent gradient-descent loop in C++, replacing the Python
+steepest-descent loop in `place_maxent()`:
+
+1. L-BFGS (m=7, Armijo backtracking) on the angular repulsion potential
+2. Per-atom trust-radius cap: step uniformly rescaled so no atom moves more
+   than `trust_radius` Å — replaces the fixed `maxent_lr × unit-norm clip`
+3. Soft restoring force and center-of-mass pinning in C++
+4. Embedded steric-clash relaxation (same L-BFGS penalty as `_relax_core`)
+
+`HAS_MAXENT_LOOP` in `pasted._ext` is `True` when `place_maxent_cpp` is
+available.  `place_maxent()` dispatches to it automatically.
+
+Measured speedup (n_samples=20, repeats=10):
+
+| Scenario | v0.1.13 | v0.1.14 | v0.1.15 | vs v0.1.14 |
+|---|---:|---:|---:|---:|
+| maxent small (n=8)   | ~157 ms | ~156 ms | **~7 ms** | **~22×** |
+| maxent medium (n=15) | ~310 ms | ~300 ms | **~29 ms** | **~10×** |
+| maxent large (n=20)  | ~320 ms | ~310 ms | **~30 ms** | **~10×** |
 
 ### `_steinhardt_core` — `compute_steinhardt_per_atom`
 
@@ -204,11 +227,50 @@ and `np.bincount` for accumulation.
 loop.  It yields each passing structure immediately, enabling incremental
 file output and early stopping via `n_success`.
 
-`generate()` delegates to `stream()` and collects results into a list.
-`__iter__` also delegates to `stream()`, so all three call sites share the
-same loop logic.
+`generate()` delegates to `stream()`, collects results into a
+`GenerationResult`, and returns it.  `__iter__` also delegates to `stream()`,
+so all three call sites share the same loop logic.
 
-`n_success` and `n_samples` together control termination:
+### GenerationResult
+
+`generate()` returns a `GenerationResult` rather than a plain
+`list[Structure]`.  `GenerationResult` is fully list-compatible — indexing,
+iteration, `len()`, and boolean coercion all work as expected — while also
+exposing per-run rejection metadata:
+
+| Attribute | Type | Description |
+|---|---|---|
+| `structures` | `list[Structure]` | Structures that passed all filters |
+| `n_attempted` | `int` | Total placement attempts |
+| `n_passed` | `int` | Structures that passed (equals `len(result)`) |
+| `n_rejected_parity` | `int` | Attempts rejected by charge/multiplicity parity |
+| `n_rejected_filter` | `int` | Attempts rejected by metric filters |
+| `n_success_target` | `int \| None` | The `n_success` value in effect |
+
+Calling `result.summary()` returns a one-line diagnostic string, e.g.:
+
+```
+passed=5  attempted=50  rejected_parity=12  rejected_filter=33
+```
+
+### warnings.warn behavior
+
+`stream()` emits a `UserWarning` (via `warnings.warn`) in three situations:
+
+| Situation | Warning message |
+|---|---|
+| All attempts rejected by parity | *"All N attempt(s) were rejected by the charge/multiplicity parity check …"* |
+| Some attempts rejected by parity | *"M of N attempt(s) were rejected by the charge/multiplicity parity check …"* |
+| No structures pass filters | *"No structures passed the metric filters after N attempt(s) …"* |
+| Budget exhausted before `n_success` | *"Attempt budget exhausted (N attempts) before reaching n_success=K …"* |
+
+These warnings fire regardless of the `verbose` flag so that downstream
+consumers (ASE, high-throughput pipelines) receive a machine-visible signal
+even when PASTED is not in verbose mode.  Previously, all such messages were
+printed to stderr only when `verbose=True`, making silent empty-list returns
+indistinguishable from successful runs in automated pipelines.
+
+### n_success and n_samples termination semantics
 
 - `n_samples > 0`, `n_success = None` — attempt exactly `n_samples` times
   (original behavior).
@@ -226,3 +288,63 @@ created at the start of each `stream()` call.  The C++ extensions accept
 an integer `seed` for the coincident-atom RNG edge case.  With the same
 `seed`, the same `n_atoms`, and the same parameters, `stream()` (and
 therefore `generate()`) returns bit-for-bit identical output.
+
+---
+
+## Optimizer
+
+`StructureOptimizer.run()` returns an `OptimizationResult` containing all
+per-restart structures sorted by objective value (highest first).
+
+### Move types (all methods)
+
+| Move | Probability | Description |
+|---|---|---|
+| Fragment coordinate | 50 % | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
+| Composition | 50 % | Parity-preserving element swap or replacement (see below) |
+
+**Parity-preserving composition move** — two paths:
+
+1. **Swap** (primary): exchange the element types of two atoms with different
+   symbols.  Total electron count is unchanged → always parity-valid.
+2. **Same-Z-parity replace** (fallback when all atoms are the same element):
+   replace atom `i` with an element whose atomic number has the same Z%2 as
+   `atoms[i]`.  Net ΔZ is even → parity preserved.  If only odd-Z pool
+   elements differ, two atoms are replaced simultaneously so ΔZ_total is even.
+
+### Optimization methods
+
+#### `"annealing"` (Simulated Annealing)
+
+Exponential temperature cooling from `T_start` to `T_end` over `max_steps`.
+Each step proposes a move and accepts via the Metropolis criterion:
+`accept if ΔE ≥ 0 or random < exp(ΔE / T)`.  `n_restarts` independent runs
+are launched; `OptimizationResult` contains all of them sorted best-first.
+
+#### `"basin_hopping"` (Basin-Hopping)
+
+Constant temperature `T_start` with 3× relax cycles per step for stronger
+local minimization.  Otherwise identical to SA.
+
+#### `"parallel_tempering"` (Replica-Exchange MC)
+
+`n_replicas` independent Markov chains run at temperatures spaced
+geometrically from `T_end` (coldest) to `T_start` (hottest).  Every
+`pt_swap_interval` steps, adjacent replica pairs attempt a state exchange:
+
+```
+ΔE = (β_k − β_{k+1}) × (f_{k+1} − f_k)   # β = 1/T, f = objective
+accept with probability min(1, exp(ΔE))
+```
+
+Hot replicas cross energy barriers; swaps tunnel high-quality states to the
+cold replica.  `OptimizationResult` includes the global best (tracked across
+all replicas and all steps) plus each replica's final state.
+
+Measured quality vs SA at equal wall time (n=10, C/N/O/P/S, H_total − Q6):
+
+| Method | wall time | H_total (↑) | Q6 (↓) |
+|---|---:|---:|---:|
+| SA restarts=4, steps=500 | 460 ms | 1.591 | 0.401 |
+| PT replicas=4, restarts=1, steps=200 | **102 ms** | **1.685** | 0.403 |
+| PT replicas=4, restarts=2, steps=500 | 579 ms | **1.713** | **0.293** |

@@ -377,7 +377,7 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
 
-    best = opt.run()
+    best = opt.run().best
     output_text = best.to_xyz() + "\n"
     _write_output(output_text, args.output)
     if args.output:

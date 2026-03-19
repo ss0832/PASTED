@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import math
+import warnings
 from pathlib import Path
 
 import pytest
 
-from pasted import Structure, StructureGenerator, generate
+from pasted import GenerationResult, Structure, StructureGenerator, generate
 from pasted._atoms import ALL_METRICS
 
 # ---------------------------------------------------------------------------
@@ -130,14 +131,14 @@ class TestStructureGeneratorInit:
 class TestGenerate:
     def test_returns_list(self, gas_gen: StructureGenerator) -> None:
         results = gas_gen.generate()
-        assert isinstance(results, list)
+        assert isinstance(results, GenerationResult)
 
     def test_all_structures(self, gas_gen: StructureGenerator) -> None:
         results = gas_gen.generate()
         assert all(isinstance(s, Structure) for s in results)
 
     def test_reproducible_with_seed(self) -> None:
-        def run() -> list[Structure]:
+        def run() -> GenerationResult:
             return StructureGenerator(
                 n_atoms=6,
                 charge=0,
@@ -157,26 +158,28 @@ class TestGenerate:
 
     def test_filter_applied(self) -> None:
         # Request only structures with H_total > 100 (impossible) → 0 results
-        results = StructureGenerator(
-            n_atoms=6,
-            charge=0,
-            mult=1,
-            mode="gas",
-            region="sphere:6",
-            elements="6,7,8",
-            n_samples=10,
-            seed=0,
-            filters=["H_total:100:-"],
-        ).generate()
-        assert results == []
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            results = StructureGenerator(
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,7,8",
+                n_samples=10,
+                seed=0,
+                filters=["H_total:100:-"],
+            ).generate()
+        assert len(results) == 0
 
     def test_chain_mode(self, chain_gen: StructureGenerator) -> None:
         results = chain_gen.generate()
-        assert isinstance(results, list)
+        assert isinstance(results, GenerationResult)
 
     def test_shell_mode(self, shell_gen: StructureGenerator) -> None:
         results = shell_gen.generate()
-        assert isinstance(results, list)
+        assert isinstance(results, GenerationResult)
         for s in results:
             assert s.center_sym is not None
 
@@ -305,7 +308,7 @@ class TestGenerateFunction:
             n_samples=3,
             seed=0,
         )
-        assert isinstance(results, list)
+        assert isinstance(results, GenerationResult)
 
     def test_chain_mode(self) -> None:
         results = generate(
@@ -317,7 +320,7 @@ class TestGenerateFunction:
             n_samples=3,
             seed=1,
         )
-        assert isinstance(results, list)
+        assert isinstance(results, GenerationResult)
 
     def test_same_output_as_class(self) -> None:
         kwargs: dict = {
@@ -426,3 +429,135 @@ class TestNSuccess:
         # Each XYZ block starts with atom count; we should have 2 blocks
         atom_count_lines = [ln for ln in lines if ln.strip().isdigit()]
         assert len(atom_count_lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# GenerationResult
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationResult:
+    def test_is_list_compatible(self) -> None:
+        result = GenerationResult(
+            structures=[],
+            n_attempted=10,
+            n_passed=0,
+            n_rejected_parity=0,
+            n_rejected_filter=10,
+        )
+        assert len(result) == 0
+        assert not result
+        assert list(result) == []
+
+    def test_indexing(self) -> None:
+        s = Structure(
+            atoms=["C"],
+            positions=[(0.0, 0.0, 0.0)],
+            charge=0,
+            mult=1,
+            metrics=dict.fromkeys(ALL_METRICS, 0.0),
+            mode="gas",
+        )
+        result = GenerationResult(structures=[s], n_attempted=1, n_passed=1)
+        assert result[0] is s
+
+    def test_bool_true_when_structures(self) -> None:
+        s = Structure(
+            atoms=["C"],
+            positions=[(0.0, 0.0, 0.0)],
+            charge=0,
+            mult=1,
+            metrics=dict.fromkeys(ALL_METRICS, 0.0),
+            mode="gas",
+        )
+        result = GenerationResult(structures=[s], n_attempted=1, n_passed=1)
+        assert result
+
+    def test_summary_contains_key_fields(self) -> None:
+        result = GenerationResult(
+            structures=[],
+            n_attempted=20,
+            n_passed=0,
+            n_rejected_parity=5,
+            n_rejected_filter=15,
+        )
+        s = result.summary()
+        assert "attempted=20" in s
+        assert "rejected_parity=5" in s
+        assert "rejected_filter=15" in s
+
+    def test_repr(self) -> None:
+        result = GenerationResult(
+            structures=[], n_attempted=5, n_passed=0,
+            n_rejected_parity=0, n_rejected_filter=5,
+        )
+        assert "GenerationResult" in repr(result)
+
+    def test_generate_returns_generation_result(self) -> None:
+        result = generate(
+            n_atoms=6, charge=0, mult=1,
+            mode="gas", region="sphere:6",
+            elements="6,8",  # C + O: even electrons, no parity warnings
+            n_samples=5, seed=0,
+        )
+        assert isinstance(result, GenerationResult)
+
+    def test_metadata_counts_sum_correctly(self) -> None:
+        # Use C+O (even electrons) so parity never fires; all rejections
+        # come from filters or pass cleanly.
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            result = generate(
+                n_atoms=6, charge=0, mult=1,
+                mode="gas", region="sphere:6",
+                elements="6,8",  # C + O only
+                n_samples=20, seed=42,
+            )
+        assert result.n_passed == len(result.structures)
+        assert result.n_attempted == (
+            result.n_passed + result.n_rejected_parity + result.n_rejected_filter
+        )
+
+    def test_warn_on_filter_rejection(self) -> None:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = generate(
+                n_atoms=8, charge=0, mult=1,
+                mode="gas", region="sphere:8",
+                elements="6,8",  # C + O: always even electrons, no parity failures
+                n_samples=10, seed=0,
+                filters=["H_total:999:-"],  # impossible threshold
+            )
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) >= 1
+        assert "filter" in str(user_warns[0].message).lower()
+        assert result.n_rejected_filter == 10
+        assert len(result) == 0
+
+    def test_warn_on_parity_rejection(self) -> None:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # charge=99 makes parity impossible for any C/N/O composition
+            result = generate(
+                n_atoms=6, charge=99, mult=1,
+                mode="gas", region="sphere:6",
+                elements="6,7,8", n_samples=10, seed=0,
+            )
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) >= 1
+        assert "parity" in str(user_warns[0].message).lower()
+        assert result.n_rejected_parity == result.n_attempted
+
+    def test_no_spurious_warn_on_clean_run(self) -> None:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # Use C + O only (both even electrons) so the parity check
+            # never fires; with no filters all structures pass cleanly.
+            generate(
+                n_atoms=6, charge=0, mult=1,
+                mode="gas", region="sphere:6",
+                elements="6,8",  # C + O: always satisfies charge=0, mult=1
+                n_samples=10, seed=0,
+            )
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) == 0

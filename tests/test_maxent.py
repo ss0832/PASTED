@@ -8,7 +8,12 @@ import random
 import numpy as np
 import pytest
 
-from pasted import StructureGenerator, compute_angular_entropy, place_maxent
+from pasted import (
+    GenerationResult,
+    StructureGenerator,
+    compute_angular_entropy,
+    place_maxent,
+)
 from pasted._atoms import cov_radius_ang
 from pasted._placement import _angular_repulsion_gradient, place_gas, relax_positions
 
@@ -139,7 +144,7 @@ class TestGeneratorMaxent:
             n_samples=2,
             seed=0,
         ).generate()
-        assert isinstance(structs, list)
+        assert isinstance(structs, GenerationResult)
         assert all(len(s) == len(s.atoms) for s in structs)
 
     def test_mode_label(self) -> None:

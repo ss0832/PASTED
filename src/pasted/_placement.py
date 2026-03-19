@@ -23,11 +23,12 @@ from ._atoms import _cov_radius_ang
 #   _ext._relax_core   → relax_positions()        (all placement modes)
 #   _ext._maxent_core  → angular_repulsion_gradient() (maxent only)
 #
-# HAS_RELAX / HAS_MAXENT are set by _ext/__init__.py; False when the
-# corresponding .so is absent (no compiler, pure-source install, etc.).
-# No user-facing behaviour changes in either case.
-from ._ext import HAS_MAXENT, HAS_RELAX
+# HAS_RELAX / HAS_MAXENT / HAS_MAXENT_LOOP are set by _ext/__init__.py;
+# False when the corresponding .so is absent (no compiler, pure-source
+# install, etc.).  No user-facing behaviour changes in either case.
+from ._ext import HAS_MAXENT, HAS_MAXENT_LOOP, HAS_RELAX
 from ._ext import angular_repulsion_gradient as _cpp_angular_gradient
+from ._ext import place_maxent_cpp as _cpp_place_maxent
 from ._ext import relax_positions as _cpp_relax_positions
 
 # Type alias used throughout this module and exported for type annotations.
@@ -474,6 +475,7 @@ def place_maxent(
     maxent_steps: int = 300,
     maxent_lr: float = 0.05,
     maxent_cutoff_scale: float = 2.5,
+    trust_radius: float = 0.5,
     seed: int | None = None,
 ) -> tuple[list[str], list[Vec3]]:
     """Place atoms to maximise angular entropy subject to distance constraints.
@@ -490,19 +492,21 @@ def place_maxent(
 
         U = Σ_{i} Σ_{j,k ∈ N(i), j≠k}  1 / (1 − cos θ_{jk} + ε)
 
-    is minimised by gradient descent.  After every gradient step the
-    mandatory repulsion relaxation is applied to enforce the distance
-    constraint.  The result is a structure where neighbour directions are
-    spread as uniformly over the sphere as the distance constraints allow —
-    maximum disorder within the rules.
+    is minimised by L-BFGS (m=7, Armijo backtracking) when the C++ extension
+    ``_maxent_core.place_maxent_cpp`` is available (``HAS_MAXENT_LOOP``), or
+    by steepest descent otherwise.  A per-atom *trust radius* caps the maximum
+    displacement per step, replacing the fixed ``maxent_lr`` unit-norm clip of
+    the steepest-descent fallback.
+
+    After every gradient step the mandatory distance-constraint relaxation is
+    applied (L-BFGS penalty, identical to ``_relax_core``).
 
     Stability measures applied per step:
 
-    - Per-atom gradient clipping: each atom's gradient vector is clamped to
-      unit norm before scaling by *maxent_lr*, preventing divergence.
+    - Per-atom trust-radius clamp: the step is uniformly rescaled so no
+      atom moves more than *trust_radius* Å, preventing L-BFGS overshooting.
     - Soft restoring force: atoms that drift outside the initial region
-      radius are gently pulled back toward the centre of mass.  This keeps
-      the structure compact without hard-clamping coordinates.
+      radius are gently pulled back toward the centre of mass.
     - Centre-of-mass pinning: the centre of mass is re-centred to the origin
       after each step so the whole structure does not drift.
 
@@ -517,14 +521,19 @@ def place_maxent(
     rng:
         Seeded random-number generator.
     maxent_steps:
-        Gradient-descent iterations (default: 300).
+        Gradient-descent / L-BFGS outer iterations (default: 300).
     maxent_lr:
-        Learning rate for angular repulsion gradient descent (default: 0.05).
+        Learning rate used only by the Python steepest-descent fallback
+        (default: 0.05).  Ignored when the C++ loop is active.
     maxent_cutoff_scale:
         Neighbour cutoff = this factor × median covalent sum (default: 2.5).
         Larger values include more neighbours in the angular calculation.
+    trust_radius:
+        Per-atom maximum displacement per step (Å, default: 0.5).  Used by
+        the C++ L-BFGS loop; steepest-descent fallback uses unit-norm clip
+        scaled by *maxent_lr* instead.
     seed:
-        Optional integer seed forwarded to :func:`relax_positions` for the
+        Optional integer seed forwarded to the steric-clash relaxation for the
         coincident-atom edge case.  ``None`` → non-deterministic (default).
 
     Returns
@@ -548,42 +557,59 @@ def place_maxent(
         raise ValueError(f"Unknown region spec: {region!r}")
 
     # ── Determine neighbour cutoff from covalent radii ───────────────────
-    radii = np.array([_cov_radius_ang(a) for a in atoms])
+    # Cache radii once; used by both paths and by do_relax (Python fallback).
+    radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
     pair_sums = sorted(
         ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
     )
     median_sum = pair_sums[len(pair_sums) // 2]
     ang_cutoff = cov_scale * maxent_cutoff_scale * median_sum
 
-    # ── Gradient descent on angular repulsion potential ──────────────────
     pts = np.array(positions, dtype=float)
-    # Pin to origin initially
     pts -= pts.mean(axis=0)
+
+    # ── C++ fast path: full L-BFGS loop in native code ───────────────────
+    if HAS_MAXENT_LOOP:
+        seed_int: int = -1 if seed is None else int(seed)
+        pts = _cpp_place_maxent(
+            pts, radii, cov_scale, region_radius, ang_cutoff,
+            maxent_steps, trust_radius, seed_int,
+        )
+        return atoms, [tuple(row) for row in pts]
+
+    # ── Python steepest-descent fallback ─────────────────────────────────
+    # Retained for environments without a compiled _maxent_core.
+    # Incorporates the patch from v0.1.14:
+    #   - radii pre-computed above (no per-step dict lookup)
+    #   - relax calls _cpp_relax_positions directly (bypasses Python wrapper)
+    #   - list ↔ ndarray conversion eliminated from the inner loop
+    seed_int_fb: int = -1 if seed is None else int(seed)
+    k_restore = 0.1 * maxent_lr
 
     for _ in range(maxent_steps):
         grad = _angular_repulsion_gradient(pts, ang_cutoff)
 
-        # ── Per-atom gradient clipping (unit-norm cap) ────────────────────
-        norms = np.linalg.norm(grad, axis=1, keepdims=True)          # (n, 1)
+        # Per-atom gradient clipping (unit-norm cap)
+        norms = np.linalg.norm(grad, axis=1, keepdims=True)
         norms_safe = np.where(norms > 0, norms, 1.0)
         grad_clipped = np.where(norms > 1.0, grad / norms_safe, grad)
 
-        # ── Gradient step ─────────────────────────────────────────────────
         pts -= maxent_lr * grad_clipped
 
-        # ── Soft restoring force: pull atoms back toward CoM ─────────────
-        # k_restore ramps up once an atom exceeds region_radius
-        r_from_com = np.linalg.norm(pts, axis=1, keepdims=True)      # (n, 1)
-        excess = np.maximum(r_from_com - region_radius, 0.0)         # 0 inside
-        k_restore = 0.1 * maxent_lr
+        # Soft restoring force
+        r_from_com = np.linalg.norm(pts, axis=1, keepdims=True)
+        excess = np.maximum(r_from_com - region_radius, 0.0)
         pts -= k_restore * excess * (pts / np.where(r_from_com > 0, r_from_com, 1.0))
 
-        # ── Re-centre to origin ───────────────────────────────────────────
+        # CoM pinning
         pts -= pts.mean(axis=0)
 
-        # ── Re-enforce distance constraint ───────────────────────────────
-        pos_list: list[Vec3] = [tuple(row) for row in pts]
-        pos_list, _ = relax_positions(atoms, pos_list, cov_scale, max_cycles=50, seed=seed)
-        pts = np.array(pos_list, dtype=float)
+        # Distance constraint — bypass Python wrapper when C++ available
+        if HAS_RELAX:
+            pts, _ = _cpp_relax_positions(pts, radii, cov_scale, 50, seed_int_fb)
+        else:
+            pos_list: list[Vec3] = [tuple(row) for row in pts]
+            pos_list, _ = relax_positions(atoms, pos_list, cov_scale, max_cycles=50, seed=seed)
+            pts = np.array(pos_list, dtype=float)
 
     return atoms, [tuple(row) for row in pts]
