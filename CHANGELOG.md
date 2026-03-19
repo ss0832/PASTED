@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FlatCellList` for N ≥ 64 (O(N) per evaluation) and an O(N²) full-pair
   loop for N < 64 — identical to v0.1.10.
 
+  **Additional fixes (applied during test validation):**
+  - `ENERGY_TOL` tightened from `1e-6` to `1e-12`.  The convergence
+    criterion is on the *total* penalty energy, so `1e-6` permitted
+    per-pair residual overlaps up to √(2×10⁻⁶) ≈ 1.4×10⁻³ Å — too
+    coarse for the existing test suite (tolerance 1e-5 Å).  `1e-12`
+    bounds per-pair residuals to ≤ 1.4×10⁻⁶ Å.
+  - Jitter scope narrowed from *all* coordinates to *coincident-pair*
+    atoms only (d < 1e-10 Å), matching the v0.1.10 GS behaviour.
+    The unconditional jitter made `relax_positions(seed=None)` non-
+    deterministic for normal structures, breaking the optimizer
+    reproducibility test.
+
   **Key behavioral differences vs v0.1.10:**
 
   | | v0.1.10 (Gauss-Seidel) | v0.1.11 (L-BFGS) |

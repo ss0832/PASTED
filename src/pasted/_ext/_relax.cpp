@@ -35,9 +35,11 @@
  *                unchanged for backward compatibility; L-BFGS exits early
  *                as soon as E < 1e-6.
  *
- *   seed       : seeds a one-time pre-perturbation jitter only
- *                (sigma ~ 1e-6 * max_r, ~3e-8 Ang for H atoms).
- *                L-BFGS iterations are fully deterministic.
+ *   seed       : seeds the RNG used when exactly-coincident atom pairs
+ *                (d < 1e-10 Ang) are jittered before L-BFGS.  For normal
+ *                structures with no coincident atoms the RNG is never
+ *                consumed, so seed=None yields a deterministic result.
+ *                L-BFGS iterations are always deterministic.
  */
 
 #include <pybind11/pybind11.h>
@@ -58,7 +60,7 @@ using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 // ---------------------------------------------------------------------------
 static constexpr int    CELL_LIST_THRESHOLD = 64;
 static constexpr int    LBFGS_M             = 7;
-static constexpr double ENERGY_TOL          = 1e-6;
+static constexpr double ENERGY_TOL          = 1e-12; // per-pair residual < sqrt(2e-12) ~ 1.4e-6 Ang
 static constexpr double ARMIJO_C1           = 1e-4;
 static constexpr int    MAX_LS_STEPS        = 50;
 
@@ -412,15 +414,42 @@ std::tuple<F64Array, bool> relax_positions_cpp(
     Vec x(3 * n);
     std::copy(out_ptr, out_ptr + 3 * n, x.data());
 
-    // Pre-perturbation: tiny jitter to prevent zero-gradient at d=0.
-    // sigma ~ 1e-6 * max_r  (~3e-8 Ang for H); negligible on final geometry.
-    const double max_r      = *std::max_element(radii, radii + n);
-    const double jitter_sig = 1e-6 * std::max(max_r, 1e-3);
-    for (int k = 0; k < 3 * n; ++k)
-        x[k] += jitter_sig * ndist(rng);
-
-    // Run L-BFGS
+    // Build evaluator (computes cell_size from radii; reused throughout)
     PenaltyEvaluator evaluator(radii, cov_scale, n);
+
+    // Fast early-exit: if no overlaps exist, return without touching positions.
+    // This also avoids applying jitter to already-valid structures.
+    {
+        Vec grad_tmp(3 * n);
+        if (evaluator.evaluate(x, grad_tmp) <= ENERGY_TOL) {
+            return {pts_out, true};
+        }
+    }
+
+    // Coincident-atom jitter: only perturb atoms in pairs with d < 1e-10.
+    // This mirrors v0.1.10 GS behaviour: RNG consumed only when coincident
+    // atoms exist, so seed=None yields deterministic results for normal
+    // structures.  sigma ~ 1e-6 * max_r (~3e-8 Ang for H).
+    {
+        const double max_r      = *std::max_element(radii, radii + n);
+        const double jitter_sig = 1e-6 * std::max(max_r, 1e-3);
+        const double* xd = x.data();
+        for (int i = 0; i < n - 1; ++i) {
+            for (int j = i + 1; j < n; ++j) {
+                const double ddx = xd[3*i  ] - xd[3*j  ];
+                const double ddy = xd[3*i+1] - xd[3*j+1];
+                const double ddz = xd[3*i+2] - xd[3*j+2];
+                if (ddx*ddx + ddy*ddy + ddz*ddz < 1e-20) {
+                    x[3*i  ] += jitter_sig * ndist(rng);
+                    x[3*i+1] += jitter_sig * ndist(rng);
+                    x[3*i+2] += jitter_sig * ndist(rng);
+                    x[3*j  ] += jitter_sig * ndist(rng);
+                    x[3*j+1] += jitter_sig * ndist(rng);
+                    x[3*j+2] += jitter_sig * ndist(rng);
+                }
+            }
+        }
+    }
     const auto [final_energy, converged] = lbfgs_minimize(
         x,
         [&](const Vec& pos, Vec& grad) {
@@ -461,7 +490,7 @@ pts        : (n, 3) float64  -- atom positions in Angstrom (C-contiguous, copied
 radii      : (n,)   float64  -- covalent radii in Angstrom
 cov_scale  : float           -- minimum-distance scale factor
 max_cycles : int             -- maximum L-BFGS outer iterations
-seed       : int, optional   -- RNG seed for initial jitter; -1 = random
+seed       : int, optional   -- RNG seed for coincident-atom jitter; -1 = random
 
 Returns
 -------
