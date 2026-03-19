@@ -419,7 +419,7 @@ def compute_charge_frustration(
     """Variance of Pauling electronegativity differences across neighbor pairs.
 
     For each neighbor pair (i, j) within *cutoff*, the absolute
-    electronegativity difference ``|chi_i - chi_j|`` is computed.  The metric
+    electronegativity difference ``abs(chi_i - chi_j)`` is computed.  The metric
     is the *variance* of these differences over all neighbor pairs.
 
     A high value indicates a structure where electronegativity differences are
@@ -444,7 +444,7 @@ def compute_charge_frustration(
     Returns
     -------
     float
-        Variance of |delta-chi| across all neighbor pairs.  Returns 0.0 when
+        Variance of ``abs(delta-chi)`` across all neighbor pairs.  Returns 0.0 when
         fewer than two neighbor pairs are detected (variance is undefined for a
         single observation).
     """
