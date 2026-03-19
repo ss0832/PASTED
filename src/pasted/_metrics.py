@@ -4,10 +4,18 @@ pasted._metrics
 Disorder-metric computations.
 
 All public metric functions accept ``pts`` (position array) plus a ``cutoff``
-parameter and build their own neighbor lists internally.  The O(N^2)
-``scipy.spatial.distance.pdist`` / ``squareform`` path has been removed; the
-C++ ``rdf_h_cpp`` (``HAS_GRAPH``) and ``scipy.spatial.cKDTree`` (Python
-fallback) provide O(N*k) pair enumeration throughout.
+parameter and build their own neighbor lists internally.
+
+**C++ path** (``HAS_GRAPH = True``): ``rdf_h_cpp`` and ``graph_metrics_cpp``
+use a single ``FlatCellList`` pass for O(N*k) pair enumeration.
+``scipy.spatial.distance.pdist`` / ``squareform`` are **not called** on this
+path.
+
+**Pure-Python fallback** (``HAS_GRAPH = False``): ``_compute_graph_ring_charge``
+falls back to ``_squareform(_pdist(pts))`` — an O(N²) operation.  This path
+is active when the C++17 extensions did not compile at install time (e.g. no
+compiler available).  For N ≳ 500 the O(N²) cost becomes significant; see
+the *Installation* section of the quickstart for performance guidance.
 """
 
 from __future__ import annotations
@@ -527,9 +535,20 @@ def _compute_graph_ring_charge(
 ) -> dict[str, float]:
     """Dispatch graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi.
 
-    Uses the C++ ``graph_metrics_cpp`` (``HAS_GRAPH``) when available;
-    otherwise falls back to pure-Python implementations that accept a
-    pre-computed distance matrix.
+    Uses the C++ ``graph_metrics_cpp`` (``HAS_GRAPH = True``) when available;
+    this path builds a ``FlatCellList`` once and computes all five metrics in
+    O(N*k).
+
+    When ``HAS_GRAPH = False`` (C++ extension unavailable), falls back to the
+    pure-Python implementations in this module.  The fallback constructs a
+    full N×N distance matrix via ``scipy.spatial.distance.pdist`` /
+    ``squareform`` — an **O(N²) operation** — and passes it to
+    :func:`compute_graph_metrics`, :func:`compute_ring_fraction`,
+    :func:`compute_charge_frustration`, and :func:`compute_moran_I_chi`.
+
+    .. note::
+        The O(N²) fallback can be slow for N ≳ 500.  Install with a C++17
+        compiler to enable the O(N*k) C++ path (``HAS_GRAPH = True``).
     """
     if _HAS_GRAPH:
         # Single C++ call: FlatCellList built once, all 5 metrics computed.
@@ -558,10 +577,15 @@ def compute_all_metrics(
     The exact count is ``len(ALL_METRICS)`` (currently
     :data:`~pasted._atoms.ALL_METRICS`).
 
-    All metrics use ``cutoff``-based local pair enumeration (O(N*k)) via C++
-    ``FlatCellList`` (``HAS_GRAPH``) or ``scipy.spatial.cKDTree`` (Python
-    fallback).  The O(N^2) ``scipy.spatial.distance.pdist`` /
-    ``squareform`` path has been removed.
+    **C++ path** (``HAS_GRAPH = True``): all pair-enumeration uses a single
+    ``FlatCellList`` built in C++, giving O(N*k) complexity throughout.
+    ``scipy.spatial.distance.pdist`` / ``squareform`` are not called.
+
+    **Pure-Python fallback** (``HAS_GRAPH = False``): :func:`compute_h_spatial`
+    and :func:`compute_rdf_deviation` use ``scipy.spatial.cKDTree`` (O(N*k)),
+    but the five graph/ring/charge/Moran metrics are computed via
+    :func:`_compute_graph_ring_charge`, which builds a full N×N distance
+    matrix with ``pdist`` / ``squareform`` — an **O(N²) operation**.
 
     Parameters
     ----------

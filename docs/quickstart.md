@@ -15,14 +15,30 @@ If none is available the package still installs and runs on pure Python/NumPy.
 Verify that the C++ extensions compiled successfully:
 
 ```python
-from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH
-print(HAS_RELAX, HAS_MAXENT, HAS_STEINHARDT, HAS_GRAPH)  # True True True True
+from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH
+print(HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH)
+# True True True True True  (all extensions compiled)
 ```
+
+| Flag | What it enables |
+|---|---|
+| `HAS_RELAX` | C++ L-BFGS steric-clash relaxation (~20–50× vs Python) |
+| `HAS_MAXENT` | C++ angular-repulsion gradient for `maxent` mode |
+| `HAS_MAXENT_LOOP` | Full C++ L-BFGS loop for `place_maxent` (~10–22× vs `HAS_MAXENT_LOOP=False`) |
+| `HAS_STEINHARDT` | C++ sparse Steinhardt Q_l (~2000× vs dense Python) |
+| `HAS_GRAPH` | C++ O(N·k) graph / ring / charge / Moran / RDF metrics (~25× vs Python) |
 
 When `HAS_GRAPH` is `True`, both `graph_metrics_cpp` (graph / ring / charge /
 Moran metrics) and `rdf_h_cpp` (`H_spatial` and `RDF_dev`) are active.
 `compute_all_metrics` selects the C++ path automatically — no configuration
 required.
+
+> **Performance note (HAS_GRAPH = False):** when the `_graph_core` extension
+> did not compile, `compute_all_metrics` computes graph, ring, charge, and
+> Moran metrics via a full O(N²) `scipy.spatial.distance.pdist` call.  This
+> is significantly slower for N ≳ 500 (e.g. ~3 s at N=1000 vs ~17 ms with
+> `HAS_GRAPH=True`).  If you see slow metric computation, confirm that
+> `HAS_GRAPH` is `True` and reinstall with a C++17 compiler if not.
 
 ---
 

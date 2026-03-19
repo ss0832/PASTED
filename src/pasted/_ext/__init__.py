@@ -11,7 +11,9 @@ disabling all acceleration.
 Public names
 ------------
 HAS_RELAX       : bool  -- True when _relax_core is available
-HAS_MAXENT      : bool  -- True when _maxent_core is available
+HAS_MAXENT      : bool  -- True when _maxent_core angular gradient is available
+HAS_MAXENT_LOOP : bool  -- True when _maxent_core full C++ L-BFGS loop is available
+                           (implies HAS_MAXENT; enables the fast place_maxent_cpp path)
 HAS_STEINHARDT  : bool  -- True when _steinhardt_core is available
 HAS_GRAPH       : bool  -- True when _graph_core is available
 
