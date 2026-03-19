@@ -239,10 +239,9 @@ class TestRelaxPositions:
         """C++ and Python paths must both converge and enforce min distances.
 
         Exact coordinate agreement is *not* expected: the Python fallback uses
-        a Jacobi-style update (distance matrix frozen for the whole cycle),
-        while the C++ path uses a Gauss-Seidel-style update (positions updated
-        immediately within each cycle).  Both strategies are correct but produce
-        different trajectories.
+        a Jacobi-style Gauss-Seidel update, while the C++ path uses L-BFGS
+        global minimization.  Both strategies are correct but produce different
+        final geometries.
 
         We verify the shared contract: all min-distance constraints are
         satisfied by both implementations.
@@ -289,6 +288,97 @@ class TestRelaxPositions:
                 d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
                 threshold = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
                 assert d >= threshold - 1e-5
+
+
+    @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
+    def test_large_dense_converges(self) -> None:
+        """L-BFGS must converge for a highly dense random structure (N=200).
+
+        This is the primary failure mode of the old Gauss-Seidel solver:
+        simultaneous many-body overlaps cause the per-pair push loop to cycle
+        without making global progress.  L-BFGS resolves this by minimising
+        the total penalty energy globally.
+        """
+        rng = np.random.default_rng(0)
+        n = 200
+        mean_r = 0.77  # Angstrom, C-like
+        r_bulk = (
+            (3 * n * (4 / 3) * math.pi * mean_r**3) / (4 * math.pi * 0.64)
+        ) ** (1 / 3)
+        r_sphere = 0.55 * r_bulk  # ~55 % bulk packing radius — very dense
+        u = rng.random(n)
+        phi = rng.uniform(0, 2 * math.pi, n)
+        costh = rng.uniform(-1, 1, n)
+        sinth = np.sqrt(1 - costh**2)
+        r = r_sphere * u ** (1 / 3)
+        pts = np.column_stack(
+            [r * sinth * np.cos(phi), r * sinth * np.sin(phi), r * costh]
+        )
+        atoms = ["C"] * n
+        pos = [tuple(float(x) for x in row) for row in pts]
+
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1500, seed=0)
+
+        assert converged, "L-BFGS did not converge on a dense N=200 structure"
+        thr = cov_radius_ang("C") * 2.0  # same element
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = math.sqrt(
+                    sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
+                )
+                assert d >= thr - 1e-5, f"pair ({i},{j}) d={d:.6f} < thr={thr:.6f}"
+
+    @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
+    def test_no_overlap_structure_unchanged(self) -> None:
+        """A structure with no overlaps must be returned bit-for-bit identical.
+
+        The early-exit guard evaluates the penalty energy before applying any
+        jitter or running L-BFGS.  When E = 0 the positions must not change.
+        """
+        atoms = ["C", "N", "O", "Fe"]
+        pos = [
+            (0.0,  0.0,  0.0),
+            (10.0, 0.0,  0.0),
+            (0.0,  10.0, 0.0),
+            (0.0,  0.0,  10.0),
+        ]
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=42)
+        assert converged
+        for orig, relaxed in zip(pos, result, strict=True):
+            assert relaxed == pytest.approx(orig, abs=0.0), (
+                f"Overlap-free structure was modified: {orig} -> {relaxed}"
+            )
+
+    @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
+    def test_penalty_energy_zero_after_convergence(self) -> None:
+        """After convergence the residual harmonic penalty energy must be ~0.
+
+        Convergence criterion is E < 1e-12, so every pair must satisfy
+        d_ij >= thr_ij within the numerical tolerance of the solver.
+        """
+        atoms = ["C", "N", "O", "Fe", "H", "C", "N"]
+        rng = np.random.default_rng(7)
+        pos = [tuple(float(x) for x in rng.uniform(-0.3, 0.3, 3)) for _ in atoms]
+
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=7)
+        assert converged
+
+        n = len(atoms)
+        total_energy = 0.0
+        for i in range(n):
+            for j in range(i + 1, n):
+                d = math.sqrt(
+                    sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
+                )
+                thr = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
+                overlap = max(0.0, thr - d)
+                total_energy += 0.5 * overlap * overlap
+                assert d >= thr - 1e-5, (
+                    f"pair ({atoms[i]},{atoms[j]}) overlap={overlap:.2e} Ang"
+                )
+        assert total_energy < 1e-8, (
+            f"Residual penalty energy {total_energy:.2e} exceeds 1e-8"
+        )
 
 
 # ---------------------------------------------------------------------------
