@@ -51,7 +51,9 @@ from ._atoms import cov_radius_ang as _cov_radius_ang
 from ._atoms import pauling_electronegativity as _pauling_en
 
 # Optional C++ acceleration for Steinhardt Q_l
+from ._ext import HAS_GRAPH as _HAS_GRAPH
 from ._ext import HAS_STEINHARDT as _HAS_STEINHARDT
+from ._ext import graph_metrics_cpp as _cpp_graph_metrics
 
 if _HAS_STEINHARDT:
     from ._ext import steinhardt_per_atom as _steinhardt_per_atom_cpp
@@ -312,55 +314,6 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
-def compute_bond_strain_rms(
-    atoms: list[str],
-    dmat: np.ndarray,
-    cov_scale: float,
-) -> float:
-    """RMS relative deviation of bonded-pair distances from their ideal lengths.
-
-    A pair (i, j) is considered *bonded* when its distance satisfies
-    ``d_ij < cov_scale × (r_i + r_j)``, where r values are Pyykkö
-    single-bond covalent radii.  The strain of each bonded pair is defined as
-
-    .. math::
-
-        \\varepsilon_{ij} = \\frac{d_{ij} - (r_i + r_j)}{r_i + r_j}
-
-    and the metric is the root-mean-square of all per-pair strains.  A value
-    of 0 indicates every bonded pair sits exactly at its ideal length; values
-    above ~0.1 indicate structurally distorted geometries.
-
-    Parameters
-    ----------
-    atoms:
-        Element symbols.
-    dmat:
-        Full n×n pairwise distance matrix (Å).
-    cov_scale:
-        Bond detection threshold scale factor.  A pair is counted as bonded
-        when ``d_ij < cov_scale × (r_i + r_j)``.
-
-    Returns
-    -------
-    float
-        RMS relative bond-length deviation.  Returns 0.0 when no bonded
-        pairs are detected.
-    """
-    n = len(atoms)
-    strains: list[float] = []
-    for i in range(n):
-        ri = _cov_radius_ang(atoms[i])
-        for j in range(i + 1, n):
-            ideal = ri + _cov_radius_ang(atoms[j])
-            if dmat[i, j] < cov_scale * ideal:
-                strains.append((dmat[i, j] - ideal) / ideal)
-    if not strains:
-        return 0.0
-    arr = np.array(strains, dtype=float)
-    return float(np.sqrt(np.mean(arr**2)))
-
-
 def compute_ring_fraction(
     atoms: list[str],
     dmat: np.ndarray,
@@ -368,10 +321,10 @@ def compute_ring_fraction(
 ) -> float:
     """Fraction of atoms that belong to at least one ring.
 
-    Builds a bond graph using the same ``cov_scale × (r_i + r_j)`` threshold
-    as :func:`compute_bond_strain_rms`, then detects rings via a Union-Find
-    spanning-tree construction: every back-edge (an edge between two vertices
-    already in the same component) indicates a cycle, and both its endpoints
+    Builds a bond graph using the same ``cov_scale × (r_i + r_j)`` threshold,
+    then detects rings via a Union-Find spanning-tree construction:
+    every back-edge (i.e. an edge between two vertices already in the same
+    component) indicates a cycle, and both its endpoints
     are marked as ring members.
 
     Parameters
@@ -484,6 +437,79 @@ def compute_charge_frustration(
 # ---------------------------------------------------------------------------
 
 
+def compute_moran_I_chi(
+    atoms: list[str],
+    dmat: np.ndarray,
+    cutoff: float,
+) -> float:
+    """Moran\'s I spatial autocorrelation for Pauling electronegativity.
+
+    Measures whether atoms with similar electronegativity cluster spatially.
+
+    .. math::
+
+        I = \\frac{N}{W} \\frac{\\sum_{i \\neq j} w_{ij}(\\chi_i - \\bar{\\chi})
+        (\\chi_j - \\bar{\\chi})}{\\sum_i (\\chi_i - \\bar{\\chi})^2}
+
+    where :math:`w_{ij} = 1` when :math:`d_{ij} \\leq` *cutoff* and 0 otherwise.
+
+    Parameters
+    ----------
+    atoms:
+        Element symbols.
+    dmat:
+        Full n×n pairwise distance matrix (Å).
+    cutoff:
+        Distance cutoff for the step-function weight matrix (Å).
+
+    Returns
+    -------
+    float
+        Moran\'s I in (-1, 1].  Returns 0.0 when all atoms share the same
+        electronegativity or no pair falls within *cutoff*.
+
+        * I ≈ 0 : random spatial arrangement (target for disordered structures)
+        * I > 0 : same-electronegativity atoms cluster spatially
+        * I < 0 : alternating high/low electronegativity (ionic-crystal-like order)
+    """
+    chi = np.array([_pauling_en(a) for a in atoms], dtype=float)
+    chi_bar = chi.mean()
+    dev = chi - chi_bar
+    denom = float(np.sum(dev**2))
+    if denom < 1e-30:
+        return 0.0
+    n = len(atoms)
+    W = (dmat > 1e-6) & (dmat <= cutoff)
+    W_sum = float(W.sum())
+    if W_sum < 1e-30:
+        return 0.0
+    numer = float((W * np.outer(dev, dev)).sum())
+    return float((n / W_sum) * (numer / denom))
+
+
+def _compute_graph_ring_charge(
+    atoms: list[str],
+    pts: np.ndarray,
+    radii: np.ndarray,
+    cov_scale: float,
+    cutoff: float,
+    en_vals: np.ndarray,
+) -> dict[str, float]:
+    """Dispatch graph_lcc/cc, ring_fraction, charge_frustration, moran_I_chi to C++ or Python."""
+    if _HAS_GRAPH:
+        # Single C++ call: FlatCellList built once, all 5 metrics computed.
+        return dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))  # type: ignore[misc]
+    # Pure-Python fallback
+    dmat = _squareform(_pdist(pts))
+    return {
+        **compute_graph_metrics(dmat, cutoff),
+        "ring_fraction": compute_ring_fraction(atoms, dmat, cov_scale),
+        "charge_frustration": compute_charge_frustration(atoms, dmat, cov_scale),
+        "moran_I_chi": compute_moran_I_chi(atoms, dmat, cutoff),
+    }
+
+
+
 def compute_all_metrics(
     atoms: list[str],
     positions: list[Vec3],
@@ -493,7 +519,10 @@ def compute_all_metrics(
     cutoff: float,
     cov_scale: float = 1.0,
 ) -> dict[str, float]:
-    """Compute all thirteen disorder metrics for a single structure.
+    """Compute all disorder metrics for a single structure.
+
+    The exact count is ``len(ALL_METRICS)`` (currently
+    :data:`~pasted._atoms.ALL_METRICS`).
 
     The pairwise distance matrix is constructed once and shared across all
     individual metric functions.
@@ -515,8 +544,9 @@ def compute_all_metrics(
         Distance cutoff (Å) for Steinhardt and graph metrics.
     cov_scale:
         Bond detection threshold scale factor for the MM-level descriptors
-        :func:`compute_bond_strain_rms`, :func:`compute_ring_fraction`, and
-        :func:`compute_charge_frustration`.  Default: ``1.0``.
+        :func:`compute_ring_fraction`,
+        :func:`compute_charge_frustration`, and
+        :func:`compute_moran_I_chi`.  Defaults to ``1.0``.
 
     Returns
     -------
@@ -525,6 +555,8 @@ def compute_all_metrics(
     pts = np.array(positions, dtype=float)  # (n, 3)
     dists = _pdist(pts)  # condensed (n*(n-1)/2,)
     dmat = _squareform(dists)  # full (n, n)
+    radii = np.array([_cov_radius_ang(a) for a in atoms])
+    en_vals = np.array([_pauling_en(a) for a in atoms])
 
     ha = compute_h_atom(atoms)
     hs = compute_h_spatial(dists, n_bins)
@@ -535,10 +567,7 @@ def compute_all_metrics(
         "RDF_dev": compute_rdf_deviation(pts, dists, n_bins),
         "shape_aniso": compute_shape_anisotropy(pts),
         **compute_steinhardt(pts, dmat, [4, 6, 8], cutoff),
-        **compute_graph_metrics(dmat, cutoff),
-        "bond_strain_rms": compute_bond_strain_rms(atoms, dmat, cov_scale),
-        "ring_fraction": compute_ring_fraction(atoms, dmat, cov_scale),
-        "charge_frustration": compute_charge_frustration(atoms, dmat, cov_scale),
+        **_compute_graph_ring_charge(atoms, pts, radii, cov_scale, cutoff, en_vals),
     }
 
 

@@ -33,7 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
             "PASTED: Pointless Atom STructure with Entropy Diagnostics\n"
             "Elements Z=1-106.  Modes: gas / chain / shell.\n"
             "Metrics: H_atom H_spatial H_total RDF_dev shape_aniso "
-            "Q4 Q6 Q8 graph_lcc graph_cc\n"
+            "Q4 Q6 Q8 graph_lcc graph_cc ring_fraction "
+            "charge_frustration moran_I_chi\n"
             "Requires: numpy scipy"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

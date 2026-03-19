@@ -77,9 +77,10 @@ pasted [OPTIONS]
 Use `-` for an open bound. Multiple `--filter` flags are ANDed together.
 
 ```bash
---filter "H_total:2.0:-"     # H_total >= 2.0
---filter "Q6:-:0.3"          # Q6 <= 0.3
---filter "shape_aniso:0.5:-" # shape_aniso >= 0.5
+--filter "H_total:2.0:-"      # H_total >= 2.0
+--filter "Q6:-:0.3"           # Q6 <= 0.3
+--filter "shape_aniso:0.5:-"  # shape_aniso >= 0.5
+--filter "moran_I_chi:-0.1:0.1"  # |I| < 0.1 — spatially random EN
 ```
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,

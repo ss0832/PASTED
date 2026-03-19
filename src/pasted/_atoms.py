@@ -139,9 +139,9 @@ ALL_METRICS: frozenset[str] = frozenset(
         "graph_lcc",
         "graph_cc",
         # MM-level structural descriptors (added in 0.1.9)
-        "bond_strain_rms",
         "ring_fraction",
         "charge_frustration",
+        "moran_I_chi",
     }
 )
 
@@ -319,11 +319,16 @@ _PAULING_EN: dict[str, float] = {
     "Es": 1.30, "Fm": 1.30, "Md": 1.30, "No": 1.30, "Lr": 1.30,
     # Period-7 d-block: no published values — use Period-6 analogue
     "Rf": 1.30, "Db": 1.50, "Sg": 2.36,
-    # Noble gases: Pauling EN not defined; fallback applied in function
+    # Noble gases: He, Ne, Ar — no experimental Pauling value;
+    # assigned 4.0 (maximum) to model complete resistance to electron donation.
+    # Kr and Xe can form compounds (e.g. XeF2, KrF2) and have literature
+    # estimates on the Allen/Allred-Rochow scale: Kr ≈ 3.0, Xe ≈ 2.6.
+    # Rn: no reliable data; conservatively set to 4.0.
+    "He": 4.0, "Ne": 4.0, "Ar": 4.0, "Kr": 3.0, "Xe": 2.6, "Rn": 4.0,
 }
 
 #: Fallback Pauling electronegativity for elements without a literature value
-#: (noble gases He, Ne, Ar, Kr, Xe, Rn and any unlisted symbol).
+#: (any symbol not in the table; Kr/Xe/other noble gases have explicit entries).
 PAULING_EN_FALLBACK: float = 1.0
 
 
@@ -331,8 +336,11 @@ def pauling_electronegativity(sym: str) -> float:
     """Return the Pauling electronegativity for element *sym*.
 
     Values follow Pauling (1960) with IUPAC 2016 updates.  Noble gases
-    (He, Ne, Ar, Kr, Xe, Rn) and any symbol not in the table return the
-    module-level :data:`PAULING_EN_FALLBACK` value (1.0).
+    with no known compounds (He, Ne, Ar, Rn) are assigned 4.0 to model
+    complete resistance to electron donation.  Kr (≈ 3.0) and Xe (≈ 2.6)
+    use literature estimates from the Allen / Allred-Rochow scale, reflecting
+    their known tendency to form compounds (KrF₂, XeF₂, etc.).
+    Any symbol not in the table returns :data:`PAULING_EN_FALLBACK` (1.0).
 
     Parameters
     ----------
@@ -342,8 +350,8 @@ def pauling_electronegativity(sym: str) -> float:
     Returns
     -------
     float
-        Pauling electronegativity, or 1.0 if the element has no
-        literature value.
+        Pauling electronegativity.  Noble gases return 4.0;
+        any other element without a value returns 1.0.
     """
     return _PAULING_EN.get(sym, PAULING_EN_FALLBACK)
 

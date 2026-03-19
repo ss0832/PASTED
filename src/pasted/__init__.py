@@ -53,8 +53,8 @@ from ._io import format_xyz
 from ._metrics import (
     compute_all_metrics,
     compute_angular_entropy,
-    compute_bond_strain_rms,
     compute_charge_frustration,
+    compute_moran_I_chi,
     compute_ring_fraction,
     compute_steinhardt_per_atom,
 )
@@ -86,9 +86,9 @@ __all__ = [
     # Metric / IO utilities
     "compute_all_metrics",
     "compute_angular_entropy",
-    "compute_bond_strain_rms",
     "compute_ring_fraction",
     "compute_charge_frustration",
+    "compute_moran_I_chi",
     "compute_steinhardt_per_atom",
     "format_xyz",
     # Placement utilities

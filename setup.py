@@ -47,6 +47,12 @@ ext_modules = [
         extra_compile_args=_COMPILE_ARGS,
         cxx_std=17,
     ),
+    Pybind11Extension(
+        "pasted._ext._graph_core",
+        sources=["src/pasted/_ext/_graph_core.cpp"],
+        extra_compile_args=_COMPILE_ARGS,
+        cxx_std=17,
+    ),
 ]
 
 setup(

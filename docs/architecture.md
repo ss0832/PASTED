@@ -44,7 +44,8 @@ src/pasted/
     ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT flags; None fallbacks
     ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
     ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
-    └── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
+    ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
+    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration (N≥64)
 ```
 
 ---
@@ -102,9 +103,9 @@ stored in `Structure.metrics`.
 | `Q4`, `Q6`, `Q8` | [0, 1] | Steinhardt bond-order parameters |
 | `graph_lcc` | [0, 1] | Largest connected-component fraction |
 | `graph_cc` | [0, 1] | Mean clustering coefficient |
-| `bond_strain_rms` | ≥ 0 | RMS relative deviation of bonded-pair distances from Pyykkö ideal lengths |
 | `ring_fraction` | [0, 1] | Fraction of atoms belonging to at least one ring (Union-Find detection) |
 | `charge_frustration` | ≥ 0 | Variance of Pauling electronegativity differences across bonded pairs |
+| `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random |
 
 ---
 
@@ -127,6 +128,17 @@ implemented in C++17 standard library with no external dependencies.
 
 Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
 for dense 5000-atom structures.
+
+### `_graph_core` — graph / ring / charge metrics
+
+Computes `graph_lcc`, `graph_cc`, `ring_fraction`, and `charge_frustration`
+in a single O(N·k) pass using `FlatCellList` (N ≥ 64) or O(N²) full-pair
+(N < 64).  A bonded-pair adjacency list and a cutoff-distance adjacency list
+are built simultaneously so the spatial index is queried only once per
+`compute_all_metrics` call.
+
+`bond_strain_rms` is intentionally absent: `relax_positions` guarantees no
+overlaps on convergence, so the metric is structurally zero and uninformative.
 
 ### `_maxent_core` — `angular_repulsion_gradient`
 

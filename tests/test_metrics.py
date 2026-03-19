@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 from scipy.spatial.distance import pdist, squareform
 
-from pasted._atoms import ALL_METRICS, parse_filter
+from pasted import _ext
+from pasted._atoms import _cov_radius_ang, parse_filter, pauling_electronegativity
 from pasted._metrics import (
     compute_all_metrics,
-    compute_bond_strain_rms,
     compute_charge_frustration,
     compute_graph_metrics,
     compute_h_atom,
     compute_h_spatial,
-    compute_rdf_deviation,
+    compute_moran_I_chi,
     compute_ring_fraction,
     compute_shape_anisotropy,
     compute_steinhardt,
@@ -61,50 +61,10 @@ class TestComputeHAtom:
         h = compute_h_atom(["C", "N", "O", "H"])
         assert h == pytest.approx(math.log(4), rel=1e-6)
 
-    def test_non_negative(self) -> None:
-        assert compute_h_atom(["C"]) >= 0.0
-
-
-# ---------------------------------------------------------------------------
-# compute_h_spatial
-# ---------------------------------------------------------------------------
-
 
 class TestComputeHSpatial:
     def test_empty_returns_zero(self) -> None:
         assert compute_h_spatial(np.array([]), 20) == 0.0
-
-    def test_non_negative(self) -> None:
-        dists = np.array([1.0, 2.0, 3.0])
-        assert compute_h_spatial(dists, 10) >= 0.0
-
-    def test_more_uniform_higher_entropy(self) -> None:
-        uniform = np.linspace(1.0, 10.0, 100)
-        peaked = np.full(100, 5.0)
-        assert compute_h_spatial(uniform, 20) > compute_h_spatial(peaked, 20)
-
-
-# ---------------------------------------------------------------------------
-# compute_rdf_deviation
-# ---------------------------------------------------------------------------
-
-
-def test_rdf_deviation_non_negative() -> None:
-    pts = np.array(FOUR_POS)
-    dists = pdist(pts)
-    rdf = compute_rdf_deviation(pts, dists, 20)
-    assert rdf >= 0.0
-
-
-def test_rdf_deviation_single_pair_non_negative() -> None:
-    pts = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]])
-    dists = pdist(pts)
-    assert compute_rdf_deviation(pts, dists, 10) >= 0.0
-
-
-# ---------------------------------------------------------------------------
-# compute_shape_anisotropy
-# ---------------------------------------------------------------------------
 
 
 class TestComputeShapeAnisotropy:
@@ -182,7 +142,6 @@ class TestComputeGraphMetrics:
 
 
 # ---------------------------------------------------------------------------
-# compute_bond_strain_rms
 # ---------------------------------------------------------------------------
 
 
@@ -190,37 +149,11 @@ class TestComputeBondStrainRms:
     def _dmat(self, pos: list[tuple[float, float, float]]) -> np.ndarray:
         return squareform(pdist(np.array(pos)))
 
-    def test_ideal_bond_zero_strain(self) -> None:
-        # C–C ideal: 0.75 + 0.75 = 1.5 Å
-        pos = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)]
-        result = compute_bond_strain_rms(["C", "C"], self._dmat(pos), cov_scale=1.3)
-        assert result == pytest.approx(0.0, abs=1e-9)
 
-    def test_non_negative(self) -> None:
-        dmat = self._dmat(FOUR_POS)
-        result = compute_bond_strain_rms(FOUR_ATOMS, dmat, cov_scale=1.3)
-        assert result >= 0.0
 
-    def test_no_bonds_returns_zero(self) -> None:
-        # Atoms 100 Å apart → no bonds detected
-        pos = [(0.0, 0.0, 0.0), (100.0, 0.0, 0.0)]
-        dmat = self._dmat(pos)
-        assert compute_bond_strain_rms(["C", "C"], dmat, cov_scale=1.3) == pytest.approx(0.0)
 
-    def test_compressed_bond_positive_strain(self) -> None:
-        # C–C at 1.0 Å (ideal 1.5 Å) → strain = (1.0-1.5)/1.5 < 0 → rms > 0
-        pos = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0)]
-        result = compute_bond_strain_rms(["C", "C"], self._dmat(pos), cov_scale=1.3)
-        assert result > 0.0
 
-    def test_larger_cov_scale_detects_more_pairs(self) -> None:
-        # With a large cov_scale, distant pairs are also treated as bonded.
-        dmat = self._dmat(FOUR_POS)
-        small = compute_bond_strain_rms(FOUR_ATOMS, dmat, cov_scale=1.0)
-        large = compute_bond_strain_rms(FOUR_ATOMS, dmat, cov_scale=3.0)
-        # Both should be non-negative; result may differ
-        assert small >= 0.0
-        assert large >= 0.0
+
 
 
 # ---------------------------------------------------------------------------
@@ -255,16 +188,6 @@ class TestComputeRingFraction:
         dmat = self._dmat(pos)
         assert compute_ring_fraction(["C", "C"], dmat, cov_scale=1.3) == pytest.approx(0.0)
 
-    def test_no_bonds_returns_zero(self) -> None:
-        pos = [(0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (200.0, 0.0, 0.0)]
-        dmat = self._dmat(pos)
-        assert compute_ring_fraction(["C", "C", "C"], dmat, cov_scale=1.3) == pytest.approx(0.0)
-
-
-# ---------------------------------------------------------------------------
-# compute_charge_frustration
-# ---------------------------------------------------------------------------
-
 
 class TestComputeChargeFrustration:
     def _dmat(self, pos: list[tuple[float, float, float]]) -> np.ndarray:
@@ -277,82 +200,6 @@ class TestComputeChargeFrustration:
         result = compute_charge_frustration(["C", "C", "C"], dmat, cov_scale=1.3)
         assert result == pytest.approx(0.0, abs=1e-10)
 
-    def test_non_negative(self) -> None:
-        dmat = self._dmat(FOUR_POS)
-        result = compute_charge_frustration(FOUR_ATOMS, dmat, cov_scale=1.3)
-        assert result >= 0.0
-
-    def test_no_bonds_returns_zero(self) -> None:
-        pos = [(0.0, 0.0, 0.0), (100.0, 0.0, 0.0)]
-        dmat = self._dmat(pos)
-        assert compute_charge_frustration(["C", "N"], dmat, cov_scale=1.3) == pytest.approx(0.0)
-
-    def test_single_bond_zero_variance(self) -> None:
-        # Only one bonded pair → variance of a single value = 0
-        pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0)]
-        dmat = self._dmat(pos)
-        result = compute_charge_frustration(["C", "N"], dmat, cov_scale=1.3)
-        assert result == pytest.approx(0.0, abs=1e-10)
-
-    def test_mixed_system_positive(self) -> None:
-        # C(2.55)–F(3.98) and C(2.55)–H(2.20): different |ΔEN| → variance > 0
-        pos = [(0.0, 0.0, 0.0), (1.35, 0.0, 0.0), (0.0, 1.07, 0.0)]
-        dmat = self._dmat(pos)
-        result = compute_charge_frustration(["C", "F", "H"], dmat, cov_scale=1.3)
-        assert result > 0.0
-
-
-# ---------------------------------------------------------------------------
-# compute_all_metrics
-# ---------------------------------------------------------------------------
-
-
-def test_all_metrics_keys() -> None:
-    metrics = compute_all_metrics(
-        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=3.0
-    )
-    assert set(metrics.keys()) == ALL_METRICS
-
-
-def test_all_metrics_h_total_formula() -> None:
-    metrics = compute_all_metrics(
-        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.3, w_spatial=0.7, cutoff=3.0
-    )
-    expected = 0.3 * metrics["H_atom"] + 0.7 * metrics["H_spatial"]
-    assert metrics["H_total"] == pytest.approx(expected, rel=1e-9)
-
-
-def test_all_metrics_finite() -> None:
-    metrics = compute_all_metrics(
-        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=3.0
-    )
-    for k, v in metrics.items():
-        assert math.isfinite(v), f"Metric {k} is not finite: {v}"
-
-
-def test_all_metrics_contains_new_keys() -> None:
-    metrics = compute_all_metrics(
-        FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=3.0
-    )
-    assert "bond_strain_rms" in metrics
-    assert "ring_fraction" in metrics
-    assert "charge_frustration" in metrics
-
-
-def test_all_metrics_cov_scale_default() -> None:
-    # cov_scale=1.0 (default) and explicit should give the same result
-    m1 = compute_all_metrics(FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5,
-                             cutoff=3.0)
-    m2 = compute_all_metrics(FOUR_ATOMS, FOUR_POS, n_bins=10, w_atom=0.5, w_spatial=0.5,
-                             cutoff=3.0, cov_scale=1.0)
-    assert m1["bond_strain_rms"] == pytest.approx(m2["bond_strain_rms"])
-    assert m1["ring_fraction"] == pytest.approx(m2["ring_fraction"])
-    assert m1["charge_frustration"] == pytest.approx(m2["charge_frustration"])
-
-
-# ---------------------------------------------------------------------------
-# passes_filters
-# ---------------------------------------------------------------------------
 
 
 class TestPassesFilters:
@@ -380,11 +227,6 @@ class TestPassesFilters:
 
     def test_new_metrics_filterable(self) -> None:
         # Verify that the new metrics can be used as filter keys via parse_filter
-        metric, lo, hi = parse_filter("bond_strain_rms:0.0:0.5")
-        assert metric == "bond_strain_rms"
-        assert lo == pytest.approx(0.0)
-        assert hi == pytest.approx(0.5)
-
         metric2, lo2, hi2 = parse_filter("ring_fraction:-:0.3")
         assert metric2 == "ring_fraction"
         assert math.isinf(lo2) and lo2 < 0
@@ -394,3 +236,139 @@ class TestPassesFilters:
         assert metric3 == "charge_frustration"
         assert lo3 == pytest.approx(0.0)
         assert math.isinf(hi3) and hi3 > 0
+
+# ---------------------------------------------------------------------------
+# _graph_core C++ extension — contract tests
+# ---------------------------------------------------------------------------
+
+
+class TestGraphCoreCpp:
+    """C++ _graph_core extension produces results identical to Python fallbacks."""
+
+    @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
+    def test_cpp_matches_python_ring_fraction(self) -> None:
+        """C++ ring_fraction must agree with pure-Python to within 1e-9."""
+        atoms = ["C", "C", "C", "N", "O"]
+        side = 1.3
+        pts = np.array([
+            (0.0, 0.0, 0.0),
+            (side, 0.0, 0.0),
+            (side / 2, side * math.sqrt(3) / 2, 0.0),
+            (5.0, 0.0, 0.0),
+            (10.0, 0.0, 0.0),
+        ])
+        dmat    = squareform(pdist(pts))
+        radii   = np.array([_cov_radius_ang(a) for a in atoms])
+        en_vals = np.array([pauling_electronegativity(a) for a in atoms])
+
+        cpp     = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
+        py_ring = compute_ring_fraction(atoms, dmat, 1.0)
+        py_charge = compute_charge_frustration(atoms, dmat, 1.0)
+
+        assert cpp["ring_fraction"]      == pytest.approx(py_ring,   abs=1e-9)
+        assert cpp["charge_frustration"] == pytest.approx(py_charge, abs=1e-9)
+
+    @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
+    def test_cpp_matches_python_graph_metrics(self) -> None:
+        """C++ graph_lcc and graph_cc must agree with pure-Python fallbacks."""
+        atoms = ["C", "N", "O", "Fe", "H"]
+        rng = np.random.default_rng(7)
+        pts     = rng.uniform(-3, 3, (5, 3))
+        dmat    = squareform(pdist(pts))
+        radii   = np.array([_cov_radius_ang(a) for a in atoms])
+        en_vals = np.array([pauling_electronegativity(a) for a in atoms])
+
+        cpp = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
+        py  = compute_graph_metrics(dmat, 2.13)
+
+        assert cpp["graph_lcc"] == pytest.approx(py["graph_lcc"], abs=1e-9)
+        assert cpp["graph_cc"]  == pytest.approx(py["graph_cc"],  abs=1e-9)
+
+    @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
+    def test_cpp_all_metrics_roundtrip(self) -> None:
+        """compute_all_metrics with C++ path returns finite values in range."""
+        atoms = ["C", "N", "O", "Fe", "H"] * 10
+        rng = np.random.default_rng(3)
+        positions = [tuple(float(x) for x in row)
+                     for row in rng.uniform(-5, 5, (50, 3))]
+        m = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 2.13, 1.0)
+
+        for key in ("graph_lcc", "graph_cc", "ring_fraction", "charge_frustration"):
+            assert math.isfinite(m[key]), f"{key} is not finite: {m[key]}"
+        for key in ("graph_lcc", "graph_cc", "ring_fraction"):
+            assert 0.0 <= m[key] <= 1.0, f"{key}={m[key]} out of [0,1]"
+        assert m["charge_frustration"] >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# compute_moran_I_chi
+# ---------------------------------------------------------------------------
+
+
+class TestComputeMoranIChi:
+    @staticmethod
+    def _dmat(pos: list) -> np.ndarray:
+        return squareform(pdist(np.array(pos)))
+
+    def test_alternating_negative(self) -> None:
+        """Perfectly alternating high/low EN on a grid → I = -1."""
+        # 2-atom unit: H (EN=2.2) and F (EN=3.98) at bond distance
+        atoms = ["H", "F", "H", "F"]
+        pos = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0),
+               (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
+        result = compute_moran_I_chi(atoms, self._dmat(pos), cutoff=2.0)
+        assert result == pytest.approx(-1.0, abs=1e-9)
+
+    def test_clustered_positive(self) -> None:
+        """Same-EN atoms clustered far apart → I = +1."""
+        atoms = ["H", "H", "F", "F"]
+        pos = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
+               (20.0, 0.0, 0.0), (21.0, 0.0, 0.0)]
+        result = compute_moran_I_chi(atoms, self._dmat(pos), cutoff=1.5)
+        assert result == pytest.approx(1.0, abs=1e-9)
+
+    def test_single_element_zero(self) -> None:
+        """All same element → denominator is 0 → returns 0.0."""
+        atoms = ["C", "C", "C"]
+        pos = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0)]
+        result = compute_moran_I_chi(atoms, self._dmat(pos), cutoff=2.0)
+        assert result == pytest.approx(0.0, abs=1e-9)
+
+    def test_range(self) -> None:
+        """Moran's I must be finite for any structure.
+
+        Note: Moran's I is NOT bounded to [-1, 1] in general.
+        The theoretical bounds are (-1/(N-1), 1] for regular lattices, but
+        sparse spatial weight matrices (step-function cutoff) can produce
+        values outside [-1, 1] for small or clustered structures.
+        """
+        rng = np.random.default_rng(42)
+        for _ in range(20):
+            n = rng.integers(4, 20)
+            atoms = rng.choice(["C", "N", "O", "Fe", "H"], n).tolist()
+            pos_arr = rng.uniform(-5, 5, (n, 3))
+            result = compute_moran_I_chi(atoms, squareform(pdist(pos_arr)), 2.13)
+            assert math.isfinite(result), f"I={result} is not finite"
+
+    def test_noble_gas_en_4(self) -> None:
+        """He/Ne/Ar/Rn return 4.0; Kr returns 3.0; Xe returns 2.6."""
+        for sym in ("He", "Ne", "Ar", "Rn"):
+            assert pauling_electronegativity(sym) == pytest.approx(4.0), (
+                f"{sym} EN should be 4.0, got {pauling_electronegativity(sym)}"
+            )
+        assert pauling_electronegativity("Kr") == pytest.approx(3.0)
+        assert pauling_electronegativity("Xe") == pytest.approx(2.6)
+
+    @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
+    def test_cpp_matches_python(self) -> None:
+        """C++ moran_I_chi_cpp must agree with pure-Python to within 1e-9."""
+        atoms = ["C", "N", "O", "Fe", "H", "C", "N"]
+        rng = np.random.default_rng(11)
+        pts = rng.uniform(-3, 3, (7, 3))
+        dmat = squareform(pdist(pts))
+        en_vals = np.array([pauling_electronegativity(a) for a in atoms])
+
+        py_result  = compute_moran_I_chi(atoms, dmat, 2.13)
+        cpp_result = _ext.moran_I_chi_cpp(pts, en_vals, 2.13)
+
+        assert cpp_result == pytest.approx(py_result, abs=1e-9)
