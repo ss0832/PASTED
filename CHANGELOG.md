@@ -73,8 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `place_maxent_cpp` now share a single `build_nb` / `eval_angular` pair
   instead of duplicating neighbour-list and gradient logic.
 
-- `pyproject.toml`: version bumped to `0.1.15`; `license` field updated to
-  PEP 639 `{text = "MIT"}` format.
+
 
 ### Added
 
