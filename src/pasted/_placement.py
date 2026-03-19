@@ -78,16 +78,18 @@ def relax_positions(
     *,
     seed: int | None = None,
 ) -> tuple[list[Vec3], bool]:
-    """Resolve interatomic distance violations by iterative pair repulsion.
+    """Resolve interatomic distance violations by L-BFGS penalty minimization.
 
     For every pair (i, j) whose distance falls below
-    ``cov_scale × (r_i + r_j)`` (Pyykkö single-bond covalent radii), both
-    atoms are displaced along their connecting vector by half the deficit.
-    The loop repeats until no violations remain or *max_cycles* is exhausted.
+    ``cov_scale × (r_i + r_j)`` (Pyykkö single-bond covalent radii), a
+    harmonic penalty energy is accumulated and its gradient used to drive
+    atoms apart.  The C++ path minimizes
+    ``E = Σ_{i<j} ½ · max(0, threshold − d_ij)²`` via L-BFGS; convergence
+    is declared when E < 1 × 10⁻⁶.
 
-    When the compiled C++ extension (``pasted._pasted_core``) is available
-    the heavy loop runs in native code; otherwise the pure-Python/NumPy
-    fallback is used transparently.
+    When the compiled C++ extension (``pasted._ext._relax_core``) is
+    available the optimization runs in native code; otherwise the
+    pure-Python/NumPy Gauss-Seidel fallback is used transparently.
 
     Parameters
     ----------
@@ -98,10 +100,13 @@ def relax_positions(
     cov_scale:
         Scale factor applied to the sum of covalent radii.
     max_cycles:
-        Maximum number of relaxation iterations.
+        Maximum number of L-BFGS iterations (C++ path) or Gauss-Seidel
+        sweeps (Python fallback).  The C++ solver exits early when E < 1e-6,
+        so the limit is rarely reached for typical structures.
     seed:
-        Optional integer seed for the RNG used when two atoms are exactly
-        coincident (distance < 1e-10 Å).  ``None`` → non-deterministic.
+        Optional integer seed for the one-time pre-perturbation jitter
+        (C++ path) or the coincident-atom RNG (Python fallback).
+        ``None`` → non-deterministic.
         Pass the generator's master seed here for full reproducibility.
 
     Returns

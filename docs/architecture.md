@@ -115,14 +115,18 @@ Each can be absent without affecting the others.
 
 ### `_relax_core` — `relax_positions`
 
-Resolves distance violations by iterative Gauss-Seidel pair repulsion.
+Resolves distance violations by L-BFGS minimization of the harmonic
+steric-clash penalty energy:
 
-- **N < 64**: O(N²) full-pair loop
-- **N ≥ 64**: O(N) flat Cell List — a linked-list grid with cell width
-  `cov_scale × 2 × max(radii)`
+$$E = \sum_{i<j} \tfrac{1}{2} \max\!\bigl(0,\; \text{cov\_scale}\cdot(r_i+r_j) - d_{ij}\bigr)^2$$
 
-The cell grid is a flat `vector<int>` (not `unordered_map`) to avoid
-per-cycle heap allocation.
+Gradients are computed analytically; pair enumeration uses `FlatCellList`
+for N ≥ 64 (O(N) per energy evaluation) and an O(N²) full-pair loop for
+N < 64.  The L-BFGS solver (history depth m = 7, Armijo backtracking) is
+implemented in C++17 standard library with no external dependencies.
+
+Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
+for dense 5000-atom structures.
 
 ### `_maxent_core` — `angular_repulsion_gradient`
 

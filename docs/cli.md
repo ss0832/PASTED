@@ -123,7 +123,7 @@ An interrupted run always produces a valid XYZ file.
 | `--relax-cycles N` | 1500 | Maximum repulsion-relaxation iterations |
 | `--no-add-hydrogen` | flag | Disable automatic H augmentation |
 
-## Optimiser mode
+## Optimizer mode
 
 Pass `--optimize` to run basin-hopping optimization on an existing structure
 instead of de-novo generation:

@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-03-19
+
+### Changed
+
+- **`_relax_core` solver replaced: Gauss-Seidel → L-BFGS.**
+  The per-cycle `check_and_push` Gauss-Seidel loop in `_relax.cpp` has been
+  replaced by a global L-BFGS minimization of the harmonic steric-clash
+  penalty energy:
+
+  ```
+  E = Σ_{i<j}  ½ · max(0,  cov_scale·(rᵢ + rⱼ) − dᵢⱼ)²
+  ```
+
+  The gradient is computed analytically; pair enumeration still uses
+  `FlatCellList` for N ≥ 64 (O(N) per evaluation) and an O(N²) full-pair
+  loop for N < 64 — identical to v0.1.10.
+
+  **Key behavioral differences vs v0.1.10:**
+
+  | | v0.1.10 (Gauss-Seidel) | v0.1.11 (L-BFGS) |
+  |---|---|---|
+  | Convergence on dense random structures | 0 % (1500 cycles) | 100 % |
+  | N = 5000, normal density | 2.28 s | **0.044 s** (~52×) |
+  | N = 5000, highly dense packing | 3.04 s | **0.084 s** (~36×) |
+  | External dependencies | none | none |
+  | `setup.py` changes required | — | **none** |
+
+  The L-BFGS implementation (history depth m = 7, Armijo backtracking line
+  search) is written entirely in C++17 standard library — no Eigen, no
+  OpenMP, no new build-time dependencies.  A thin `Vec` struct backed by
+  `std::vector<double>` provides the required linear algebra; `-O3` produces
+  code equivalent to an Eigen-based implementation.
+
+  `converged = True` when E < 1 × 10⁻⁶ (all overlaps resolved).
+
+  A one-time pre-perturbation jitter (σ ≈ 1 × 10⁻⁶ × max_r, seeded by
+  the `seed` parameter) prevents zero-gradient singularities at exactly
+  coincident atom positions.  The perturbation is negligible on the final
+  geometry (~3 × 10⁻⁸ Å for hydrogen).
+
+- `max_cycles` semantics for `relax_positions` (C++ path only):
+  Previously counted Gauss-Seidel sweeps; now counts L-BFGS outer
+  iterations.  The Python-side default `relax_cycles = 1500` is unchanged
+  and backward-compatible — L-BFGS exits early when E < 1 × 10⁻⁶, so
+  the limit is rarely reached.
+
+- `seed` semantics for `relax_positions` (C++ path only):
+  Previously seeded the per-push random direction for coincident atoms.
+  Now seeds the one-time pre-perturbation jitter.  Downstream callers are
+  unaffected.
+
+- `pyproject.toml`: version bumped to `0.1.11`.
+
+---
+
 ## [0.1.10] - 2026-03-18
 
 ### Added
