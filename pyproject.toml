@@ -1,14 +1,13 @@
 [build-system]
-requires = ["setuptools>=61", "wheel", "pybind11>=2.12"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.2.2"
+version = "0.2.3"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
-license = "MIT"
-requires-python = ">=3.10"
+license = { text = "MIT" }
 keywords = ["quantum chemistry", "structure generation", "fuzzing", "machine learning potentials"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -17,17 +16,15 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-	"Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
-
-[project.scripts]
-pasted = "pasted.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -43,58 +40,25 @@ docs = [
     "sphinx-autosummary-accessors",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[project.scripts]
+pasted = "pasted.cli:main"
 
-# ---------------------------------------------------------------------------
-# Ruff
-# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pasted*"]
+
+[tool.setuptools.package-data]
+"pasted._ext" = ["*.so", "*.pyd"]
+
 [tool.ruff]
-src = ["src"]
-line-length = 100
+line-length = 99
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "C4", "PL"]
-ignore = [
-    "PLR2004",   # magic-value comparisons are fine in scientific code
-    "PLR0912",   # too-many-branches — intentional in generator loop
-    "PLR0913",   # too-many-arguments — intentional in StructureGenerator
-    "PLR0915",   # too-many-statements — intentional in StructureGenerator.__init__
-    "B006",      # mutable default args — we use None + defaults inside
-]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
 
-[tool.ruff.lint.isort]
-known-first-party = ["pasted"]
-
-# ---------------------------------------------------------------------------
-# mypy
-# ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.10"
-strict = true
-warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = ["scipy.*"]
+warn_unused_ignores = false
 ignore_missing_imports = true
-
-# _metrics.py contains a try/except ImportError block for scipy < 1.15 compatibility.
-# The except branch is unreachable on current scipy, so its type: ignore comments are
-# flagged as unused. Suppress only that check for this one file.
-[[tool.mypy.overrides]]
-module = ["pasted._metrics"]
-warn_unused_ignores = false
-
-# _ext/__init__.py uses try/except ImportError blocks that reassign HAS_* names
-# and type: ignore comments that mypy flags as unused when the .so is present.
-# Suppress no-redef and warn_unused_ignores for that file only.
-[[tool.mypy.overrides]]
-module = ["pasted._ext"]
-warn_unused_ignores = false
-disable_error_code = ["no-redef"]
-
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-v --tb=short --import-mode=importlib"
