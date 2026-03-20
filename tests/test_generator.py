@@ -839,7 +839,7 @@ class TestGeneratorConfig:
         assert cfg.seed == 1  # original unchanged
 
     def test_config_based_construction(self) -> None:
-        from pasted import GeneratorConfig, StructureGenerator
+        from pasted import StructureGenerator
         cfg = self._cfg()
         gen = StructureGenerator(cfg)
         assert gen.config is cfg
@@ -854,7 +854,7 @@ class TestGeneratorConfig:
 
     def test_config_and_kwargs_produce_same_result(self) -> None:
         """Config-based and kwargs-based construction must yield identical outputs."""
-        from pasted import GeneratorConfig, StructureGenerator
+        from pasted import StructureGenerator
         cfg = self._cfg(n_samples=5, seed=77)
         r_cfg = StructureGenerator(cfg).generate()
         r_kw = StructureGenerator(
@@ -865,7 +865,7 @@ class TestGeneratorConfig:
 
     def test_getattr_proxy_all_fields(self) -> None:
         """gen.seed, gen.mode, etc. should all proxy to _cfg."""
-        from pasted import GeneratorConfig, StructureGenerator
+        from pasted import StructureGenerator
         cfg = self._cfg(seed=123)
         gen = StructureGenerator(cfg)
         assert gen.seed == 123
@@ -879,7 +879,7 @@ class TestGeneratorConfig:
 
     def test_generate_func_accepts_config(self) -> None:
         """generate(cfg) config-based call must work."""
-        from pasted import GeneratorConfig, generate
+        from pasted import generate
         cfg = self._cfg(n_samples=2)
         result = generate(cfg)
         assert len(result) >= 0  # at least ran without error
@@ -905,7 +905,6 @@ class TestAffineStrength:
 
     def test_zero_strength_is_default(self) -> None:
         """affine_strength=0.0 must behave identically to no-affine (backward compat)."""
-        import numpy as np
         r_no = StructureGenerator(
             n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
             elements="6,7,8", n_samples=5, seed=99,
