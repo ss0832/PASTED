@@ -8,12 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.2.4] — 2026-03-20
 
 ### Fixed
-- `pyproject.toml`: `license = { text = "MIT" }` を SPDX 文字列形式 `license = "MIT"` に変更
-  （setuptools>=77 の非推奨警告を解消）。
-- `pyproject.toml` `[build-system].requires` に `pybind11>=2.12` を追加。
-  これまで `[project.optional-dependencies].dev` にしか存在せず、
-  sdist ビルド時に C++ 拡張がビルドされない問題を修正。
-- `src/pasted/__init__.py` のフォールバックバージョン文字列を `0.2.4` に更新。
+- `pyproject.toml`: Changed `license = { text = "MIT" }` to the SPDX string format license = "MIT" (fixes a deprecation warning in setuptools>=77).
+- Added `pybind11>=2.12` to `[build-system].requires` in `pyproject.toml`. This fixes an issue where C++ extensions were not being built during sdist builds because it was previously only listed under `[project.optional-dependencies].dev.`
+- Updated the fallback version string in `src/pasted/__init__.py` to `0.2.4`.
 
 ---
 
