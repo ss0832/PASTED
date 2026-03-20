@@ -17,7 +17,6 @@ pasted [OPTIONS]
 | `--n-samples N` | int | 1 | Maximum number of placement attempts. Use `0` for unlimited (requires `--n-success`) |
 | `--n-success N` | int | None | Stop as soon as N structures pass all filters |
 | `--seed S` | int | None | RNG seed for reproducibility |
-| `--n-threads N` | int | 1 | Number of OpenMP threads for C++ extensions (Linux only). Default: **1** (single-threaded) since v0.2.2 — pass a higher value to enable parallelism. No effect when `HAS_OPENMP` is `False` |
 | `--output FILE` / `-o` | path | stdout | Output XYZ file (append mode) |
 | `--verbose` | flag | off | Print per-sample metrics to stderr |
 
