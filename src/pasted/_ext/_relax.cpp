@@ -1,7 +1,6 @@
 /**
- * pasted._ext._relax_core  (v0.1.11 candidate)
- * ==============================================
- * Replaces the per-cycle Gauss-Seidel "check_and_push" loop with a global
+ * pasted._ext._relax_core  (v0.2.1)
+ * ===================================
  * L-BFGS minimisation of the harmonic steric-clash penalty energy:
  *
  *   E = sum_{i<j}  0.5 * max(0,  d_thr_ij - d_ij)^2
@@ -11,38 +10,41 @@
  *
  * Dependencies
  * ------------
- * C++17 standard library only — no Eigen, no OpenMP, no extra headers.
- * setup.py does NOT require any changes from v0.1.10.
+ * C++17 standard library only.  OpenMP optional (Linux, -fopenmp).
  *
  * Architecture
  * ------------
  *   Vec                   — thin RAII wrapper over std::vector<double>
- *   FlatCellList          — unchanged from v0.1.10; O(N) pair enumeration
- *   PenaltyEvaluator      — computes E and analytical gradient in O(N)
+ *   FlatCellList          — O(N·k) pair enumeration via cell list
+ *   PenaltyEvaluator      — computes E and analytical gradient in O(N·k)
  *   lbfgs_minimize()      — L-BFGS, history m=7, Armijo backtracking
- *   OpenMP-parallel when built with -fopenmp (Linux, v0.2.0+).
- *   The gradient accumulation uses thread-local buffers merged after the
- *   parallel loop, avoiding false sharing without atomic instructions.
- *   Falls back to single-threaded behaviour when OpenMP is unavailable.
  *
- * Python API  (identical to v0.1.10)
- * ------------------------------------
+ * Memory management (v0.2.1)
+ * --------------------------
+ * PenaltyEvaluator holds two persistent scratch members:
+ *
+ *   pairs_  (vector<pair<int,int>>)       — pair list; cleared (capacity kept)
+ *                                           and rebuilt each evaluate() call.
+ *   tgrad_  (vector<vector<double>>)      — per-thread gradient buffers
+ *                                           (nthreads × 3N × 8 B); zeroed with
+ *                                           std::fill on each call, never freed.
+ *
+ * This eliminates the multi-GB malloc/free churn that occurred at large N
+ * (e.g. ~8 GB / structure at n=150 000, 8 threads, 300 L-BFGS iterations).
+ *
+ * OpenMP / A+B guard (v0.2.0+)
+ * -----------------------------
+ * The parallel pair loop fires only when BOTH:
+ *   A) omp_get_max_threads() > 2   (avoid overhead on ≤2-core machines), AND
+ *   B) pairs_.size() >= PAIR_PARALLEL_THRESHOLD (50 000)  (enough work to
+ *      amortise thread-spawn and tgrad-merge cost).
+ * On ≤2 threads the serial path writes directly into grad[], bypassing tgrad_
+ * allocation overhead entirely.
+ *
+ * Python API
+ * ----------
  *   relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
  *       -> (pts_out : ndarray(n,3), converged : bool)
- *
- * Behavioural differences from v0.1.10
- * --------------------------------------
- *   max_cycles : now counts L-BFGS outer iterations, not Gauss-Seidel sweeps.
- *                Typical convergence: 50-300 iters for dense 5000-atom systems.
- *                The Python-side relax_cycles=1500 default is intentionally
- *                unchanged for backward compatibility; L-BFGS exits early
- *                as soon as E < 1e-6.
- *
- *   seed       : seeds the RNG used when exactly-coincident atom pairs
- *                (d < 1e-10 Ang) are jittered before L-BFGS.  For normal
- *                structures with no coincident atoms the RNG is never
- *                consumed, so seed=None yields a deterministic result.
- *                L-BFGS iterations are always deterministic.
  */
 
 #include <pybind11/pybind11.h>
@@ -212,6 +214,10 @@ class PenaltyEvaluator {
     int           n_;
     double        cell_size_;
     FlatCellList  cl_;
+    // Persistent scratch buffers — allocated once, reused every evaluate() call.
+    // Eliminates ~27 MB malloc/free churn per call at n=150000 with 8 threads.
+    std::vector<std::pair<int,int>>  pairs_;
+    std::vector<std::vector<double>> tgrad_;
 
 public:
     PenaltyEvaluator(const double* radii, double cov_scale, int n)
@@ -220,6 +226,15 @@ public:
         double max_r = 0.0;
         for (int i = 0; i < n; ++i) max_r = std::max(max_r, radii[i]);
         cell_size_ = std::max(1e-6, cov_scale_ * 2.0 * max_r);
+#ifdef _OPENMP
+        const int nthreads = omp_get_max_threads();
+#else
+        const int nthreads = 1;
+#endif
+        tgrad_.assign(static_cast<std::size_t>(nthreads),
+                      std::vector<double>(static_cast<std::size_t>(n_ * 3), 0.0));
+        if (n_ >= CELL_LIST_THRESHOLD)
+            pairs_.reserve(static_cast<std::size_t>(n_) * 6);
     }
 
     double evaluate(const Vec& x, Vec& grad) {
@@ -227,27 +242,27 @@ public:
         const double* xd = x.data();
         double*       gd = grad.data();
 
-        // ── Build pair list (single-threaded; FlatCellList is not thread-safe) ──
-        // For small N we skip the cell list and enumerate pairs directly below.
-        std::vector<std::pair<int,int>> pairs;
+        // ── Build pair list — reuse pairs_ capacity, only clear contents ──────
         if (n_ >= CELL_LIST_THRESHOLD) {
-            pairs.reserve(static_cast<std::size_t>(n_) * 4);
+            pairs_.clear();
             cl_.build(xd, n_, cell_size_);
-            cl_.for_each_pair(xd, n_, [&](int i, int j){ pairs.emplace_back(i, j); });
+            cl_.for_each_pair(xd, n_, [&](int i, int j){ pairs_.emplace_back(i, j); });
         }
 
         // ── Parallel reduction over pairs ──────────────────────────────────────
-        // Each thread owns a local gradient buffer; results are merged afterwards.
-        // This avoids false-sharing without atomic instructions.
+        // tgrad_ is pre-allocated — just zero it.
 #ifdef _OPENMP
         const int nthreads = omp_get_max_threads();
 #else
         const int nthreads = 1;
 #endif
         const int dim3 = n_ * 3;
-        std::vector<std::vector<double>> tgrad(
-            static_cast<std::size_t>(nthreads),
-            std::vector<double>(static_cast<std::size_t>(dim3), 0.0));
+        // Adapt if set_num_threads() changed the thread count since construction.
+        if (static_cast<int>(tgrad_.size()) != nthreads)
+            tgrad_.assign(static_cast<std::size_t>(nthreads),
+                          std::vector<double>(static_cast<std::size_t>(dim3), 0.0));
+        for (auto& tg : tgrad_) std::fill(tg.begin(), tg.end(), 0.0);
+        auto& tgrad = tgrad_;
         double energy = 0.0;
 
         if (n_ < CELL_LIST_THRESHOLD) {
@@ -271,7 +286,7 @@ public:
                 }
             }
         } else {
-            const int npairs = static_cast<int>(pairs.size());
+            const int npairs = static_cast<int>(pairs_.size());
             // A+B guard: only use OpenMP when enough threads AND enough pairs
             // exist to amortise thread-spawn / merge overhead.
 #ifdef _OPENMP
@@ -279,8 +294,8 @@ public:
 #pragma omp parallel for schedule(static) reduction(+:energy)
                 for (int p = 0; p < npairs; ++p) {
                     const int tid = omp_get_thread_num();
-                    const int i = pairs[static_cast<std::size_t>(p)].first;
-                    const int j = pairs[static_cast<std::size_t>(p)].second;
+                    const int i = pairs_[static_cast<std::size_t>(p)].first;
+                    const int j = pairs_[static_cast<std::size_t>(p)].second;
                     const double dx  = xd[3*i  ] - xd[3*j  ];
                     const double dy  = xd[3*i+1] - xd[3*j+1];
                     const double dz  = xd[3*i+2] - xd[3*j+2];
@@ -305,8 +320,8 @@ public:
             } else {
                 // Serial fallback: write directly to gd — no tgrad overhead.
                 for (int p = 0; p < npairs; ++p) {
-                    const int i = pairs[static_cast<std::size_t>(p)].first;
-                    const int j = pairs[static_cast<std::size_t>(p)].second;
+                    const int i = pairs_[static_cast<std::size_t>(p)].first;
+                    const int j = pairs_[static_cast<std::size_t>(p)].second;
                     const double dx  = xd[3*i  ] - xd[3*j  ];
                     const double dy  = xd[3*i+1] - xd[3*j+1];
                     const double dz  = xd[3*i+2] - xd[3*j+2];
@@ -327,8 +342,8 @@ public:
 #else
             for (int p = 0; p < npairs; ++p) {
                 const int tid = 0;
-                const int i = pairs[static_cast<std::size_t>(p)].first;
-                const int j = pairs[static_cast<std::size_t>(p)].second;
+                const int i = pairs_[static_cast<std::size_t>(p)].first;
+                const int j = pairs_[static_cast<std::size_t>(p)].second;
                 const double dx  = xd[3*i  ] - xd[3*j  ];
                 const double dy  = xd[3*i+1] - xd[3*j+1];
                 const double dz  = xd[3*i+2] - xd[3*j+2];

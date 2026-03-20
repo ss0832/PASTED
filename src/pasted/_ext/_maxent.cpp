@@ -1,27 +1,44 @@
 /**
- * pasted._ext._maxent_core  (v0.1.15)
+ * pasted._ext._maxent_core  (v0.2.1)
  * =====================================
  * Two exported functions:
  *
  *   angular_repulsion_gradient(pts, cutoff)
  *       -> grad: ndarray(n, 3)
- *       Unchanged from v0.1.14.
  *
  *   place_maxent_cpp(pts, radii, cov_scale, region_radius, ang_cutoff,
  *                    maxent_steps, trust_radius, seed)
- *       -> pts_out: ndarray(n, 3)          [NEW in v0.1.15]
+ *       -> pts_out: ndarray(n, 3)
  *
  *       Runs the entire maxent gradient-descent loop in C++:
  *         for each step:
- *           1. Evaluate angular repulsion energy U and gradient g (L-BFGS)
- *           2. Compute L-BFGS descent direction d (m=7, Armijo backtracking)
- *           3. Per-atom trust-radius clip: rescale step so max atom disp <= trust_radius
- *           4. Step: x += d  (d is already a descent direction)
- *           5. Soft restoring force (atoms outside region_radius pulled back)
- *           6. Centre-of-mass pinning
- *           7. Steric-clash relaxation (L-BFGS penalty, identical to _relax_core)
+ *           1. Rebuild neighbour list (build_nb_inplace — reuses capacity)
+ *           2. Evaluate angular repulsion energy U and gradient g (L-BFGS)
+ *           3. Compute L-BFGS descent direction d (m=7, Armijo backtracking)
+ *           4. Per-atom trust-radius clip: rescale so max disp ≤ trust_radius
+ *           5. Step: x += d
+ *           6. Soft restoring force (atoms outside region_radius pulled back)
+ *           7. Centre-of-mass pinning
+ *           8. Steric-clash relaxation (L-BFGS penalty, same as _relax_core)
  *
- * Dependencies: C++17 stdlib + pybind11.  No Eigen, no OpenMP.
+ * Memory management (v0.2.1)
+ * --------------------------
+ * The inner loop previously re-allocated three large structures every step:
+ *
+ *   build_nb()    → vector<vector<int>>     (~1.5 MB at n=50 000)
+ *   eval_angular  → tgrad vector<vector<double>> (~9 MB at n=50 000, 8 threads)
+ *   eval_angular  → per-atom ux/uy/uz/id vectors (~12 MB at n=50 000)
+ *
+ * With maxent_steps=300 this produced ~5–13 GB of heap churn per structure.
+ *
+ * v0.2.1 fixes:
+ *   1. build_nb_inplace(): clears inner vectors (keeps capacity) and refills.
+ *   2. eval_angular() accepts tgrad_scratch and ux_s/uy_s/uz_s/id_s by
+ *      reference; place_maxent_cpp_impl allocates them once before the loop.
+ *      Serial path resizes ux_s/... lazily (only grows).  Parallel path
+ *      keeps thread-private locals (stack-allocated per atom, safe).
+ *
+ * Dependencies: C++17 stdlib + pybind11.  OpenMP optional (-fopenmp, Linux).
  */
 
 #include <pybind11/pybind11.h>
@@ -196,6 +213,46 @@ struct CKH {std::size_t operator()(const CellKey& k)const noexcept{
     h^=std::size_t(k[2])*2246822519ULL+0x9e3779b9ULL+(h<<6)+(h>>2);return h;}};
 using CellMap = std::unordered_map<CellKey,std::vector<int>,CKH>;
 
+// build_nb_inplace: reuse an existing nb vector (clear + refill) to avoid
+// repeated deallocation and reallocation across L-BFGS steps.
+static void build_nb_inplace(const double* p, int n, double cut, bool use_cell,
+    std::vector<std::vector<int>>& nb)
+{
+    const std::size_t nn = std::size_t(n);
+    if (nb.size() != nn) nb.resize(nn);
+    for (auto& v : nb) v.clear();
+    const double c2 = cut * cut;
+    if (!use_cell) {
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j) {
+                if (j == i) continue;
+                double dx=p[i*3]-p[j*3], dy=p[i*3+1]-p[j*3+1], dz=p[i*3+2]-p[j*3+2];
+                if (dx*dx+dy*dy+dz*dz <= c2) nb[std::size_t(i)].push_back(j);
+            }
+        return;
+    }
+    double ic = 1.0 / cut;
+    CellMap cells; cells.reserve(std::size_t(n));
+    for (int i = 0; i < n; ++i) {
+        CellKey k = {int(std::floor(p[i*3]*ic)), int(std::floor(p[i*3+1]*ic)), int(std::floor(p[i*3+2]*ic))};
+        cells[k].push_back(i);
+    }
+    for (int i = 0; i < n; ++i) {
+        CellKey ck = {int(std::floor(p[i*3]*ic)), int(std::floor(p[i*3+1]*ic)), int(std::floor(p[i*3+2]*ic))};
+        for (int dz=-1; dz<=1; ++dz)
+        for (int dy=-1; dy<=1; ++dy)
+        for (int dx=-1; dx<=1; ++dx) {
+            CellKey nk = {ck[0]+dx, ck[1]+dy, ck[2]+dz};
+            auto it = cells.find(nk); if (it == cells.end()) continue;
+            for (int j : it->second) {
+                if (j == i) continue;
+                double ddx=p[i*3]-p[j*3], ddy=p[i*3+1]-p[j*3+1], ddz=p[i*3+2]-p[j*3+2];
+                if (ddx*ddx+ddy*ddy+ddz*ddz <= c2) nb[std::size_t(i)].push_back(j);
+            }
+        }
+    }
+}
+
 static std::vector<std::vector<int>> build_nb(const double* p, int n, double cut, bool use_cell){
     const double c2=cut*cut;
     const std::size_t nn=std::size_t(n);
@@ -220,8 +277,13 @@ static std::vector<std::vector<int>> build_nb(const double* p, int n, double cut
 // U = Σ_i Σ_{j<k∈N(i)} 2/(1−cosθ_{jk}+ε)
 // Gradient matches v0.1.14 accumulate_gradient (both j,k orderings summed).
 // ===========================================================================
+// tgrad_scratch: nthreads persistent gradient buffers, zeroed on entry.
+// ux_s/uy_s/uz_s/id_s: persistent unit-vector scratch (serial path), resized lazily.
 static double eval_angular(const double* p, int n,
-    const std::vector<std::vector<int>>& nb, double* grad)
+    const std::vector<std::vector<int>>& nb, double* grad,
+    std::vector<std::vector<double>>& tgrad_scratch,
+    std::vector<double>& ux_s, std::vector<double>& uy_s,
+    std::vector<double>& uz_s, std::vector<double>& id_s)
 {
     double U = 0.0;
     if (grad) std::fill(grad, grad + 3*n, 0.0);
@@ -231,10 +293,17 @@ static double eval_angular(const double* p, int n,
 #else
     const int nthreads = 1;
 #endif
-    // Thread-local gradient buffers to avoid false sharing
-    std::vector<std::vector<double>> tgrad(
-        static_cast<std::size_t>(nthreads),
-        std::vector<double>(static_cast<std::size_t>(n * 3), 0.0));
+    // Reuse persistent tgrad_scratch; adapt size if needed, then zero.
+    if (static_cast<int>(tgrad_scratch.size()) != nthreads ||
+        (!tgrad_scratch.empty() &&
+         static_cast<int>(tgrad_scratch[0].size()) != n * 3)) {
+        tgrad_scratch.assign(
+            static_cast<std::size_t>(nthreads),
+            std::vector<double>(static_cast<std::size_t>(n * 3), 0.0));
+    } else {
+        for (auto& tg : tgrad_scratch) std::fill(tg.begin(), tg.end(), 0.0);
+    }
+    auto& tgrad = tgrad_scratch;
 
 #ifdef _OPENMP
     // A guard: only use OpenMP when > 2 threads are available
@@ -273,34 +342,32 @@ static double eval_angular(const double* p, int n,
             }
         }
     } else {
-        // Serial fallback: write directly to grad[0] buffer
+        // Serial path: reuse persistent ux_s/uy_s/uz_s/id_s scratch.
         for (int i = 0; i < n; ++i) {
             const auto& nbi = nb[static_cast<std::size_t>(i)];
-            std::size_t nc = nbi.size();
+            const std::size_t nc = nbi.size();
             if (nc < 2) continue;
-
-            std::vector<double> ux(nc), uy(nc), uz(nc), id(nc);
+            if (ux_s.size() < nc) { ux_s.resize(nc); uy_s.resize(nc); uz_s.resize(nc); id_s.resize(nc); }
             for (std::size_t idx = 0; idx < nc; ++idx) {
                 int j = nbi[idx];
                 double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
                 double d = std::sqrt(dx*dx+dy*dy+dz*dz);
-                if (d > 0) { double inv = 1.0/d; ux[idx]=dx*inv; uy[idx]=dy*inv; uz[idx]=dz*inv; id[idx]=inv; }
-                else { ux[idx]=uy[idx]=uz[idx]=id[idx]=0; }
+                if (d > 0) { double inv = 1.0/d; ux_s[idx]=dx*inv; uy_s[idx]=dy*inv; uz_s[idx]=dz*inv; id_s[idx]=inv; }
+                else { ux_s[idx]=uy_s[idx]=uz_s[idx]=id_s[idx]=0; }
             }
-
             auto& tg = tgrad[0];
             for (std::size_t ji = 0; ji < nc; ++ji) {
-                if (id[ji] <= 0) continue;
-                double idj = id[ji], ujx = ux[ji], ujy = uy[ji], ujz = uz[ji];
+                if (id_s[ji] <= 0) continue;
+                double idj = id_s[ji], ujx = ux_s[ji], ujy = uy_s[ji], ujz = uz_s[ji];
                 for (std::size_t ki = 0; ki < nc; ++ki) {
-                    double cv  = ujx*ux[ki]+ujy*uy[ki]+ujz*uz[ki];
+                    double cv  = ujx*ux_s[ki]+ujy*uy_s[ki]+ujz*uz_s[ki];
                     double den = 1.0 - cv + EPS;
                     if (ki > ji) U += 2.0/den;
                     if (grad) {
                         double w = 1.0/(den*den);
-                        tg[i*3  ] += w*(ux[ki]-cv*ujx)*idj;
-                        tg[i*3+1] += w*(uy[ki]-cv*ujy)*idj;
-                        tg[i*3+2] += w*(uz[ki]-cv*ujz)*idj;
+                        tg[i*3  ] += w*(ux_s[ki]-cv*ujx)*idj;
+                        tg[i*3+1] += w*(uy_s[ki]-cv*ujy)*idj;
+                        tg[i*3+2] += w*(uz_s[ki]-cv*ujz)*idj;
                     }
                 }
             }
@@ -310,31 +377,29 @@ static double eval_angular(const double* p, int n,
     for (int i = 0; i < n; ++i) {
         const int tid = 0;
         const auto& nbi = nb[static_cast<std::size_t>(i)];
-        std::size_t nc = nbi.size();
+        const std::size_t nc = nbi.size();
         if (nc < 2) continue;
-
-        std::vector<double> ux(nc), uy(nc), uz(nc), id(nc);
+        if (ux_s.size() < nc) { ux_s.resize(nc); uy_s.resize(nc); uz_s.resize(nc); id_s.resize(nc); }
         for (std::size_t idx = 0; idx < nc; ++idx) {
             int j = nbi[idx];
             double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
             double d = std::sqrt(dx*dx+dy*dy+dz*dz);
-            if (d > 0) { double inv = 1.0/d; ux[idx]=dx*inv; uy[idx]=dy*inv; uz[idx]=dz*inv; id[idx]=inv; }
-            else { ux[idx]=uy[idx]=uz[idx]=id[idx]=0; }
+            if (d > 0) { double inv = 1.0/d; ux_s[idx]=dx*inv; uy_s[idx]=dy*inv; uz_s[idx]=dz*inv; id_s[idx]=inv; }
+            else { ux_s[idx]=uy_s[idx]=uz_s[idx]=id_s[idx]=0; }
         }
-
         auto& tg = tgrad[static_cast<std::size_t>(tid)];
         for (std::size_t ji = 0; ji < nc; ++ji) {
-            if (id[ji] <= 0) continue;
-            double idj = id[ji], ujx = ux[ji], ujy = uy[ji], ujz = uz[ji];
+            if (id_s[ji] <= 0) continue;
+            double idj = id_s[ji], ujx = ux_s[ji], ujy = uy_s[ji], ujz = uz_s[ji];
             for (std::size_t ki = 0; ki < nc; ++ki) {
-                double cv  = ujx*ux[ki]+ujy*uy[ki]+ujz*uz[ki];
+                double cv  = ujx*ux_s[ki]+ujy*uy_s[ki]+ujz*uz_s[ki];
                 double den = 1.0 - cv + EPS;
                 if (ki > ji) U += 2.0/den;
                 if (grad) {
                     double w = 1.0/(den*den);
-                    tg[i*3  ] += w*(ux[ki]-cv*ujx)*idj;
-                    tg[i*3+1] += w*(uy[ki]-cv*ujy)*idj;
-                    tg[i*3+2] += w*(uz[ki]-cv*ujz)*idj;
+                    tg[i*3  ] += w*(ux_s[ki]-cv*ujx)*idj;
+                    tg[i*3+1] += w*(uy_s[ki]-cv*ujy)*idj;
+                    tg[i*3+2] += w*(uz_s[ki]-cv*ujz)*idj;
                 }
             }
         }
@@ -387,6 +452,18 @@ F64Array place_maxent_cpp_impl(
     std::vector<double> rho(m,0),alp(m,0);
     int bptr=0,bcnt=0;
     Vec g(dim),gn(dim),q(dim),rl(dim),dd(dim),xt(dim);
+    // Persistent scratch for eval_angular — allocated once, reused every step.
+#ifdef _OPENMP
+    const int ea_nthreads = omp_get_max_threads();
+#else
+    const int ea_nthreads = 1;
+#endif
+    std::vector<std::vector<double>> tgrad_scratch(
+        static_cast<std::size_t>(ea_nthreads),
+        std::vector<double>(static_cast<std::size_t>(dim), 0.0));
+    std::vector<double> ux_s, uy_s, uz_s, id_s;
+    // Persistent nb — cleared and rebuilt each step (avoids dealloc/realloc).
+    std::vector<std::vector<int>> nb_scratch(static_cast<std::size_t>(n));
 
     Vec x(dim); x.copy_from(outp,dim);
     // Initial CoM
@@ -398,8 +475,8 @@ F64Array place_maxent_cpp_impl(
     const double k_rest=0.1*(trust_radius/0.5);
 
     for(int step=0;step<maxent_steps;++step){
-        auto nb=build_nb(x.data(),n,ang_cutoff,n>=CELL_LIST_THRESHOLD);
-        eval_angular(x.data(),n,nb,g.data());
+        build_nb_inplace(x.data(),n,ang_cutoff,n>=CELL_LIST_THRESHOLD,nb_scratch);
+        eval_angular(x.data(),n,nb_scratch,g.data(),tgrad_scratch,ux_s,uy_s,uz_s,id_s);
 
         // L-BFGS direction
         q.copy_from(g);
@@ -436,8 +513,8 @@ F64Array place_maxent_cpp_impl(
         do_relax(x,50);
 
         // History update: evaluate gradient after step, update s/y buffers
-        {auto nb2=build_nb(x.data(),n,ang_cutoff,n>=CELL_LIST_THRESHOLD);
-         eval_angular(x.data(),n,nb2,gn.data());
+        {build_nb_inplace(x.data(),n,ang_cutoff,n>=CELL_LIST_THRESHOLD,nb_scratch);
+         eval_angular(x.data(),n,nb_scratch,gn.data(),tgrad_scratch,ux_s,uy_s,uz_s,id_s);
          Vec sn(dim),yn(dim);sn.copy_from(dd);yn.assign_diff(gn,g);
          double sy=sn.dot(yn),ss=sn.norm2();
          if(sy>1e-10*ss){sb[bptr].copy_from(sn);yb[bptr].copy_from(yn);rho[bptr]=1.0/sy;
@@ -465,7 +542,11 @@ F64Array angular_repulsion_gradient_cpp(F64Array pts_in, double cutoff){
     double* g=static_cast<double*>(grad_out.request().ptr);
     std::fill(g,g+n*3,0.0);
     auto nb=build_nb(p,n,cutoff,n>=CELL_LIST_THRESHOLD);
-    eval_angular(p,n,nb,g);
+    // Local scratch for single-call path (not in hot loop).
+    std::vector<std::vector<double>> tg_local(1,
+        std::vector<double>(static_cast<std::size_t>(n*3),0.0));
+    std::vector<double> ux_l,uy_l,uz_l,id_l;
+    eval_angular(p,n,nb,g,tg_local,ux_l,uy_l,uz_l,id_l);
     return grad_out;}
 
 // ===========================================================================

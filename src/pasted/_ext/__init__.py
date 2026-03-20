@@ -29,6 +29,15 @@ angular_repulsion_gradient(pts, cutoff)
 steinhardt_per_atom(pts, cutoff, l_values)
     Available when HAS_STEINHARDT is True.
 
+Memory notes (v0.2.1)
+---------------------
+``_relax_core`` and ``_maxent_core`` were refactored in v0.2.1 to eliminate
+repeated heap allocation inside their hot L-BFGS loops.  Gradient scratch
+buffers and neighbour lists are now held as persistent members / outer-scope
+variables and reused across iterations.  This fixes OOM-kills on WSL at
+n ≥ 150 000 atoms with ≥ 8 OpenMP threads.
+
+
 graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)
     Available when HAS_GRAPH is True.
     Returns dict with graph_lcc, graph_cc, ring_fraction,

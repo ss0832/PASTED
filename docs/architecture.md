@@ -404,3 +404,33 @@ Measured quality vs SA at equal wall time (n=10, C/N/O/P/S, H_total − Q6):
 | SA restarts=4, steps=500 | 460 ms | 1.591 | 0.401 |
 | PT replicas=4, restarts=1, steps=200 | **102 ms** | **1.685** | 0.403 |
 | PT replicas=4, restarts=2, steps=500 | 579 ms | **1.713** | **0.293** |
+
+## Memory management in C++ extensions (v0.2.1)
+
+### `_relax_core` — `PenaltyEvaluator`
+
+`tgrad_` (per-thread gradient buffers, `nthreads × 3N × 8 bytes`) and
+`pairs_` (pair-list vector) are **persistent members** allocated once at
+construction.  `evaluate()` zeroes `tgrad_` with `std::fill` and calls
+`pairs_.clear()` (preserving capacity) instead of creating new vectors on
+every L-BFGS iteration.
+
+This eliminates several gigabytes of heap churn per structure at large N
+(e.g. ~8 GB / structure at n=150 000, 8 threads, 300 iterations).
+
+### `_maxent_core` — `place_maxent_cpp_impl`
+
+Two persistent scratch objects are declared before the step loop and passed
+into the hot-path functions:
+
+| Object | Type | Purpose |
+|---|---|---|
+| `tgrad_scratch` | `vector<vector<double>>` | `eval_angular` thread-local grad buffers |
+| `ux_s / uy_s / uz_s / id_s` | `vector<double>` | per-atom unit-vector scratch (serial path) |
+| `nb_scratch` | `vector<vector<int>>` | neighbour list reused via `build_nb_inplace` |
+
+`build_nb_inplace()` clears inner vectors without deallocating, then refills
+them — avoiding `~0.9 GB` of `nb` churn per structure at n=50 000.
+`eval_angular()` accepts the scratch buffers as reference parameters; it
+resizes them lazily (only grows, never shrinks).
+

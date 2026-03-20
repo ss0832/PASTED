@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-03-20
+
+### Fixed
+
+* **`_relax_core`: eliminate per-`evaluate()` heap churn at large N.**
+
+  `tgrad` (thread-local gradient buffers, ~27 MB at n=150 000 with 8 threads)
+  and `pairs` (pair-list vector) were re-allocated and freed on every L-BFGS
+  iteration inside `PenaltyEvaluator::evaluate()`.  Over 300–1 500 iterations
+  this caused several gigabytes of malloc/free traffic, driving `sys` time to
+  ~23 s and triggering OOM-kills on WSL for n ≥ 150 000 at ≥ 8 threads.
+
+  Both are now persistent members of `PenaltyEvaluator`, allocated once at
+  construction. `pairs_` reuses its capacity with `clear()` on each call;
+  `tgrad_` is zeroed with `std::fill`. The fix also handles the
+  `set_num_threads()` edge-case by resizing `tgrad_` lazily when the thread
+  count changes.
+
+* **`_maxent_core`: eliminate per-step heap churn in `eval_angular` and `build_nb`.**
+
+  Inside `place_maxent_cpp`, every L-BFGS step called `build_nb()` (returning
+  a freshly allocated `vector<vector<int>>`) and `eval_angular()` (allocating
+  `tgrad` ~ 9 MB and per-atom `ux/uy/uz/id` vectors at n=50 000).
+  With `maxent_steps=300` this produced ~5 GB of `tgrad` churn and ~0.9 GB of
+  `nb` churn per structure.
+
+  Three changes:
+
+  1. Added `build_nb_inplace()` — clears and refills an existing `nb` vector
+     in-place, preserving allocated capacity across steps.
+  2. `eval_angular()` now accepts persistent `tgrad_scratch` and `ux_s/uy_s/uz_s/id_s`
+     buffers as out-parameters; callers allocate them once and pass by reference.
+     The serial path reuses `ux_s`/... with `resize()` (only grows, never shrinks);
+     the parallel path retains per-thread-private locals (thread-safety unchanged).
+  3. `place_maxent_cpp_impl` declares these buffers before the step loop and
+     passes them through on every call.
+
+  The `angular_repulsion_gradient` Python wrapper (called once per structure,
+  not in a hot loop) uses local scratch and is unaffected.
+
 ## [0.2.0] - 2026-03-20
 
 ### Added
