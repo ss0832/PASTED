@@ -256,12 +256,13 @@ examples
     sg.add_argument(
         "--n-threads",
         type=int,
-        default=None,
+        default=1,
         metavar="N",
         help=(
             "Number of OpenMP threads for C++ extensions (Linux only, "
             "requires build with -fopenmp). "
-            "Default: all available cores (OMP_NUM_THREADS). "
+            "Default: 1 (single-threaded). "
+            "Set > 1 to enable parallelism on machines with many cores. "
             "No effect when HAS_OPENMP is False."
         ),
     )
@@ -596,9 +597,8 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    # Apply OpenMP thread count before any computation
-    if getattr(args, "n_threads", None) is not None:
-        set_num_threads(args.n_threads)
+    # Apply OpenMP thread count before any computation (default=1)
+    set_num_threads(args.n_threads)
 
     if args.mode in ("gas", "maxent") and not args.region and not args.optimize:
         parser.error("--region is required for --mode gas")

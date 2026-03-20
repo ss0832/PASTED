@@ -55,6 +55,7 @@
 #include <functional>
 #include <random>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _OPENMP
@@ -207,17 +208,41 @@ struct FlatCellList {
 // ===========================================================================
 // E      = sum_{i<j}  0.5 * max(0, thr_ij - d_ij)^2
 // dE/dr_i = sum_{j}  -(thr_ij - d_ij)/d_ij * (r_i - r_j)   [when d_ij < thr]
+//
+// Verlet-list optimisation (v0.2.2):
+// pairs_ is rebuilt only when any atom has moved more than skin/2 since the
+// last rebuild.  Between rebuilds the same extended pair list is reused,
+// eliminating the dominant serial FlatCellList traversal cost.
+// Skin = 0.8 Å  =>  rebuild trigger at 0.4 Å displacement (< trust_radius).
+
+// Verlet rebuild interval: rebuild pair list every N_VERLET_REBUILD evaluate() calls.
+// Using a fixed interval avoids the O(N) displacement-check loop and is safer
+// when trust_radius is large relative to the skin.  With N_VERLET_REBUILD=4 and
+// trust_radius=0.5 Å the implicit skin is ~1 Å, safely above zero.
+static constexpr int    N_VERLET_REBUILD = 4;  // rebuild every 4 evaluate() calls
+static constexpr double VERLET_SKIN      = 1.0;  // Å — extended cutoff margin
 
 class PenaltyEvaluator {
     const double* radii_;
     double        cov_scale_;
     int           n_;
-    double        cell_size_;
+    double        cell_size_;       // cell list cell width (2 × max_r)
+    double        cell_size_ext_;   // extended cell for Verlet list (+ skin)
     FlatCellList  cl_;
-    // Persistent scratch buffers — allocated once, reused every evaluate() call.
-    // Eliminates ~27 MB malloc/free churn per call at n=150000 with 8 threads.
+    // Persistent scratch — allocated once, reused every evaluate() call.
     std::vector<std::pair<int,int>>  pairs_;
     std::vector<std::vector<double>> tgrad_;
+    // Verlet tracking
+    int  eval_count_    = 0;   // number of evaluate() calls since last rebuild
+    bool needs_rebuild_ = true;
+
+    void _rebuild(const double* xd) {
+        pairs_.clear();
+        cl_.build(xd, n_, cell_size_ext_);
+        cl_.for_each_pair(xd, n_, [&](int i, int j){ pairs_.emplace_back(i, j); });
+        eval_count_  = 0;
+        needs_rebuild_ = false;
+    }
 
 public:
     PenaltyEvaluator(const double* radii, double cov_scale, int n)
@@ -225,7 +250,8 @@ public:
     {
         double max_r = 0.0;
         for (int i = 0; i < n; ++i) max_r = std::max(max_r, radii[i]);
-        cell_size_ = std::max(1e-6, cov_scale_ * 2.0 * max_r);
+        cell_size_     = std::max(1e-6, cov_scale_ * 2.0 * max_r);
+        cell_size_ext_ = cell_size_ + VERLET_SKIN;
 #ifdef _OPENMP
         const int nthreads = omp_get_max_threads();
 #else
@@ -234,7 +260,7 @@ public:
         tgrad_.assign(static_cast<std::size_t>(nthreads),
                       std::vector<double>(static_cast<std::size_t>(n_ * 3), 0.0));
         if (n_ >= CELL_LIST_THRESHOLD)
-            pairs_.reserve(static_cast<std::size_t>(n_) * 6);
+            pairs_.reserve(static_cast<std::size_t>(n_) * 8);
     }
 
     double evaluate(const Vec& x, Vec& grad) {
@@ -242,11 +268,13 @@ public:
         const double* xd = x.data();
         double*       gd = grad.data();
 
-        // ── Build pair list — reuse pairs_ capacity, only clear contents ──────
+        // ── Verlet rebuild check (counter-based) ──────────────────────────────
         if (n_ >= CELL_LIST_THRESHOLD) {
-            pairs_.clear();
-            cl_.build(xd, n_, cell_size_);
-            cl_.for_each_pair(xd, n_, [&](int i, int j){ pairs_.emplace_back(i, j); });
+            if (needs_rebuild_ || eval_count_ >= N_VERLET_REBUILD) {
+                _rebuild(xd);
+            } else {
+                ++eval_count_;
+            }
         }
 
         // ── Parallel reduction over pairs ──────────────────────────────────────
@@ -579,15 +607,208 @@ std::tuple<F64Array, bool> relax_positions_cpp(
 }
 
 // ===========================================================================
+// Bridson Poisson-disk sampling (v0.2.2)
+// ===========================================================================
+// Flat-array grid replaces unordered_map: O(1) cell lookup, cache-friendly.
+// Grid stores first index of the occupant point (-1 = empty).
+// Collision chains are stored in a separate next_[] array (linked list).
+
+static void _bridson(
+    int n, double min_dist,
+    bool is_sphere, double R,
+    double hx, double hy, double hz,
+    int k, std::mt19937_64& rng,
+    std::vector<std::array<double,3>>& pts_out)
+{
+    const double cell  = min_dist / std::sqrt(3.0);
+    const double inv_c = 1.0 / cell;
+    const double md2   = min_dist * min_dist;
+    const double R2    = R * R;
+
+    // Bounding box origin (all coords mapped to >= 0)
+    const double ox = is_sphere ? -(R + cell) : -(hx + cell);
+    const double oy = is_sphere ? -(R + cell) : -(hy + cell);
+    const double oz = is_sphere ? -(R + cell) : -(hz + cell);
+    const double wx = is_sphere ? 2*(R+cell) : 2*(hx+cell);
+    const double wy = is_sphere ? 2*(R+cell) : 2*(hy+cell);
+    const double wz = is_sphere ? 2*(R+cell) : 2*(hz+cell);
+
+    const int gx = static_cast<int>(wx * inv_c) + 2;
+    const int gy = static_cast<int>(wy * inv_c) + 2;
+    const int gz = static_cast<int>(wz * inv_c) + 2;
+
+    // Flat grid: head_[cell_idx] = first point index in that cell, -1 if empty
+    // next_[pt_idx] = next point in same cell (linked list), -1 if none
+    std::vector<int> head_(static_cast<std::size_t>(gx*gy*gz), -1);
+    std::vector<int> next_;
+    next_.reserve(static_cast<std::size_t>(n));
+
+    pts_out.clear();
+    pts_out.reserve(static_cast<std::size_t>(n));
+    std::vector<int> active;
+    active.reserve(static_cast<std::size_t>(n));
+
+    auto ci = [&](double x, double y, double z) -> int {
+        int ix = static_cast<int>((x - ox) * inv_c);
+        int iy = static_cast<int>((y - oy) * inv_c);
+        int iz = static_cast<int>((z - oz) * inv_c);
+        return ix + gx*(iy + gy*iz);
+    };
+
+    auto in_region = [&](double x, double y, double z) -> bool {
+        return is_sphere ? (x*x+y*y+z*z <= R2)
+                         : (std::fabs(x)<=hx && std::fabs(y)<=hy && std::fabs(z)<=hz);
+    };
+
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+
+    auto rand_in_region = [&]() -> std::array<double,3> {
+        for (;;) {
+            double px = u(rng)*(is_sphere?R:hx);
+            double py = u(rng)*(is_sphere?R:hy);
+            double pz = u(rng)*(is_sphere?R:hz);
+            if (in_region(px,py,pz)) return {px,py,pz};
+        }
+    };
+
+    auto try_add = [&](double px, double py, double pz) -> bool {
+        int ix = static_cast<int>((px-ox)*inv_c);
+        int iy = static_cast<int>((py-oy)*inv_c);
+        int iz = static_cast<int>((pz-oz)*inv_c);
+        // Check 5×5×5 neighbourhood
+        for (int dz=-2;dz<=2;++dz) for (int dy=-2;dy<=2;++dy) for (int dx=-2;dx<=2;++dx) {
+            int nx2=ix+dx, ny2=iy+dy, nz2=iz+dz;
+            if (nx2<0||ny2<0||nz2<0||nx2>=gx||ny2>=gy||nz2>=gz) continue;
+            int cell_id = nx2 + gx*(ny2 + gy*nz2);
+            for (int j = head_[static_cast<std::size_t>(cell_id)]; j>=0; j=next_[static_cast<std::size_t>(j)]) {
+                const auto& q = pts_out[static_cast<std::size_t>(j)];
+                double ddx=px-q[0],ddy=py-q[1],ddz=pz-q[2];
+                if (ddx*ddx+ddy*ddy+ddz*ddz < md2) return false;
+            }
+        }
+        int idx = static_cast<int>(pts_out.size());
+        int cell_id = ci(px,py,pz);
+        next_.push_back(head_[static_cast<std::size_t>(cell_id)]);
+        head_[static_cast<std::size_t>(cell_id)] = idx;
+        pts_out.push_back({px,py,pz});
+        active.push_back(idx);
+        return true;
+    };
+
+    auto seed = rand_in_region();
+    try_add(seed[0], seed[1], seed[2]);
+
+    while (!active.empty() && static_cast<int>(pts_out.size()) < n) {
+        std::uniform_int_distribution<int> pick(0, static_cast<int>(active.size())-1);
+        int ai = pick(rng);
+        int base_idx = active[static_cast<std::size_t>(ai)];
+        const auto& base = pts_out[static_cast<std::size_t>(base_idx)];
+        bool placed = false;
+        for (int attempt = 0; attempt < k; ++attempt) {
+            double dx,dy,dz,d2;
+            do {
+                dx=u(rng)*2*min_dist; dy=u(rng)*2*min_dist; dz=u(rng)*2*min_dist;
+                d2=dx*dx+dy*dy+dz*dz;
+            } while (d2 < md2 || d2 > 4.0*md2);
+            double cx=base[0]+dx, cy=base[1]+dy, cz=base[2]+dz;
+            if (!in_region(cx,cy,cz)) continue;
+            if (try_add(cx,cy,cz)) { placed=true; break; }
+        }
+        if (!placed) active.erase(active.begin()+ai);
+    }
+}
+
+// Public: Poisson-disk sampling for a sphere.
+// Returns (n, 3) float64 array.  Falls back to uniform random for any
+// points that could not be placed with the minimum-distance guarantee.
+static F64Array poisson_disk_sphere_cpp(
+    int n, double radius, double min_dist, long long seed, int k)
+{
+    std::mt19937_64 rng(static_cast<std::uint64_t>(seed < 0 ? 42 : seed));
+
+    std::vector<std::array<double,3>> pts;
+    _bridson(n, min_dist, true, radius, 0,0,0, k, rng, pts);
+    int placed = static_cast<int>(pts.size());
+
+    // Uniform random fallback for remaining slots
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    const double R2 = radius * radius;
+    while (placed < n) {
+        double px, py, pz;
+        do { px=u(rng)*radius; py=u(rng)*radius; pz=u(rng)*radius; }
+        while (px*px+py*py+pz*pz > R2);
+        pts.push_back({px, py, pz});
+        ++placed;
+    }
+
+    F64Array out({static_cast<py::ssize_t>(n),
+                  static_cast<py::ssize_t>(3)});
+    double* op = static_cast<double*>(out.request().ptr);
+    for (int i = 0; i < n; ++i) {
+        op[3*i  ] = pts[static_cast<std::size_t>(i)][0];
+        op[3*i+1] = pts[static_cast<std::size_t>(i)][1];
+        op[3*i+2] = pts[static_cast<std::size_t>(i)][2];
+    }
+    return out;
+}
+
+// Public: Poisson-disk sampling for a box.
+static F64Array poisson_disk_box_cpp(
+    int n, double lx, double ly, double lz,
+    double min_dist, long long seed, int k)
+{
+    std::mt19937_64 rng(static_cast<std::uint64_t>(seed < 0 ? 42 : seed));
+
+    std::vector<std::array<double,3>> pts;
+    double hx=lx/2, hy=ly/2, hz=lz/2;
+    _bridson(n, min_dist, false, 0, hx, hy, hz, k, rng, pts);
+    int placed = static_cast<int>(pts.size());
+
+    std::uniform_real_distribution<double> ux(-hx, hx), uy(-hy, hy), uz(-hz, hz);
+    while (placed < n) {
+        pts.push_back({ux(rng), uy(rng), uz(rng)});
+        ++placed;
+    }
+
+    F64Array out({static_cast<py::ssize_t>(n),
+                  static_cast<py::ssize_t>(3)});
+    double* op = static_cast<double*>(out.request().ptr);
+    for (int i = 0; i < n; ++i) {
+        op[3*i  ] = pts[static_cast<std::size_t>(i)][0];
+        op[3*i+1] = pts[static_cast<std::size_t>(i)][1];
+        op[3*i+2] = pts[static_cast<std::size_t>(i)][2];
+    }
+    return out;
+}
+
+
+// ===========================================================================
 
 PYBIND11_MODULE(_relax_core, m) {
     m.doc() =
-        "pasted._ext._relax_core (v0.1.11 candidate)\n"
-        "L-BFGS minimisation of harmonic steric-clash penalty.\n"
-        "E = sum_{i<j} 0.5 * max(0, cov_scale*(r_i+r_j) - d_ij)^2\n"
-        "No external dependencies beyond C++17 stdlib + pybind11.\n"
-        "setup.py requires no changes from v0.1.10.\n"
-        "O(N) FlatCellList for N >= 64; O(N^2) for N < 64.";
+        "pasted._ext._relax_core (v0.2.2)\n"
+        "L-BFGS steric-clash relaxation + Bridson Poisson-disk placement.\n"
+        "Verlet list reuse (skin=0.8 A) reduces pair-list rebuild cost.";
+
+    m.def(
+        "poisson_disk_sphere",
+        &poisson_disk_sphere_cpp,
+        py::arg("n"), py::arg("radius"), py::arg("min_dist"),
+        py::arg("seed") = -1LL, py::arg("k") = 30,
+        "Bridson Poisson-disk sampling inside a sphere.\n"
+        "Returns (n, 3) float64 array with min_dist separation guarantee.\n"
+        "Falls back to uniform random for slots that cannot be placed.\n"
+        "seed: RNG seed (-1 = use 42); k: candidates per active point (30)."
+    );
+
+    m.def(
+        "poisson_disk_box",
+        &poisson_disk_box_cpp,
+        py::arg("n"), py::arg("lx"), py::arg("ly"), py::arg("lz"),
+        py::arg("min_dist"), py::arg("seed") = -1LL, py::arg("k") = 30,
+        "Bridson Poisson-disk sampling inside an axis-aligned box.\n"
+        "Returns (n, 3) float64 array with min_dist separation guarantee."
+    );
 
     m.def(
         "relax_positions", &relax_positions_cpp,

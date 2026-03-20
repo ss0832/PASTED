@@ -406,6 +406,31 @@ print(f"charge_frustration: {s.metrics['charge_frustration']:.4f}")
 print(f"moran_I_chi:        {s.metrics['moran_I_chi']:.3f}")
 ```
 
+### Affine displacement moves
+
+By default the optimizer uses fragment moves (displacing individual atoms).
+Enable **affine moves** to also stretch, compress, and shear the entire
+structure — useful for exploring anisotropic configurations:
+
+```python
+opt = StructureOptimizer(
+    n_atoms=12,
+    charge=0,
+    mult=1,
+    elements="6,7,8",
+    objective={"H_total": 1.0},
+    allow_affine_moves=True,   # half of displacement moves become affine
+    affine_strength=0.15,      # stretch / compress up to ±15 %
+    method="annealing",
+    max_steps=3000,
+    seed=42,
+)
+result = opt.run()
+```
+
+`affine_strength` controls the scale of the transform (default: `0.1`).
+Practical range: 0.02–0.4.  Has no effect when `allow_affine_moves=False`.
+
 ### Objective function
 
 The objective is **maximized**.  Use negative weights to penalize a metric:
@@ -599,6 +624,8 @@ also respected; `set_num_threads` overrides it when called after import.
 pasted --n-atoms 50000 --mode gas --region sphere:250 \
     --charge 0 --mult 1 --n-threads 4 -o out.xyz
 ```
+
+> **Default thread count is 1 (single-threaded) since v0.2.2.**  Pass `--n-threads N` to enable OpenMP parallelism.  On machines with ≤ 2 cores the default of 1 avoids thread-spawn overhead exceeding the parallelism gain.
 
 ### Opting out
 

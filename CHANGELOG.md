@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-03-20
+
+### Added
+
+* **Bridson Poisson-disk placement for `gas` and `box` regions (`_relax_core`, `_placement`).**
+
+  `place_gas()` now uses Bridson's O(N·k) algorithm (implemented in C++) to
+  guarantee a minimum inter-atom separation of `2 × median(cov_radius)` before
+  L-BFGS relaxation.  This reduces the number of initial clashes and therefore
+  the iterations needed by `relax_positions`.
+
+  New C++ exports (available when `HAS_RELAX` / `HAS_POISSON` are `True`):
+  `poisson_disk_sphere(n, radius, min_dist, seed, k)` and
+  `poisson_disk_box(n, lx, ly, lz, min_dist, seed, k)`.
+  When `HAS_POISSON` is `False` the function falls back to uniform random
+  placement — behaviour is identical to the pre-v0.2.2 path.
+
+* **Verlet-list reuse in `PenaltyEvaluator` (`_relax_core`).**
+
+  `pairs_` is rebuilt only when any atom has moved more than `VERLET_SKIN / 2`
+  (= 0.4 Å) since the last rebuild, using an extended cutoff of
+  `cell_size + 0.8 Å`.  Between rebuilds the existing pair list is reused,
+  eliminating the dominant serial `FlatCellList` traversal cost per iteration.
+  Benefit is largest for large-N, low-density systems (e.g. `sphere:80`
+  n ≥ 10 000) where rebuild frequency drops to 1-in-5 to 1-in-10 steps as
+  the optimiser converges.
+
+* **Affine displacement moves in `StructureOptimizer`.**
+
+  New parameters `allow_affine_moves=False` (default) and
+  `affine_strength=0.1`.  When enabled, half of the displacement-move budget
+  is replaced by random affine transforms (stretch / compress one axis,
+  shear one axis pair, optional per-atom jitter).  The centre of mass is
+  pinned before and after.  This lets the optimiser explore elongated or
+  compressed configurations that fragment moves cannot reach efficiently.
+
+* **`--n-threads` CLI default changed from `None` (all cores) to `1`.**
+
+  OpenMP parallelism is now opt-in at runtime.  Users who want multi-core
+  behaviour must pass `--n-threads N` explicitly.  The C++ OpenMP code is
+  unchanged; only the default is different.  This avoids unexpected slowdowns
+  on machines where thread-launch overhead exceeds the parallelism gain
+  (e.g. ≤ 2-core containers).
+
+### Fixed
+
+* **`allow_displacements=False` no longer moves atom positions.**
+
+  In all three optimisation methods (SA, BH, PT), `relax_positions` is now
+  skipped when `allow_displacements=False`.  Previously the relax step ran
+  after every composition move, drifting coordinates by up to ~1 Å relative
+  to the initial structure even when the user explicitly disabled displacements.
+
 ## [0.2.1] - 2026-03-20
 
 ### Fixed

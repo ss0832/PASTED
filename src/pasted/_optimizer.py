@@ -263,6 +263,78 @@ def _fragment_move(
     return new_pos
 
 
+def _affine_move(
+    positions: list[Vec3],
+    move_step: float,
+    affine_strength: float,
+    rng: random.Random,
+) -> list[Vec3]:
+    """Apply a random affine transformation to all atom positions.
+
+    The transformation is a composition of:
+
+    * **Stretch / compress** along one random axis — scale factor drawn from
+      ``Uniform(1 − s, 1 + s)`` where ``s = affine_strength``.
+    * **Shear** — a small off-diagonal component drawn from
+      ``Uniform(-s/2, s/2)`` along a randomly chosen axis pair.
+    * **Global translation** jitter — each coordinate nudged by
+      ``Uniform(-move_step/4, move_step/4)`` to break symmetry.
+
+    The centre of mass is pinned before and after the transform so the
+    structure stays centred; no atom is moved outside the original bounding
+    sphere by more than ``affine_strength × max_radius``.
+
+    Parameters
+    ----------
+    positions:
+        Current atom positions.
+    move_step:
+        Maximum per-atom translation jitter added after the affine transform
+        (controls fine-grain disorder, consistent with :func:`_fragment_move`).
+    affine_strength:
+        Dimensionless strength ∈ (0, 1).  Typical values: 0.05–0.3.
+        At 0.1 the structure is stretched/compressed by up to 10%.
+    rng:
+        Seeded random-number generator.
+
+    Returns
+    -------
+    list[Vec3]
+        Transformed positions (same length as input).
+    """
+    pts = np.array(positions, dtype=float)   # (n, 3)
+    com = pts.mean(axis=0)
+    pts -= com                               # work around centre of mass
+
+    # ── Stretch / compress along a random axis ────────────────────────────
+    axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
+    scale = 1.0 + rng.uniform(-affine_strength, affine_strength)
+    A = np.eye(3)
+    A[axis, axis] = scale
+
+    # ── Random shear ──────────────────────────────────────────────────────
+    axes = [0, 1, 2]
+    axes.pop(axis)
+    a1, a2 = axes
+    shear = rng.uniform(-affine_strength * 0.5, affine_strength * 0.5)
+    A[a1, a2] += shear                       # shear in one direction
+
+    # Apply affine transform
+    pts = pts @ A.T                          # (n, 3)
+
+    # ── Small per-atom jitter (optional fine-grain noise) ─────────────────
+    jitter_scale = move_step * 0.25
+    pts += np.array([
+        [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
+        for _ in range(len(positions))
+    ])
+
+    # Restore centre of mass
+    pts += com
+
+    return [tuple(row) for row in pts.tolist()]
+
+
 def _composition_move(
     atoms: list[str],
     element_pool: list[str],
@@ -403,26 +475,35 @@ class StructureOptimizer:
         Attempt a replica-exchange swap every this many MC steps
         (default: 10).  Ignored for other methods.
     allow_displacements:
-        When ``True`` (default), atomic-position moves (fragment moves) are
-        included in the MC step pool.  When ``False``, only composition moves
-        are performed — atomic coordinates are held fixed and only element
-        types are optimised.  Set to ``False`` when exploring compositional
-        disorder at fixed geometry (e.g. a pre-relaxed lattice).
+        When ``True`` (default), atomic-position moves (fragment moves and,
+        optionally, affine moves) are included in the MC step pool.
+        When ``False``, only composition moves are performed — atomic
+        coordinates are held fixed and only element types are optimised.
         Cannot be ``False`` simultaneously with *allow_composition_moves*.
     allow_composition_moves:
         When ``True`` (default), each MC step randomly chooses between a
-        **fragment move** (atomic displacement) and a **composition move**
-        (element-type swap) with equal probability.  When ``False``, only
-        fragment moves are performed — element types are held fixed and only
-        atomic positions are optimised.  Set to ``False`` when the
-        composition is predetermined and should not change during
-        optimisation.
+        displacement move and a composition move (element-type swap) with
+        equal probability.  When ``False``, only displacement moves are
+        performed — element types are held fixed.
         Cannot be ``False`` simultaneously with *allow_displacements*.
+    allow_affine_moves:
+        When ``True``, half of the displacement moves are replaced by
+        **affine moves** — a random stretch, compress, or shear applied to
+        the entire structure, followed by a small per-atom jitter.  Affine
+        moves allow the optimiser to explore elongated or compressed
+        configurations that fragment moves cannot reach efficiently.
+        Default: ``False`` (backward-compatible).
+    affine_strength:
+        Dimensionless scale of the affine transform (default: 0.1).
+        At 0.1 the structure is stretched / compressed by up to ±10 % along
+        a random axis and sheared by up to ±5 %.  Practical range: 0.02–0.4.
+        Has no effect when *allow_affine_moves* is ``False``.
     frag_threshold:
         Local Q6 threshold for fragment selection (default: 0.3).
         Atoms with local Q6 > threshold are preferentially displaced.
     move_step:
         Maximum displacement magnitude per coordinate step (Å, default: 0.5).
+        Also used as the per-atom jitter scale in affine moves (× 0.25).
     lcc_threshold:
         Minimum ``graph_lcc`` required to accept a step (default: 0.0,
         i.e. no connectivity constraint).  Set to 0.8 to enforce that at
@@ -491,6 +572,8 @@ class StructureOptimizer:
         move_step: float = 0.5,
         allow_composition_moves: bool = True,
         allow_displacements: bool = True,
+        allow_affine_moves: bool = False,
+        affine_strength: float = 0.1,
         lcc_threshold: float = 0.0,
         cov_scale: float = 1.0,
         relax_cycles: int = 1500,
@@ -528,6 +611,8 @@ class StructureOptimizer:
         self.move_step = move_step
         self.allow_composition_moves = allow_composition_moves
         self.allow_displacements = allow_displacements
+        self.allow_affine_moves = allow_affine_moves
+        self.affine_strength = affine_strength
         self.lcc_threshold = lcc_threshold
         self.cov_scale = cov_scale
         self.relax_cycles = relax_cycles
@@ -748,14 +833,19 @@ class StructureOptimizer:
                 radii_k = replicas_radii[k]
 
                 # Propose move
-                _do_fragment = (
+                _do_displacement = (
                     self.allow_displacements
                     and (not self.allow_composition_moves or rng.random() < 0.5)
                 )
-                if _do_fragment:
-                    new_positions = _fragment_move(
-                        positions, q6_k, self.frag_threshold, self.move_step, rng
-                    )
+                if _do_displacement:
+                    if self.allow_affine_moves and rng.random() < 0.5:
+                        new_positions = _affine_move(
+                            positions, self.move_step, self.affine_strength, rng
+                        )
+                    else:
+                        new_positions = _fragment_move(
+                            positions, q6_k, self.frag_threshold, self.move_step, rng
+                        )
                     new_atoms = list(atoms)
                 else:
                     new_atoms = _composition_move(
@@ -763,24 +853,27 @@ class StructureOptimizer:
                     )
                     new_positions = list(positions)
 
-                # Relax
-                if HAS_RELAX:
-                    if new_atoms != atoms:
-                        radii_new = np.array(
-                            [_cov_radius_ang(a) for a in new_atoms], dtype=float
+                # Relax — skip when allow_displacements=False (positions must stay fixed)
+                radii_new = radii_k
+                if self.allow_displacements:
+                    if HAS_RELAX:
+                        if new_atoms != atoms:
+                            radii_new = np.array(
+                                [_cov_radius_ang(a) for a in new_atoms], dtype=float
+                            )
+                        pts_arr = np.array(new_positions, dtype=float)
+                        pts_arr, _ = _cpp_relax_positions(
+                            pts_arr, radii_new, self.cov_scale, rc, seed_int
                         )
+                        new_positions = [tuple(row) for row in pts_arr]
                     else:
-                        radii_new = radii_k
-                    pts_arr = np.array(new_positions, dtype=float)
-                    pts_arr, _ = _cpp_relax_positions(
-                        pts_arr, radii_new, self.cov_scale, rc, seed_int
-                    )
-                    new_positions = [tuple(row) for row in pts_arr]
-                else:
-                    new_positions, _ = relax_positions(
-                        new_atoms, new_positions, self.cov_scale, rc
-                    )
-                    radii_new = radii_k
+                        new_positions, _ = relax_positions(
+                            new_atoms, new_positions, self.cov_scale, rc
+                        )
+                        if new_atoms != atoms:
+                            radii_new = np.array(
+                                [_cov_radius_ang(a) for a in new_atoms], dtype=float
+                            )
 
                 ok_parity, _ = validate_charge_mult(new_atoms, self.charge, self.mult)
                 if not ok_parity:
@@ -944,14 +1037,19 @@ class StructureOptimizer:
             T = self._temperature(step)
 
             # ── Move ─────────────────────────────────────────────────────
-            _do_fragment = (
+            _do_displacement = (
                 self.allow_displacements
                 and (not self.allow_composition_moves or rng.random() < 0.5)
             )
-            if _do_fragment:
-                new_positions = _fragment_move(
-                    positions, per_atom_q6, self.frag_threshold, self.move_step, rng
-                )
+            if _do_displacement:
+                if self.allow_affine_moves and rng.random() < 0.5:
+                    new_positions = _affine_move(
+                        positions, self.move_step, self.affine_strength, rng
+                    )
+                else:
+                    new_positions = _fragment_move(
+                        positions, per_atom_q6, self.frag_threshold, self.move_step, rng
+                    )
                 new_atoms = list(atoms)
             else:
                 new_atoms = _composition_move(
@@ -960,22 +1058,24 @@ class StructureOptimizer:
                 new_positions = list(positions)
 
             # ── Relax (distance constraint) ───────────────────────────────
-            # Bypass Python wrapper; call _relax_core directly when available.
-            if HAS_RELAX:
-                # radii may need updating if atom types changed (composition move)
-                if new_atoms != atoms:
-                    new_radii = np.array([_cov_radius_ang(a) for a in new_atoms], dtype=float)
+            # Skip relax when allow_displacements=False: the caller expects
+            # positions to be exactly preserved after composition-only moves.
+            if self.allow_displacements:
+                if HAS_RELAX:
+                    # radii may need updating if atom types changed (composition move)
+                    if new_atoms != atoms:
+                        new_radii = np.array([_cov_radius_ang(a) for a in new_atoms], dtype=float)
+                    else:
+                        new_radii = radii
+                    new_pts_arr = np.array(new_positions, dtype=float)
+                    new_pts_arr, _ = _cpp_relax_positions(
+                        new_pts_arr, new_radii, self.cov_scale, rc, seed_int
+                    )
+                    new_positions = [tuple(row) for row in new_pts_arr]
                 else:
-                    new_radii = radii
-                new_pts_arr = np.array(new_positions, dtype=float)
-                new_pts_arr, _ = _cpp_relax_positions(
-                    new_pts_arr, new_radii, self.cov_scale, rc, seed_int
-                )
-                new_positions = [tuple(row) for row in new_pts_arr]
-            else:
-                new_positions, _ = relax_positions(
-                    new_atoms, new_positions, self.cov_scale, rc
-                )
+                    new_positions, _ = relax_positions(
+                        new_atoms, new_positions, self.cov_scale, rc
+                    )
 
             # ── Charge/mult validity ──────────────────────────────────────
             ok, _ = validate_charge_mult(new_atoms, self.charge, self.mult)
@@ -1181,13 +1281,18 @@ class StructureOptimizer:
             if self.method == "parallel_tempering"
             else ""
         )
-        comp_info = "" if self.allow_composition_moves else ", allow_composition_moves=False"
-        disp_info = "" if self.allow_displacements else ", allow_displacements=False"
+        comp_info  = "" if self.allow_composition_moves else ", allow_composition_moves=False"
+        disp_info  = "" if self.allow_displacements else ", allow_displacements=False"
+        affine_info = (
+            f", affine_strength={self.affine_strength}"
+            if self.allow_affine_moves
+            else ""
+        )
         return (
             f"StructureOptimizer("
             f"n_atoms={self.n_atoms}, method={self.method!r}, "
             f"max_steps={self.max_steps}, "
             f"T_start={self.T_start}, T_end={self.T_end}, "
             f"pool_size={len(self._element_pool)}"
-            f"{pt_info}{comp_info}{disp_info})"
+            f"{pt_info}{comp_info}{disp_info}{affine_info})"
         )

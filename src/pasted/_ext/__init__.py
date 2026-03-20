@@ -11,6 +11,8 @@ disabling all acceleration.
 Public names
 ------------
 HAS_RELAX       : bool  -- True when _relax_core is available
+HAS_POISSON     : bool  -- True when C++ Poisson-disk placement is available
+                           (same extension as HAS_RELAX; both True together)
 HAS_MAXENT      : bool  -- True when _maxent_core angular gradient is available
 HAS_MAXENT_LOOP : bool  -- True when _maxent_core full C++ L-BFGS loop is available
                            (implies HAS_MAXENT; enables the fast place_maxent_cpp path)
@@ -22,6 +24,14 @@ HAS_OPENMP      : bool  -- True when the C++ extensions were compiled with -fope
 
 relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
     Available when HAS_RELAX is True.
+
+_poisson_disk_sphere_cpp(n, radius, min_dist, seed=-1, k=30)
+    Available when HAS_POISSON is True.
+    Bridson Poisson-disk sampling inside a sphere. Returns (n, 3) float64.
+
+_poisson_disk_box_cpp(n, lx, ly, lz, min_dist, seed=-1, k=30)
+    Available when HAS_POISSON is True.
+    Bridson Poisson-disk sampling inside a box. Returns (n, 3) float64.
 
 angular_repulsion_gradient(pts, cutoff)
     Available when HAS_MAXENT is True.
@@ -62,12 +72,31 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # _relax_core  -- repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
+# _relax_core  -- repulsion-relaxation inner loop + Poisson-disk placement
+# ---------------------------------------------------------------------------
 try:
-    from ._relax_core import relax_positions  # type: ignore[import-untyped]
-    HAS_RELAX: bool = True
+    from ._relax_core import (
+        poisson_disk_box as _poisson_disk_box_cpp,
+    )
+    from ._relax_core import (
+        poisson_disk_sphere as _poisson_disk_sphere_cpp,
+    )
+    from ._relax_core import (  # type: ignore[import-untyped]
+        relax_positions,
+    )
+    HAS_RELAX: bool   = True
+    HAS_POISSON: bool = True
 except ImportError:
-    relax_positions: Any = None  # type: ignore[no-redef]
-    HAS_RELAX = False
+    try:
+        from ._relax_core import relax_positions  # type: ignore[import-untyped]
+        HAS_RELAX   = True
+        HAS_POISSON = False
+    except ImportError:
+        relax_positions: Any = None  # type: ignore[no-redef]
+        HAS_RELAX   = False
+        HAS_POISSON = False
+    _poisson_disk_sphere_cpp: Any = None  # type: ignore[no-redef]
+    _poisson_disk_box_cpp:    Any = None  # type: ignore[no-redef]
 
 # ---------------------------------------------------------------------------
 # _maxent_core  -- angular repulsion gradient + full loop (maxent only)
@@ -167,12 +196,15 @@ def set_num_threads(n: int) -> None:
 
 __all__ = [
     "HAS_RELAX",
+    "HAS_POISSON",
     "HAS_MAXENT",
     "HAS_MAXENT_LOOP",
     "HAS_STEINHARDT",
     "HAS_GRAPH",
     "HAS_OPENMP",
     "relax_positions",
+    "_poisson_disk_sphere_cpp",
+    "_poisson_disk_box_cpp",
     "angular_repulsion_gradient",
     "place_maxent_cpp",
     "steinhardt_per_atom",
