@@ -379,7 +379,11 @@ class StructureOptimizer:
         Use negative weights to penalise a metric.
     elements:
         Element pool — spec string (``"6,7,8"``), list of symbols, or
-        ``None`` for all Z = 1–106.
+        ``None`` for all Z = 1–106.  When a list is given, duplicate
+        symbols are silently removed while preserving insertion order
+        (e.g. ``['C', 'H', 'H', 'H', 'H']`` is treated as ``['C', 'H']``).
+        To bias sampling toward a particular element use
+        ``element_fractions`` in :class:`StructureGenerator` instead.
     method:
         ``"annealing"`` (default), ``"basin_hopping"``, or
         ``"parallel_tempering"``.
@@ -554,12 +558,20 @@ class StructureOptimizer:
         self.verbose = verbose
 
         # Element pool
+        # When *elements* is a list, callers sometimes pass repeated symbols
+        # (e.g. ['C', 'H', 'H', 'H', 'H']) intending to describe a fixed
+        # stoichiometry rather than a biased sampling pool.  Storing duplicates
+        # would cause rng.choice(self._element_pool) to sample H with 4x the
+        # probability of C, which is both surprising and incorrect when
+        # allow_composition_moves=False.  Deduplicate while preserving
+        # insertion order so the pool contains exactly the unique element types.
         if elements is None:
             self._element_pool: list[str] = default_element_pool()
         elif isinstance(elements, str):
             self._element_pool = parse_element_spec(elements)
         else:
-            self._element_pool = list(elements)
+            # dict.fromkeys preserves insertion order and removes duplicates
+            self._element_pool = list(dict.fromkeys(elements))
 
         # Cutoff
         self._cutoff: float = self._resolve_cutoff(cutoff)
@@ -655,7 +667,7 @@ class StructureOptimizer:
 
         Algorithm
         ---------
-        1. Build N replicas at temperatures T_0 < T_1 < … < T_{N-1}
+        1. Build N replicas at temperatures T_0 < T_1 < ... < T_{N-1}
            (geometric ladder from T_end to T_start).
         2. Every step: each replica independently proposes a move and
            applies Metropolis acceptance at its own temperature.
@@ -667,6 +679,18 @@ class StructureOptimizer:
            where β = 1/T and f is the objective value (higher is better).
            Accept with probability min(1, exp(ΔE)).
         4. Track the global best across all replicas and all steps.
+
+        Initialization
+        --------------
+        * ``initial`` provided — all replicas start from the same structure.
+        * ``initial=None``, ``allow_composition_moves=True`` — each replica
+          gets an independent random structure (composition and positions).
+        * ``initial=None``, ``allow_composition_moves=False`` — a single
+          shared composition is generated once via ``_make_initial`` and all
+          replicas inherit that composition.  Positions are independently
+          randomized per replica so they still start from different points in
+          configuration space.  This ensures that the fixed-composition
+          invariant holds from step zero across all replicas.
 
         Returns all replica final states sorted best-first so that
         ``run()`` can incorporate them into ``OptimizationResult``.
@@ -680,35 +704,57 @@ class StructureOptimizer:
 
         # ── Initialise one state per replica ────────────────────────────
         # Replica 0 = coldest (T_end), Replica N-1 = hottest (T_start).
-        # All replicas start from the same initial structure (or independent
-        # gas-mode structures when initial is None) so that they explore
-        # different regions from the start due to different acceptance rates.
+        #
+        # When allow_composition_moves=False and no initial structure is
+        # provided we must generate a single shared composition here and
+        # reuse it across all replicas.  Generating an independent random
+        # composition per replica would break the invariant that composition
+        # is fixed throughout the run: replica k would start with a
+        # different element assignment than replica k+1, and the cold
+        # replica would never see the composition that was intended.
+        #
+        # When allow_composition_moves=True replicas may diverge in
+        # composition during the run anyway, so independent starts are fine.
         states_atoms:     list[list[str]]   = []
         states_positions: list[list[Vec3]]  = []
         states_metrics:   list[dict[str, float]] = []
         states_f:         list[float]       = []
         states_q6:        list[np.ndarray]  = []
 
+        # If composition moves are disabled and no initial structure was
+        # supplied, generate one shared initial structure whose composition
+        # will be inherited by all replicas (positions are independently
+        # randomised per-replica so they still start from different points).
+        _shared_initial: Structure | None = None
+        if initial is None and not self.allow_composition_moves:
+            _shared_initial = self._make_initial(rng)
+
         for k in range(n_rep):
             if initial is not None:
                 a = list(initial.atoms)
                 p = list(initial.positions)
-            else:
-                # Generate a fresh random structure for each replica
+            elif _shared_initial is not None:
+                # Composition fixed: reuse atom types from shared initial,
+                # but place atoms independently so replicas explore different
+                # regions of configuration space.
+                a = list(_shared_initial.atoms)
                 rng_k = random.Random(
                     None if self.seed is None else self.seed + restart_idx * 97 + k * 13
                 )
-                _, p_raw = place_gas(
-                    [rng.choice(self._element_pool) for _ in range(self.n_atoms)],
-                    self._auto_region(), rng_k,
+                _, p_raw = place_gas(a, self._auto_region(), rng_k)
+                p_list, _ = relax_positions(a, p_raw, self.cov_scale, rc)
+                p = list(p_list)
+            else:
+                # Composition moves enabled: each replica gets an independent
+                # random structure so they collectively cover more of the
+                # composition×geometry space from the start.
+                rng_k = random.Random(
+                    None if self.seed is None else self.seed + restart_idx * 97 + k * 13
                 )
                 a_raw = [rng.choice(self._element_pool) for _ in range(self.n_atoms)]
-                ok, _ = validate_charge_mult(a_raw, self.charge, self.mult)
-                if not ok:
-                    a_raw = list(a_raw)
-                    # fallback: use first-valid replacement
+                _, p_raw = place_gas(a_raw, self._auto_region(), rng_k)
+                p_list, _ = relax_positions(a_raw, p_raw, self.cov_scale, rc)
                 a = a_raw
-                p_list, _ = relax_positions(a, p_raw, self.cov_scale, rc)
                 p = list(p_list)
 
             m = compute_all_metrics(

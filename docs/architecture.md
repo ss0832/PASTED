@@ -285,6 +285,9 @@ and `np.bincount` for accumulation.
 | Sparse Python fallback | ~0.21 s | ~164× |
 | C++ (`_steinhardt_core`) | ~17 ms | **~2 000×** |
 
+---
+
+## StructureGenerator internals
 
 `StructureGenerator.stream()` is the single implementation of the generation
 loop.  It yields each passing structure immediately, enabling incremental
@@ -406,7 +409,9 @@ relax_positions
 Generator always passes `move_step=0.0` (pure geometric transform, no
 per-atom jitter) because a jitter before relax would simply be undone.
 
+---
 
+## StructureOptimizer internals
 
 `StructureOptimizer.run()` returns an `OptimizationResult` containing all
 per-restart structures sorted by objective value (highest first).
