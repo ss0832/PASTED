@@ -547,7 +547,7 @@ gen = StructureGenerator(
 result = gen.generate()
 ```
 
-Weights are *relative* — they are normalised internally.
+Weights are *relative* — they are normalized internally.
 `{"C": 6, "N": 3, "O": 1}` is equivalent to the above.
 Elements absent from the dict receive weight `1.0`.
 
@@ -600,7 +600,7 @@ gen = StructureGenerator(
 ## Position-only optimisation (StructureOptimizer)
 
 Set `allow_composition_moves=False` to fix the composition and only
-optimise atomic positions.  This is useful when the stoichiometry is
+optimize atomic positions.  This is useful when the stoichiometry is
 predetermined:
 
 ```python
@@ -632,7 +632,7 @@ assert sorted(result.best.atoms) == sorted(initial.atoms)
 ## Composition-only optimisation (StructureOptimizer)
 
 Set `allow_displacements=False` to fix the atomic coordinates and only
-optimise element types.  This is useful when exploring compositional
+optimize element types.  This is useful when exploring compositional
 disorder on a pre-relaxed geometry (e.g. a fixed lattice):
 
 ```python

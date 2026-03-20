@@ -12,7 +12,7 @@
  *
  *       Runs the entire maxent gradient-descent loop in C++:
  *         for each step:
- *           1. Rebuild neighbour list (build_nb_inplace — reuses capacity)
+ *           1. Rebuild neighbor list (build_nb_inplace — reuses capacity)
  *           2. Evaluate angular repulsion energy U and gradient g (L-BFGS)
  *           3. Compute L-BFGS descent direction d (m=7, Armijo backtracking)
  *           4. Per-atom trust-radius clip: rescale so max disp ≤ trust_radius
@@ -204,7 +204,7 @@ public:
 };
 
 // ===========================================================================
-// Angular repulsion neighbour lists
+// Angular repulsion neighbor lists
 // ===========================================================================
 using CellKey = std::array<int,3>;
 struct CKH {std::size_t operator()(const CellKey& k)const noexcept{
@@ -574,7 +574,7 @@ pts           : (n,3) float64 – initial positions (Ang)
 radii         : (n,)  float64 – covalent radii (Ang)
 cov_scale     : float          – minimum distance scale factor
 region_radius : float          – soft-restoring-force sphere radius (Ang)
-ang_cutoff    : float          – angular-repulsion neighbour cutoff (Ang)
+ang_cutoff    : float          – angular-repulsion neighbor cutoff (Ang)
 maxent_steps  : int            – number of L-BFGS outer iterations
 trust_radius  : float          – per-atom max displacement per step (Ang, default 0.5)
 seed          : int            – RNG seed for coincident-atom jitter; -1 = random

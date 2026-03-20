@@ -142,7 +142,7 @@ examples
         default=300,
         help=(
             "[maxent] Gradient-descent iterations for angular repulsion "
-            "(default: 300). More steps → more uniform neighbour directions."
+            "(default: 300). More steps → more uniform neighbor directions."
         ),
     )
     mg.add_argument(
@@ -157,7 +157,7 @@ examples
         default=2.5,
         help=(
             "[maxent] Neighbour cutoff = this × median cov sum (default: 2.5). "
-            "Controls how many neighbours participate in angular repulsion."
+            "Controls how many neighbors participate in angular repulsion."
         ),
     )
 
@@ -176,7 +176,7 @@ examples
         metavar="SYM:WEIGHT",
         help=(
             "Relative sampling weight for one element, e.g. 'C:0.5'. "
-            "Repeatable.  Weights are normalised; elements omitted from the "
+            "Repeatable.  Weights are normalized; elements omitted from the "
             "list receive weight 1.0.  Default: uniform."
         ),
     )
@@ -321,7 +321,7 @@ examples
         metavar="METRIC:WEIGHT",
         help=(
             "Objective term METRIC:WEIGHT (repeatable). "
-            "Optimizer maximises the weighted sum. "
+            "Optimizer maximizes the weighted sum. "
             "Default when omitted: H_total:1.0 Q6:-1.0. "
             "Example: --objective H_atom:1.0 --objective Q6:-2.0"
         ),

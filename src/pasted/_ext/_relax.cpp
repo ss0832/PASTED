@@ -577,7 +577,7 @@ std::tuple<F64Array, bool> relax_positions_cpp(
     }
 
     // Coincident-atom jitter: only perturb atoms in pairs with d < 1e-10.
-    // This mirrors v0.1.10 GS behaviour: RNG consumed only when coincident
+    // This mirrors v0.1.10 GS behavior: RNG consumed only when coincident
     // atoms exist, so seed=None yields deterministic results for normal
     // structures.  sigma ~ 1e-6 * max_r (~3e-8 Ang for H).
     {
@@ -680,7 +680,7 @@ static void _bridson(
         int ix = static_cast<int>((px-ox)*inv_c);
         int iy = static_cast<int>((py-oy)*inv_c);
         int iz = static_cast<int>((pz-oz)*inv_c);
-        // Check 5×5×5 neighbourhood
+        // Check 5×5×5 neighborhood
         for (int dz=-2;dz<=2;++dz) for (int dy=-2;dy<=2;++dy) for (int dx=-2;dx<=2;++dx) {
             int nx2=ix+dx, ny2=iy+dy, nz2=iz+dz;
             if (nx2<0||ny2<0||nz2<0||nx2>=gx||ny2>=gy||nz2>=gz) continue;

@@ -5,12 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.5] — 2026-03-20
+
+### Fixed
+- `pyproject.toml`: changed `[tool.setuptools.packages.find] where = ["."]` to
+  `where = ["src"]` to match the actual `src/` layout.  The previous value caused
+  editable and wheel builds to attempt copying compiled `.so` files to a
+  non-existent `pasted/_ext/` directory, failing with
+  `error: could not create '.../_relax_core.*.so': No such file or directory`.
+- `pyproject.toml`: added `"*.cpp"` to `[tool.setuptools.package-data]` so that
+  C++ source files are included in the sdist.
+- `src/pasted/__init__.py`: updated fallback version string to `"0.2.5"`.
+
+---
+
 ## [0.2.4] — 2026-03-20
 
 ### Fixed
-- `pyproject.toml`: Changed `license = { text = "MIT" }` to the SPDX string format license = "MIT" (fixes a deprecation warning in setuptools>=77).
-- Added `pybind11>=2.12` to `[build-system].requires` in `pyproject.toml`. This fixes an issue where C++ extensions were not being built during sdist builds because it was previously only listed under `[project.optional-dependencies].dev.`
-- Updated the fallback version string in `src/pasted/__init__.py` to `0.2.4`.
+- `pyproject.toml`: changed `license = { text = "MIT" }` to the SPDX string
+  form `license = "MIT"`, eliminating the setuptools>=77 deprecation warning.
+- `pyproject.toml`: moved `pybind11>=2.12` from `[project.optional-dependencies].dev`
+  into `[build-system].requires` so that C++ extensions are built correctly
+  during `pip install` and `pip install -e .` without a separate pybind11
+  pre-install step.
+- `src/pasted/__init__.py`: updated fallback version string to `"0.2.4"`.
 
 ---
 
@@ -19,21 +37,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 - **OpenMP integration** (`HAS_OPENMP`, `set_num_threads`) removed from
   `pasted._ext` and the top-level `pasted` namespace.
-  Benchmarking against v0.1.17 revealed that the thread-pool overhead in
-  `compute_all_metrics` produced a **1.4–2.5× performance regression** across
-  all practically relevant structure sizes (n = 30 – 30 000 atoms):
+  Benchmarking against v0.1.17 showed that the OpenMP thread-pool overhead in
+  v0.2.2 produced a **1.4–2.5× regression** in `compute_all_metrics` across
+  all practically relevant structure sizes.  After removing OpenMP, v0.2.3
+  is within measurement noise of v0.1.17 across all tested sizes:
 
-  | n_atoms | v0.1.17 | v0.2.2 | ratio |
-  |--------:|--------:|-------:|------:|
-  |     100 |  2.0 ms |  5.0 ms | 2.5× slower |
-  |   1 000 | 21.4 ms | 36.0 ms | 1.7× slower |
-  |  10 000 |  254 ms |  377 ms | 1.5× slower |
-  |  30 000 |  909 ms | 1301 ms | 1.4× slower |
+  **generate()** (median, n_samples=1, mode=gas):
 
-  Batch processing (up to 1 000 structures in a loop) did not recover the
-  regression: thread-pool startup and data-serialisation costs dominate for
-  all structure sizes tested.  The `libgomp` runtime dependency is therefore
-  dropped.
+  | n_atoms |  v0.1.17 |  v0.2.3 | ratio |
+  |--------:|---------:|--------:|------:|
+  |     100 |   1.5 ms |  1.2 ms | 0.80× |
+  |   1 000 |  10.9 ms |  8.8 ms | 0.81× |
+  |  10 000 | 256.3 ms | 241.5 ms | 0.94× |
+  |  30 000 | 1937.8 ms | 1863.6 ms | 0.96× |
+
+  **compute_all_metrics()** (median):
+
+  | n_atoms |  v0.1.17 |  v0.2.3 | ratio |
+  |--------:|---------:|--------:|------:|
+  |     100 |   0.3 ms |  0.3 ms | 1.09× |
+  |   1 000 |   2.1 ms |  2.4 ms | 1.15× |
+  |  10 000 | 105.3 ms | 96.5 ms | 0.92× |
+  |  30 000 | 1007.5 ms | 1012.3 ms | 1.00× |
+
+  The `libgomp` runtime dependency is therefore dropped.
 
 - `HAS_OPENMP` constant removed from `pasted._ext.__all__` and `pasted.__all__`.
 - `set_num_threads(n)` function removed from `pasted._ext` and re-exported
@@ -42,8 +69,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   were only required for the OpenMP detection and thread-count setter).
 
 ### Changed
-- All C++ extension calls now run single-threaded.  Performance of
-  `compute_all_metrics` is restored to v0.1.17 levels.
+- All C++ extension calls now run single-threaded.  Benchmarking confirms
+  that both `generate()` and `compute_all_metrics()` are within measurement
+  noise of v0.1.17 across all tested sizes (n = 100 – 30 000 atoms).
 - `pasted._ext.__init__` module docstring updated; removed the WSL/OOM note
   that referenced OpenMP thread counts.
 - `pasted.compute_all_metrics` docstring updated to state that computation is
@@ -90,7 +118,7 @@ set_num_threads(4)
 ### Changed
 - `_relax_core` and `_maxent_core` refactored to eliminate repeated heap
   allocation inside their hot L-BFGS loops.  Gradient scratch buffers and
-  neighbour lists are now persistent, fixing OOM on WSL at n ≥ 150 000 atoms.
+  neighbor lists are now persistent, fixing OOM on WSL at n ≥ 150 000 atoms.
 
 ---
 

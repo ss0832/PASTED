@@ -1,7 +1,7 @@
 """
 pasted._io
 ==========
-XYZ format serialisation helpers.
+XYZ format serialization helpers.
 """
 
 from __future__ import annotations

@@ -512,8 +512,8 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
         double sum_sq = 0.0;
         int    valid  = 0;
         for (int b = 0; b < n_bins; ++b) {
-            const double centre = (b + 0.5) * bin_width;
-            const double ideal  = rho * 4.0 * PI * centre * centre * bin_width
+            const double center = (b + 0.5) * bin_width;
+            const double ideal  = rho * 4.0 * PI * center * center * bin_width
                                   * static_cast<double>(n) / 2.0;
             if (ideal > 0.0) {
                 const double ratio = hist[static_cast<std::size_t>(b)] / ideal - 1.0;

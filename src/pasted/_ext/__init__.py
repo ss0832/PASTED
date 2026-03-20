@@ -40,7 +40,7 @@ Memory notes (v0.2.1)
 ---------------------
 ``_relax_core`` and ``_maxent_core`` were refactored in v0.2.1 to eliminate
 repeated heap allocation inside their hot L-BFGS loops.  Gradient scratch
-buffers and neighbour lists are now held as persistent members / outer-scope
+buffers and neighbor lists are now held as persistent members / outer-scope
 variables and reused across iterations.
 
 graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)
@@ -69,8 +69,6 @@ from __future__ import annotations
 
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# _relax_core  -- repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
 # _relax_core  -- repulsion-relaxation inner loop + Poisson-disk placement
 # ---------------------------------------------------------------------------

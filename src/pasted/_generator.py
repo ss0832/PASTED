@@ -463,7 +463,7 @@ class StructureGenerator:
     element_fractions:
         Relative sampling weights for elements in the pool, as a
         ``{symbol: weight}`` dict (e.g. ``{"C": 0.5, "N": 0.3, "O": 0.2}``).
-        Weights are *relative* — they are normalised internally and need not
+        Weights are *relative* — they are normalized internally and need not
         sum to 1.  Elements absent from the dict receive a weight of 1.0.
         When ``None`` (default), every element in the pool is sampled with
         equal probability.
@@ -505,7 +505,7 @@ class StructureGenerator:
         0.05–0.4.  At 0.1 the structure is stretched / compressed by up to
         ±10 % along a random axis and sheared by up to ±5 %.  Works
         identically across all placement modes (``gas``, ``chain``,
-        ``shell``, ``maxent``).  ``0.0`` preserves the behaviour of all
+        ``shell``, ``maxent``).  ``0.0`` preserves the behavior of all
         versions prior to v0.2.3.
     n_samples:
         Maximum number of placement attempts (default: 1).
@@ -516,7 +516,7 @@ class StructureGenerator:
         generation stops (default: ``None``).
 
         - ``None`` → generate exactly *n_samples* attempts and return all
-          that passed (original behaviour).
+          that passed (original behavior).
         - ``N > 0`` with ``n_samples > 0`` → stop as soon as *N* structures
           pass **or** *n_samples* attempts are exhausted, whichever comes
           first.  Returns the structures collected so far with a warning if
@@ -769,7 +769,7 @@ class StructureGenerator:
         n = len(pool)
         uniform = (n > 0 and all(abs(w - 1.0 / n) < 1e-12 for w in self._element_weights))
 
-        # Fast path: uniform weights, no bounds → identical to original behaviour
+        # Fast path: uniform weights, no bounds → identical to original behavior
         if uniform and not min_c and not max_c:
             return [rng.choice(pool) for _ in range(self._cfg.n_atoms)]
 
@@ -1081,7 +1081,7 @@ class StructureGenerator:
         #
         # Parity warnings fire only when n_passed == 0 (complete failure).
         # Partial parity rejection where some structures still passed is
-        # expected behaviour for mixed-element pools and does not require
+        # expected behavior for mixed-element pools and does not require
         # a warning — the verbose summary line already reports the counts.
         if n_invalid > 0 and n_passed == 0:
             warnings.warn(

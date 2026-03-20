@@ -29,7 +29,7 @@ def test_gradient_shape() -> None:
 
 
 def test_gradient_zero_for_isolated() -> None:
-    # atoms far apart → no neighbours → gradient should be zero
+    # atoms far apart → no neighbors → gradient should be zero
     pts = np.array([[0.0, 0.0, 0.0], [100.0, 0.0, 0.0]])
     grad = _angular_repulsion_gradient(pts, cutoff=2.0)
     assert np.allclose(grad, 0.0)
@@ -101,7 +101,7 @@ class TestComputeAngularEntropy:
         val = compute_angular_entropy(pos, cutoff=3.0)
         assert val >= 0.0
 
-    def test_no_neighbours_returns_zero(self) -> None:
+    def test_no_neighbors_returns_zero(self) -> None:
         pos = [(0.0, 0.0, 0.0), (100.0, 0.0, 0.0)]
         assert compute_angular_entropy(pos, cutoff=1.0) == 0.0
 

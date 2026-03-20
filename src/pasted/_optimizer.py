@@ -33,7 +33,7 @@ Composition move
 
 Objective function
 ------------------
-The objective is **maximised**.  Pass a weight dict or any callable::
+The objective is **maximized**.  Pass a weight dict or any callable::
 
     # dict: f = sum(w * metric)
     objective = {"H_atom": 1.0, "H_spatial": 1.0, "Q6": -2.0}
@@ -362,7 +362,7 @@ def _composition_move(
 
 
 class StructureOptimizer:
-    """Optimise a single structure to maximise a disorder objective.
+    """Optimise a single structure to maximize a disorder objective.
 
     Parameters
     ----------
@@ -375,7 +375,7 @@ class StructureOptimizer:
     objective:
         Weight dict ``{"METRIC": weight, ...}`` or any callable
         ``(metrics: dict[str, float]) -> float``.
-        The optimizer **maximises** the scalar value.
+        The optimizer **maximizes** the scalar value.
         Use negative weights to penalise a metric.
     elements:
         Element pool — spec string (``"6,7,8"``), list of symbols, or
@@ -406,7 +406,7 @@ class StructureOptimizer:
         When ``True`` (default), atomic-position moves (fragment moves and,
         optionally, affine moves) are included in the MC step pool.
         When ``False``, only composition moves are performed — atomic
-        coordinates are held fixed and only element types are optimised.
+        coordinates are held fixed and only element types are optimized.
         Cannot be ``False`` simultaneously with *allow_composition_moves*.
     allow_composition_moves:
         When ``True`` (default), each MC step randomly chooses between a
@@ -418,7 +418,7 @@ class StructureOptimizer:
         When ``True``, half of the displacement moves are replaced by
         **affine moves** — a random stretch, compress, or shear applied to
         the entire structure, followed by a small per-atom jitter.  Affine
-        moves allow the optimiser to explore elongated or compressed
+        moves allow the optimizer to explore elongated or compressed
         configurations that fragment moves cannot reach efficiently.
         Default: ``False`` (backward-compatible).
     affine_strength:

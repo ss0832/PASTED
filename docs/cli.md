@@ -27,7 +27,7 @@ These flags control how elements are sampled from the pool defined by
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `--element-fractions SYM:WEIGHT` | repeatable | uniform | Relative sampling weight for one element. Weights are normalised; elements not listed receive weight 1.0 |
+| `--element-fractions SYM:WEIGHT` | repeatable | uniform | Relative sampling weight for one element. Weights are normalized; elements not listed receive weight 1.0 |
 | `--element-min-counts SYM:N` | repeatable | none | Minimum number of atoms guaranteed for one element |
 | `--element-max-counts SYM:N` | repeatable | none | Maximum number of atoms allowed for one element |
 
@@ -159,7 +159,7 @@ An interrupted run always produces a valid XYZ file.
 
 ## Optimizer mode
 
-Pass `--optimize` to maximise a disorder objective instead of sampling
+Pass `--optimize` to maximize a disorder objective instead of sampling
 randomly.  All sampling-mode options (`--n-atoms`, `--charge`, `--mult`,
 `--elements`, element sampling flags, `--cov-scale`, `--relax-cycles`,
 `--cutoff`, `--seed`) are shared.
@@ -167,7 +167,7 @@ randomly.  All sampling-mode options (`--n-atoms`, `--charge`, `--mult`,
 | Option | Default | Description |
 |---|---|---|
 | `--optimize` | flag | Enable optimization mode |
-| `--objective METRIC:WEIGHT` | `H_total:1.0 Q6:-1.0` | Objective term (repeatable). Optimizer **maximises** the weighted sum |
+| `--objective METRIC:WEIGHT` | `H_total:1.0 Q6:-1.0` | Objective term (repeatable). Optimizer **maximizes** the weighted sum |
 | `--method {annealing,basin_hopping,parallel_tempering}` | `annealing` | Optimization algorithm |
 | `--max-steps N` | 5000 | MC steps per restart |
 | `--n-samples N` | 1 | Number of independent restarts |

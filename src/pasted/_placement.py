@@ -25,7 +25,7 @@ from ._atoms import _cov_radius_ang
 #
 # HAS_RELAX / HAS_MAXENT / HAS_MAXENT_LOOP are set by _ext/__init__.py;
 # False when the corresponding .so is absent (no compiler, pure-source
-# install, etc.).  No user-facing behaviour changes in either case.
+# install, etc.).  No user-facing behavior changes in either case.
 from ._ext import (
     HAS_MAXENT,
     HAS_MAXENT_LOOP,
@@ -62,7 +62,7 @@ def _sample_sphere(radius: float, rng: random.Random) -> Vec3:
 
 
 def _sample_box(lx: float, ly: float, lz: float, rng: random.Random) -> Vec3:
-    """Uniform random point inside an axis-aligned box centred at the origin."""
+    """Uniform random point inside an axis-aligned box centered at the origin."""
     return (
         rng.uniform(-lx / 2, lx / 2),
         rng.uniform(-ly / 2, ly / 2),
@@ -80,7 +80,7 @@ def _poisson_disk_sphere(
     """Poisson-disk-like sampling inside a sphere using stratified jitter.
 
     Divides the bounding cube into grid cells of side ``min_dist / sqrt(3)``
-    (so no two cells in a 3×3×3 neighbourhood can both contain an atom closer
+    (so no two cells in a 3×3×3 neighborhood can both contain an atom closer
     than *min_dist*), randomly selects *n* cells inside the sphere, and places
     one atom per cell at a uniformly-random position within the cell.
 
@@ -116,11 +116,11 @@ def _poisson_disk_sphere(
     n_cells = max(1, int(math.floor(2.0 * radius / cell)))
     origin  = -n_cells * cell / 2.0   # cube origin
 
-    # Generate all cell centres inside the sphere
+    # Generate all cell centers inside the sphere
     total = n_cells ** 3
     ijk   = np.stack(np.unravel_index(np.arange(total), (n_cells, n_cells, n_cells)), axis=1)
-    centres = origin + (ijk + 0.5) * cell          # (total, 3)
-    in_sphere = (centres ** 2).sum(axis=1) <= radius ** 2
+    centers = origin + (ijk + 0.5) * cell          # (total, 3)
+    in_sphere = (centers ** 2).sum(axis=1) <= radius ** 2
     valid_ijk = ijk[in_sphere]
     n_valid   = len(valid_ijk)
 
@@ -248,8 +248,8 @@ def _affine_move(
       :class:`StructureGenerator` use where the transform is applied once
       before relaxation).
 
-    The centre of mass is pinned before and after the transform so the
-    structure stays centred.
+    The center of mass is pinned before and after the transform so the
+    structure stays centered.
 
     Parameters
     ----------
@@ -271,7 +271,7 @@ def _affine_move(
     """
     pts = np.array(positions, dtype=float)   # (n, 3)
     com = pts.mean(axis=0)
-    pts -= com                               # work around centre of mass
+    pts -= com                               # work around center of mass
 
     # ── Stretch / compress along a random axis ────────────────────────────
     axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
@@ -297,7 +297,7 @@ def _affine_move(
             for _ in range(len(positions))
         ])
 
-    # Restore centre of mass
+    # Restore center of mass
     pts += com
 
     return [tuple(row) for row in pts.tolist()]
@@ -519,7 +519,7 @@ def place_chain(
             d_biased = d + axis * chain_bias
             d_final  = d_biased / ||d_biased||
 
-        - 0.0 → no bias; behaviour identical to previous versions
+        - 0.0 → no bias; behavior identical to previous versions
         - 0.3 → moderate elongation; shape_aniso ≥ 0.5 rate rises from
                 ~40% to ~70% for n = 20 atoms
         - 1.0 → strong elongation; nearly rod-like for small n
@@ -663,11 +663,11 @@ def _angular_repulsion_gradient(
 ) -> np.ndarray:
     """Compute gradient of the angular repulsion potential.
 
-    For each atom *i* and each neighbour *j* within *cutoff*, the potential
+    For each atom *i* and each neighbor *j* within *cutoff*, the potential
 
         U_ij = 1 / (1 - cos θ_ij + ε)
 
-    penalises neighbours that are close in *direction* from *i*.
+    penalises neighbors that are close in *direction* from *i*.
     A small ε = 1e-6 prevents division by zero when two directions coincide.
 
     When the compiled C++ extension is available the inner double loop runs
@@ -696,7 +696,7 @@ def _angular_repulsion_gradient(
 
     mask_f = mask.astype(float)
     for i in range(n):
-        ni_dirs = uhat[i] * mask_f[i, :, np.newaxis]  # (n, 3) zero for non-neighbours
+        ni_dirs = uhat[i] * mask_f[i, :, np.newaxis]  # (n, 3) zero for non-neighbors
         ni_idx = np.where(mask[i])[0]
         for j in ni_idx:
             cos_vals = (ni_dirs[ni_idx] * ni_dirs[j]).sum(axis=1)  # (n_nb,)
@@ -720,11 +720,11 @@ def place_maxent(
     convergence_tol: float = 1e-3,
     seed: int | None = None,
 ) -> tuple[list[str], list[Vec3]]:
-    """Place atoms to maximise angular entropy subject to distance constraints.
+    """Place atoms to maximize angular entropy subject to distance constraints.
 
-    Implements constrained maximum-entropy placement: atoms are initialised
+    Implements constrained maximum-entropy placement: atoms are initialized
     inside *region* at random, then iteratively repositioned so that each
-    atom's neighbourhood directions become as uniformly distributed over the
+    atom's neighborhood directions become as uniformly distributed over the
     sphere as possible — the solution to
 
         max  S = −∫ p(Ω) ln p(Ω) dΩ
@@ -748,8 +748,8 @@ def place_maxent(
     - Per-atom trust-radius clamp: the step is uniformly rescaled so no
       atom moves more than *trust_radius* Å, preventing L-BFGS overshooting.
     - Soft restoring force: atoms that drift outside the initial region
-      radius are gently pulled back toward the centre of mass.
-    - Centre-of-mass pinning: the centre of mass is re-centred to the origin
+      radius are gently pulled back toward the center of mass.
+    - Centre-of-mass pinning: the center of mass is re-centered to the origin
       after each step so the whole structure does not drift.
 
     Parameters
@@ -769,7 +769,7 @@ def place_maxent(
         (default: 0.05).  Ignored when the C++ loop is active.
     maxent_cutoff_scale:
         Neighbour cutoff = this factor × median covalent sum (default: 2.5).
-        Larger values include more neighbours in the angular calculation.
+        Larger values include more neighbors in the angular calculation.
     trust_radius:
         Per-atom maximum displacement per step (Å, default: 0.5).  Used by
         the C++ L-BFGS loop; steepest-descent fallback uses unit-norm clip
@@ -803,7 +803,7 @@ def place_maxent(
     else:
         raise ValueError(f"Unknown region spec: {region!r}")
 
-    # ── Determine neighbour cutoff from covalent radii ───────────────────
+    # ── Determine neighbor cutoff from covalent radii ───────────────────
     # Cache radii once; used by both paths and by do_relax (Python fallback).
     radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
     pair_sums = sorted(

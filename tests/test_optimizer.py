@@ -645,7 +645,7 @@ class TestAllowCompositionMoves:
             f"{sorted(result.best.atoms)} != {initial_composition}"
         )
 
-    def test_disabled_still_optimises(self) -> None:
+    def test_disabled_still_optimizes(self) -> None:
         """Position-only optimisation should still return an OptimizationResult."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -753,7 +753,7 @@ class TestAllowDisplacements:
             err_msg="Positions changed despite allow_displacements=False",
         )
 
-    def test_disabled_still_optimises(self) -> None:
+    def test_disabled_still_optimizes(self) -> None:
         """Composition-only optimisation should still return an OptimizationResult."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")

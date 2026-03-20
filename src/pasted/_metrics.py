@@ -159,9 +159,9 @@ def compute_rdf_deviation(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
     dists = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
     rho = n / (4.0 / 3.0 * math.pi * r_bound**3)
     counts, edges = np.histogram(dists, bins=n_bins, range=(0.0, cutoff))
-    centres = (edges[:-1] + edges[1:]) / 2.0
+    centers = (edges[:-1] + edges[1:]) / 2.0
     bw = edges[1] - edges[0]
-    ideal = rho * 4.0 * math.pi * centres**2 * bw * n / 2.0
+    ideal = rho * 4.0 * math.pi * centers**2 * bw * n / 2.0
     mask = ideal > 0
     if not mask.any():
         return 0.0

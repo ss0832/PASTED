@@ -388,7 +388,7 @@ per-restart structures sorted by objective value (highest first).
 | Move | Probability | Description |
 |---|---|---|
 | Fragment coordinate | 50 % (or 25 % when affine moves enabled) | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
-| Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; centre of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch). |
+| Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; center of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch). |
 | Composition | 50 % | Parity-preserving element swap or replacement (see below) |
 
 **Parity-preserving composition move** — two paths:
@@ -467,7 +467,7 @@ into the hot-path functions:
 |---|---|---|
 | `tgrad_scratch` | `vector<vector<double>>` | `eval_angular` gradient buffers |
 | `ux_s / uy_s / uz_s / id_s` | `vector<double>` | per-atom unit-vector scratch (serial path) |
-| `nb_scratch` | `vector<vector<int>>` | neighbour list reused via `build_nb_inplace` |
+| `nb_scratch` | `vector<vector<int>>` | neighbor list reused via `build_nb_inplace` |
 
 `build_nb_inplace()` clears inner vectors without deallocating, then refills
 them — avoiding `~0.9 GB` of `nb` churn per structure at n=50 000.

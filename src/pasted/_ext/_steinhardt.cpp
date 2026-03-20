@@ -10,7 +10,7 @@
  *
  * Algorithm
  * ---------
- * For each atom i, iterate only over neighbours j (d_ij <= cutoff) instead
+ * For each atom i, iterate only over neighbors j (d_ij <= cutoff) instead
  * of the full N^2 pair matrix used by the dense Python/scipy path.
  *
  * Spherical harmonics: Condon-Shortley convention
@@ -31,8 +31,8 @@
  *
  * Complexity per structure
  * ------------------------
- *   O(n_bonds * l_max^2) where n_bonds = N * mean_neighbours.
- *   For N=2000, cutoff=4 A, ~30 neighbours/atom:
+ *   O(n_bonds * l_max^2) where n_bonds = N * mean_neighbors.
+ *   For N=2000, cutoff=4 A, ~30 neighbors/atom:
  *     n_bonds ~ 60 000  vs  N^2 = 4 000 000 in the dense Python path.
  */
 
@@ -249,7 +249,7 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
     std::vector<double> im_buf(static_cast<std::size_t>(n_l * lm1 * n), 0.0);
     std::vector<double> deg(static_cast<std::size_t>(n), 0.0);
 
-    // Build neighbour list once (thread-safe read-only after construction)
+    // Build neighbor list once (thread-safe read-only after construction)
     std::vector<std::vector<int>> nb_list(static_cast<std::size_t>(n));
     if (n < CELL_THRESHOLD) {
         const double cut2 = cutoff * cutoff;
@@ -351,7 +351,7 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
 PYBIND11_MODULE(_steinhardt_core, m) {
     m.doc() =
         "pasted._ext._steinhardt_core: sparse Steinhardt Q_l (C++17).\n"
-        "Uses an explicit neighbour list (FlatCellList for N>=64) to avoid\n"
+        "Uses an explicit neighbor list (FlatCellList for N>=64) to avoid\n"
         "the O(N^2) dense matrix built by the Python/scipy path.";
     m.def(
         "steinhardt_per_atom", &steinhardt_per_atom_cpp,
@@ -362,13 +362,13 @@ Compute per-atom Steinhardt Q_l for each l in l_values.
 Parameters
 ----------
 pts      : (n, 3) float64  – Cartesian coordinates (Angstrom)
-cutoff   : float           – neighbour distance cutoff (Angstrom)
+cutoff   : float           – neighbor distance cutoff (Angstrom)
 l_values : list[int]       – l indices (e.g. [4, 6, 8])
 
 Returns
 -------
 dict  mapping "Q{l}" -> (n,) float64 array of per-atom Q_l values.
-Atoms with no neighbours within cutoff are assigned Q_l = 0.
+Atoms with no neighbors within cutoff are assigned Q_l = 0.
         )"
     );
 }
