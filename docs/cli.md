@@ -57,7 +57,7 @@ pasted --n-atoms 12 --elements 6,7,8 --charge 0 --mult 1 \
 
 | Option | Description |
 |---|---|
-| `--mode {gas,chain,shell,maxent}` | Placement algorithm (default: `gas`) |
+| `--mode {gas,chain,shell,maxent}` | Placement algorithm (default: `gas`). `gas` and `maxent` require `--region`; `chain` and `shell` do not. |
 
 ### gas mode
 

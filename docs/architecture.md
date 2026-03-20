@@ -180,7 +180,14 @@ angular repulsion potential used by `place_maxent`.
 **`place_maxent_cpp(pts, radii, cov_scale, region_radius, ang_cutoff,
 maxent_steps, trust_radius=0.5, seed=-1)`** (added in v0.1.15) — runs the
 entire maxent gradient-descent loop in C++, replacing the Python
-steepest-descent loop in `place_maxent()`:
+steepest-descent loop in `place_maxent()`.
+
+> **`region_radius` vs `region` (Python API):** the C++ function takes a
+> plain float `region_radius` (the numeric radius in Å extracted from the
+> region string).  The public Python API uses the *string* form
+> `region="sphere:R"` or `region="box:L"`.  `_generator.py` parses the string
+> and passes the extracted float to the C++ layer — you never call
+> `place_maxent_cpp` directly.
 
 1. L-BFGS (m=7, Armijo backtracking) on the angular repulsion potential
 2. Per-atom trust-radius cap: step uniformly rescaled so no atom moves more

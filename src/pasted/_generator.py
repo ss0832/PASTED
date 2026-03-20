@@ -428,10 +428,14 @@ class StructureGenerator:
     mult:
         Spin multiplicity 2S+1.
     mode:
-        Placement mode: ``"gas"`` (default), ``"chain"``, or ``"shell"``.
+        Placement mode: ``"gas"`` (default), ``"chain"``, ``"shell"``, or
+        ``"maxent"``.
     region:
-        [gas] Region spec: ``"sphere:R"`` | ``"box:L"`` | ``"box:LX,LY,LZ"``.
-        Required when *mode="gas"*.
+        Bounding-region spec: ``"sphere:R"`` | ``"box:L"`` | ``"box:LX,LY,LZ"``.
+        **Required when** *mode* **is** ``"gas"`` **or** ``"maxent"``; ignored
+        for ``"chain"`` and ``"shell"`` (those modes use their own geometry
+        parameters such as *shell_radius* and *bond_range*).
+        Example: ``region="sphere:8"`` places atoms inside an 8 Å-radius sphere.
     branch_prob:
         [chain] Branching probability (default: 0.3).
     chain_persist:
@@ -593,7 +597,11 @@ class StructureGenerator:
                 f"mode must be 'gas', 'chain', 'shell', or 'maxent'; got {mode!r}"
             )
         if mode in ("gas", "maxent") and region is None:
-            raise ValueError("region is required when mode='gas' or mode='maxent'")
+            raise ValueError(
+                f"region is required when mode={mode!r}. "
+                "Pass e.g. region=\"sphere:8\" (radius 8 Å) or "
+                "region=\"box:10\" (10×10×10 Å box)."
+            )
 
         self.n_atoms = n_atoms
         self.charge = charge

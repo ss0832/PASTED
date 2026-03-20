@@ -55,12 +55,17 @@ pasted --n-atoms 10 --charge 0 --mult 1 \
 
 ### Placement modes
 
-| Flag | Description |
-|---|---|
-| `--mode gas` | Atoms placed uniformly at random inside a sphere or box |
-| `--mode chain` | Random-walk chain with branching and directional persistence |
-| `--mode shell` | Central atom surrounded by a coordination shell |
-| `--mode maxent` | Maximum-entropy placement — neighbors spread as uniformly as possible |
+| Flag | Description | `region` required? |
+|---|---|:---:|
+| `--mode gas` | Atoms placed uniformly at random inside a sphere or box | ✓ |
+| `--mode chain` | Random-walk chain with branching and directional persistence | — |
+| `--mode shell` | Central atom surrounded by a coordination shell | — |
+| `--mode maxent` | Maximum-entropy placement — neighbors spread as uniformly as possible | ✓ |
+
+> **`region` is required for `gas` and `maxent` modes.**  Use `--region sphere:R`
+> (radius R Å) or `--region box:L` (L×L×L Å cube).  The `chain` and `shell`
+> modes use their own geometry parameters (`--bond-range`, `--shell-radius`) and
+> ignore `region`.
 
 ### Generating elongated chain structures
 
@@ -102,9 +107,23 @@ pasted --n-atoms 8 --charge 0 --mult 1 \
        -o shell_fe.xyz
 ```
 
----
+### Maximum-entropy mode (`maxent`)
 
-## Python API
+`maxent` places atoms so that their angular distribution around each center is
+as uniform as possible.  Like `gas`, it requires a `region` spec:
+
+```bash
+pasted --n-atoms 12 --charge 0 --mult 1 \
+       --mode maxent --region sphere:6 \
+       --elements 6,7,8 --n-samples 20 --seed 42 \
+       -o maxent.xyz
+```
+
+> **Tip:** `maxent` is slower than `gas` or `chain` because it runs an
+> iterative angular-repulsion optimisation per structure.  For large N, the
+> C++ extension (`HAS_MAXENT_LOOP=True`) is strongly recommended.
+
+
 
 ### Functional API
 
@@ -170,6 +189,33 @@ if w:
     print(w[0].message)
     # "No structures passed the metric filters after 10 attempt(s) ..."
 ```
+
+### `maxent` mode
+
+`maxent` requires a `region` argument — the same `"sphere:R"` / `"box:L"` string
+used by `gas`:
+
+```python
+from pasted import generate
+
+result = generate(
+    n_atoms=12,
+    charge=0,
+    mult=1,
+    mode="maxent",
+    region="sphere:6",   # required for maxent, just like gas
+    elements="6,7,8",
+    n_samples=20,
+    seed=42,
+)
+for s in result:
+    print(s)
+```
+
+> **Note:** `chain` and `shell` do **not** accept a `region` argument — they
+> use `bond_range` / `shell_radius` to control geometry.  Passing `region` to
+> those modes has no effect and will raise a `TypeError`.  Only `gas` and
+> `maxent` require `region`.
 
 ### Class API
 
