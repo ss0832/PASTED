@@ -579,6 +579,7 @@ def compute_all_metrics(
 
     **C++ path** (``HAS_GRAPH = True``): all pair-enumeration uses a single
     ``FlatCellList`` built in C++, giving O(N*k) complexity throughout.
+    All computation is single-threaded (OpenMP removed in v0.2.3).
     ``scipy.spatial.distance.pdist`` / ``squareform`` are not called.
 
     **Pure-Python fallback** (``HAS_GRAPH = False``): :func:`compute_h_spatial`

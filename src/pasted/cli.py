@@ -19,7 +19,6 @@ from ._atoms import (
     validate_charge_mult,
 )
 from ._config import GeneratorConfig
-from ._ext import set_num_threads
 from ._generator import StructureGenerator, read_xyz
 from ._optimizer import StructureOptimizer, parse_objective_spec
 
@@ -270,19 +269,6 @@ examples
         ),
     )
     sg.add_argument("--seed", type=int, default=None)
-    sg.add_argument(
-        "--n-threads",
-        type=int,
-        default=1,
-        metavar="N",
-        help=(
-            "Number of OpenMP threads for C++ extensions (Linux only, "
-            "requires build with -fopenmp). "
-            "Default: 1 (single-threaded). "
-            "Set > 1 to enable parallelism on machines with many cores. "
-            "No effect when HAS_OPENMP is False."
-        ),
-    )
 
     xg = p.add_argument_group("metrics")
     xg.add_argument(
@@ -615,9 +601,6 @@ def _write_output(text: str, path: str | None) -> None:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-
-    # Apply OpenMP thread count before any computation (default=1)
-    set_num_threads(args.n_threads)
 
     if args.mode in ("gas", "maxent") and not args.region and not args.optimize:
         parser.error("--region is required for --mode gas")

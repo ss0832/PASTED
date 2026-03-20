@@ -33,6 +33,14 @@ Quick start
 
     pasted --n-atoms 12 --elements 1-30 --charge 0 --mult 1 \\
            --mode gas --region sphere:9 --n-samples 50 -o out.xyz
+
+Changes in v0.2.3
+-----------------
+Removed the OpenMP integration (``HAS_OPENMP``, ``set_num_threads``).
+Benchmarking showed that the thread-pool overhead in ``compute_all_metrics``
+produced a 1.4–2.5× performance regression compared to v0.1.17 across all
+practical structure sizes.  All computation is now single-threaded, which
+restores and slightly exceeds v0.1.17 metrics throughput.
 """
 
 import importlib.metadata
@@ -49,7 +57,6 @@ from ._atoms import (
     validate_charge_mult,
 )
 from ._config import GeneratorConfig
-from ._ext import HAS_OPENMP, set_num_threads
 from ._generator import GenerationResult, Structure, StructureGenerator, generate, read_xyz
 from ._io import format_xyz, parse_xyz
 from ._metrics import (
@@ -66,7 +73,7 @@ from ._placement import place_maxent
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "unknown"
+    __version__ = "0.2.3"
 
 __all__ = [
     # High-level API
@@ -100,9 +107,6 @@ __all__ = [
     "format_xyz",
     # Placement utilities
     "place_maxent",
-    # OpenMP / threading
-    "HAS_OPENMP",
-    "set_num_threads",
     # Package metadata
     "__version__",
 ]

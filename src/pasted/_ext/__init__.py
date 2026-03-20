@@ -18,9 +18,6 @@ HAS_MAXENT_LOOP : bool  -- True when _maxent_core full C++ L-BFGS loop is availa
                            (implies HAS_MAXENT; enables the fast place_maxent_cpp path)
 HAS_STEINHARDT  : bool  -- True when _steinhardt_core is available
 HAS_GRAPH       : bool  -- True when _graph_core is available
-HAS_OPENMP      : bool  -- True when the C++ extensions were compiled with -fopenmp
-                           (Linux only; False on all other platforms or when
-                           PASTED_DISABLE_OPENMP=1 was set at build time)
 
 relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
     Available when HAS_RELAX is True.
@@ -44,9 +41,7 @@ Memory notes (v0.2.1)
 ``_relax_core`` and ``_maxent_core`` were refactored in v0.2.1 to eliminate
 repeated heap allocation inside their hot L-BFGS loops.  Gradient scratch
 buffers and neighbour lists are now held as persistent members / outer-scope
-variables and reused across iterations.  This fixes OOM-kills on WSL at
-n ≥ 150 000 atoms with ≥ 8 OpenMP threads.
-
+variables and reused across iterations.
 
 graph_metrics_cpp(pts, radii, cov_scale, en_vals, cutoff)
     Available when HAS_GRAPH is True.
@@ -60,13 +55,18 @@ rdf_h_cpp(pts, cutoff, n_bins)
 
 Callers should check the relevant flag before calling and fall back to the
 pure-Python implementations in _placement.py / _metrics.py when False.
+
+Changes in v0.2.3
+-----------------
+Removed ``HAS_OPENMP`` and ``set_num_threads``.  Benchmarking showed that the
+OpenMP thread-pool overhead in ``compute_all_metrics`` outweighed the
+parallelism benefit for all practically relevant structure sizes (n < 30 000),
+causing a 1.4–2.5× regression versus v0.1.17.  All C++ extensions now run
+single-threaded; the ``libgomp`` dependency is dropped.
 """
 
 from __future__ import annotations
 
-import ctypes
-import os
-import sys
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -140,60 +140,6 @@ except ImportError:
     rdf_h_cpp:         Any = None  # type: ignore[no-redef]
     HAS_GRAPH = False
 
-# ---------------------------------------------------------------------------
-# HAS_OPENMP  -- runtime detection of OpenMP support
-# ---------------------------------------------------------------------------
-# True only on Linux when the extensions were compiled with -fopenmp AND
-# the omp runtime reports more than one thread available.
-# PASTED_DISABLE_OPENMP=1 also suppresses it at import time.
-
-def _detect_openmp() -> bool:
-    if sys.platform != "linux":
-        return False
-    if os.environ.get("PASTED_DISABLE_OPENMP", "0") == "1":
-        return False
-    if not HAS_RELAX:
-        return False
-    try:
-        libomp = ctypes.CDLL("libgomp.so.1", use_errno=True)
-        return bool(libomp.omp_get_max_threads() > 1)
-    except Exception:
-        pass
-    return False
-
-
-HAS_OPENMP: bool = _detect_openmp()
-
-
-def set_num_threads(n: int) -> None:
-    """Set the number of OpenMP threads used by all C++ extensions.
-
-    This is a no-op when :data:`HAS_OPENMP` is ``False``.
-
-    Parameters
-    ----------
-    n:
-        Number of threads.  ``0`` or negative values are silently ignored.
-        Equivalent to setting the ``OMP_NUM_THREADS`` environment variable
-        before import, but takes effect immediately at runtime.
-
-    Notes
-    -----
-    The change is global and affects all subsequent C++ extension calls in
-    the current process.  It does **not** override ``OMP_NUM_THREADS`` for
-    child processes.
-
-    Supported on Linux only (where OpenMP is available).
-    """
-    if not HAS_OPENMP or n <= 0:
-        return
-    try:
-        libomp = ctypes.CDLL("libgomp.so.1", use_errno=True)
-        libomp.omp_set_num_threads(ctypes.c_int(n))
-    except Exception:
-        pass
-
-
 __all__ = [
     "HAS_RELAX",
     "HAS_POISSON",
@@ -201,7 +147,6 @@ __all__ = [
     "HAS_MAXENT_LOOP",
     "HAS_STEINHARDT",
     "HAS_GRAPH",
-    "HAS_OPENMP",
     "relax_positions",
     "_poisson_disk_sphere_cpp",
     "_poisson_disk_box_cpp",
@@ -211,5 +156,4 @@ __all__ = [
     "graph_metrics_cpp",
     "moran_I_chi_cpp",
     "rdf_h_cpp",
-    "set_num_threads",
 ]
