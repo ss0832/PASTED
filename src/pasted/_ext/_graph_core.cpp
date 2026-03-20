@@ -1,5 +1,5 @@
 /**
- * pasted._ext._graph_core  (v0.1.14)
+ * pasted._ext._graph_core  (v0.2.9)
  * ====================================
  * C++17 O(N·k) implementations of five graph-based disorder metrics and two
  * distance-histogram metrics, all sharing a FlatCellList spatial index.
@@ -23,6 +23,10 @@
  * is structurally zero and carries no information.
  *
  * Dependencies: C++17 stdlib + pybind11 only.  No Eigen, no OpenMP.
+ * All computation is single-threaded.  The two-pass pair-collection +
+ * OpenMP scaffolding introduced in v0.2.3–v0.2.8 added heap allocation
+ * overhead without any parallelism benefit (OpenMP was not linked) and
+ * was reverted in v0.2.9 to the original single-pass lambda pattern.
  *
  * Python API
  * ----------
@@ -47,17 +51,12 @@
 #include <tuple>
 #include <vector>
 
-#ifdef _OPENMP
-#  include <omp.h>
-#endif
-
 namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 using I32Array = py::array_t<int32_t, py::array::c_style | py::array::forcecast>;
 
-static constexpr int    CELL_LIST_THRESHOLD     = 64;
-static constexpr int    PAIR_PARALLEL_THRESHOLD = 50000; // A+B guard: min pairs to use OpenMP
-static constexpr double PI                      = 3.14159265358979323846;
+static constexpr int    CELL_LIST_THRESHOLD = 64;
+static constexpr double PI                  = 3.14159265358979323846;
 
 // ===========================================================================
 // FlatCellList  (identical pattern to _relax_core / _steinhardt_core)
@@ -190,78 +189,27 @@ py::dict graph_metrics_cpp(
     // ring_fraction and charge_frustration.
     std::vector<std::vector<int>> bond_adj(n), graph_adj(n);
 
-    // Build pair list (single-threaded; FlatCellList linked-list is not thread-safe)
-    std::vector<std::pair<int,int>> pairs;
-    if (n >= CELL_LIST_THRESHOLD) {
-        pairs.reserve(static_cast<std::size_t>(n) * 4);
-        FlatCellList cl;
-        cl.build(pts, n, cell_size);
-        cl.for_each_pair(n, [&](int i, int j){ pairs.emplace_back(i, j); });
-    } else {
-        for (int i = 0; i < n-1; ++i)
-            for (int j = i+1; j < n; ++j)
-                pairs.emplace_back(i, j);
-    }
-
-    // Parallel adjacency-list construction via thread-local pair buckets
-#ifdef _OPENMP
-    const int nthreads = omp_get_max_threads();
-#else
-    const int nthreads = 1;
-#endif
-    // Each thread accumulates (i,j) pairs that pass the distance test.
-    std::vector<std::vector<std::pair<int,int>>> local_pairs(
-        static_cast<std::size_t>(nthreads));
-
-    const int npairs = static_cast<int>(pairs.size());
-    // A+B guard: only use OpenMP when enough threads AND enough pairs.
-#ifdef _OPENMP
-    if (nthreads > 2 && npairs >= PAIR_PARALLEL_THRESHOLD) {
-#pragma omp parallel for schedule(static)
-        for (int p = 0; p < npairs; ++p) {
-            const int tid = omp_get_thread_num();
-            const int i = pairs[static_cast<std::size_t>(p)].first;
-            const int j = pairs[static_cast<std::size_t>(p)].second;
-            const double dx = pts[3*i  ]-pts[3*j  ];
-            const double dy = pts[3*i+1]-pts[3*j+1];
-            const double dz = pts[3*i+2]-pts[3*j+2];
-            const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
-            if (d <= cutoff && d > 1e-6)
-                local_pairs[static_cast<std::size_t>(tid)].emplace_back(i, j);
-        }
-    } else {
-        for (int p = 0; p < npairs; ++p) {
-            const int i = pairs[static_cast<std::size_t>(p)].first;
-            const int j = pairs[static_cast<std::size_t>(p)].second;
-            const double dx = pts[3*i  ]-pts[3*j  ];
-            const double dy = pts[3*i+1]-pts[3*j+1];
-            const double dz = pts[3*i+2]-pts[3*j+2];
-            const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
-            if (d <= cutoff && d > 1e-6)
-                local_pairs[0].emplace_back(i, j);
-        }
-    }
-#else
-    for (int p = 0; p < npairs; ++p) {
-        const int tid = 0;
-        const int i = pairs[static_cast<std::size_t>(p)].first;
-        const int j = pairs[static_cast<std::size_t>(p)].second;
+    auto accumulate = [&](int i, int j) {
         const double dx = pts[3*i  ]-pts[3*j  ];
         const double dy = pts[3*i+1]-pts[3*j+1];
         const double dz = pts[3*i+2]-pts[3*j+2];
         const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
-        if (d <= cutoff && d > 1e-6)
-            local_pairs[static_cast<std::size_t>(tid)].emplace_back(i, j);
-    }
-#endif
-
-    // Merge into adj lists (serial; adj list writes are not thread-safe)
-    for (int t = 0; t < nthreads; ++t) {
-        for (const auto& kv : local_pairs[static_cast<std::size_t>(t)]) {
-            const int i = kv.first, j = kv.second;
-            bond_adj[i].push_back(j);  bond_adj[j].push_back(i);
-            graph_adj[i].push_back(j); graph_adj[j].push_back(i);
+        if (d <= cutoff && d > 1e-6) {
+            bond_adj[i].push_back(j);
+            bond_adj[j].push_back(i);
+            graph_adj[i].push_back(j);
+            graph_adj[j].push_back(i);
         }
+    };
+
+    if (n >= CELL_LIST_THRESHOLD) {
+        FlatCellList cl;
+        cl.build(pts, n, cell_size);
+        cl.for_each_pair(n, accumulate);
+    } else {
+        for (int i = 0; i < n-1; ++i)
+            for (int j = i+1; j < n; ++j)
+                accumulate(i, j);
     }
 
     // ring_fraction: Union-Find on bond graph
@@ -403,74 +351,29 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
 
     if (n < 2 || cutoff <= 0.0 || n_bins < 1) return result;
 
-    // Build pair list (serial; FlatCellList is not thread-safe)
-    std::vector<std::pair<int,int>> rdf_pairs;
-    if (n >= CELL_LIST_THRESHOLD) {
-        rdf_pairs.reserve(static_cast<std::size_t>(n) * 10);
-        FlatCellList cl;
-        cl.build(pts, n, cutoff);
-        cl.for_each_pair(n, [&](int i, int j){ rdf_pairs.emplace_back(i, j); });
-    } else {
-        for (int i = 0; i < n - 1; ++i)
-            for (int j = i + 1; j < n; ++j)
-                rdf_pairs.emplace_back(i, j);
-    }
-
-    // Parallel distance computation with thread-local distance vectors
+    // Enumerate pairs and compute distances in a single FlatCellList pass.
     const double cutoff2 = cutoff * cutoff;
-#ifdef _OPENMP
-    const int rdf_nthreads = omp_get_max_threads();
-#else
-    const int rdf_nthreads = 1;
-#endif
-    std::vector<std::vector<double>> tlocal_dists(
-        static_cast<std::size_t>(rdf_nthreads));
-    const int rdf_npairs = static_cast<int>(rdf_pairs.size());
-    // A+B guard: only use OpenMP when enough threads AND enough pairs.
-#ifdef _OPENMP
-    if (rdf_nthreads > 2 && rdf_npairs >= PAIR_PARALLEL_THRESHOLD) {
-#pragma omp parallel for schedule(static)
-        for (int p = 0; p < rdf_npairs; ++p) {
-            const int tid = omp_get_thread_num();
-            const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
-            const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
-            const double dx = pts[3*i  ] - pts[3*j  ];
-            const double dy = pts[3*i+1] - pts[3*j+1];
-            const double dz = pts[3*i+2] - pts[3*j+2];
-            const double d2 = dx*dx + dy*dy + dz*dz;
-            if (d2 <= cutoff2 && d2 > 1e-20)
-                tlocal_dists[static_cast<std::size_t>(tid)].push_back(std::sqrt(d2));
-        }
-    } else {
-        for (int p = 0; p < rdf_npairs; ++p) {
-            const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
-            const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
-            const double dx = pts[3*i  ] - pts[3*j  ];
-            const double dy = pts[3*i+1] - pts[3*j+1];
-            const double dz = pts[3*i+2] - pts[3*j+2];
-            const double d2 = dx*dx + dy*dy + dz*dz;
-            if (d2 <= cutoff2 && d2 > 1e-20)
-                tlocal_dists[0].push_back(std::sqrt(d2));
-        }
-    }
-#else
-    for (int p = 0; p < rdf_npairs; ++p) {
-        const int tid = 0;
-        const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
-        const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
+    std::vector<double> pair_dists;
+
+    auto collect = [&](int i, int j) {
         const double dx = pts[3*i  ] - pts[3*j  ];
         const double dy = pts[3*i+1] - pts[3*j+1];
         const double dz = pts[3*i+2] - pts[3*j+2];
         const double d2 = dx*dx + dy*dy + dz*dz;
         if (d2 <= cutoff2 && d2 > 1e-20)
-            tlocal_dists[static_cast<std::size_t>(tid)].push_back(std::sqrt(d2));
+            pair_dists.push_back(std::sqrt(d2));
+    };
+
+    if (n >= CELL_LIST_THRESHOLD) {
+        pair_dists.reserve(static_cast<std::size_t>(n) * 10);
+        FlatCellList cl;
+        cl.build(pts, n, cutoff);
+        cl.for_each_pair(n, collect);
+    } else {
+        for (int i = 0; i < n - 1; ++i)
+            for (int j = i + 1; j < n; ++j)
+                collect(i, j);
     }
-#endif
-    // Merge thread-local distance vectors
-    std::vector<double> pair_dists;
-    for (int t = 0; t < rdf_nthreads; ++t)
-        for (double v : tlocal_dists[static_cast<std::size_t>(t)])
-            pair_dists.push_back(v);
 
     if (pair_dists.empty()) return result;
 
@@ -589,9 +492,10 @@ double moran_I_chi_cpp(F64Array pts_in, F64Array en_in, double cutoff) {
 
 PYBIND11_MODULE(_graph_core, m) {
     m.doc() =
-        "pasted._ext._graph_core (v0.1.14)\n"
+        "pasted._ext._graph_core (v0.2.9)\n"
         "O(N*k) graph and distance-histogram metrics via FlatCellList.\n"
         "FlatCellList spatial index for N >= 64; O(N^2) full-pair for N < 64.\n"
+        "All computation is single-threaded (no OpenMP).\n"
         "bond_strain_rms is intentionally excluded (always 0 after relax).";
 
     m.def(

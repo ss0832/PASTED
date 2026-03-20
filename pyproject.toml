@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.2.8"
+version = "0.2.9"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 keywords = ["quantum chemistry", "structure generation", "fuzzing", "machine learning potentials"]
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -217,15 +217,26 @@ pair-distance histogram within *cutoff*, replacing the former O(N²)
 `scipy.spatial.distance.pdist` path.
 
 All metrics share the unified adjacency `d_ij ≤ cutoff`.
+All computation is **single-threaded** (no OpenMP dependency).
 
-Performance at N = 10 000 (v0.1.13 → v0.1.14):
+> **v0.2.9 performance fix:** v0.2.3 introduced a two-pass design —
+> `FlatCellList` candidates were buffered in an intermediate
+> `std::vector<std::pair<int,int>>` and then redistributed through
+> per-thread `local_pairs` buckets for a planned OpenMP parallel distance
+> test.  Because `setup.py` never passes `-fopenmp`, `_OPENMP` is never
+> defined at compile time, so `nthreads` was always `1` and the extra
+> allocations were pure overhead (~35% slower at N = 10,000).  v0.2.9
+> reverts to the original single-pass capturing-lambda pattern that writes
+> directly into the adjacency lists as pairs are yielded by `for_each_pair`.
 
-| Path | v0.1.13 | v0.1.14 | Speed-up |
-|---|:---:|:---:|:---:|
-| `pdist` + `squareform` (removed) | ~2 880 ms | — | — |
-| `graph_metrics_cpp` | ~4 ms | ~4 ms | — |
-| `rdf_h_cpp` (new) | — | ~2 ms | — |
-| **`compute_all_metrics` total** | **~2 880 ms** | **~194 ms** | **~15×** |
+Performance at N = 10 000 (v0.1.13 → v0.1.14 → v0.2.9):
+
+| Path | v0.1.13 | v0.1.14 | v0.2.3–v0.2.8 | v0.2.9 |
+|---|:---:|:---:|:---:|:---:|
+| `pdist` + `squareform` (removed) | ~2 880 ms | — | — | — |
+| `graph_metrics_cpp` | ~4 ms | ~4 ms | ~5–6 ms | ~4 ms |
+| `rdf_h_cpp` | — | ~2 ms | ~3 ms | ~2 ms |
+| **`compute_all_metrics` total** | **~2 880 ms** | **~194 ms** | **~260 ms** | **~200 ms** |
 
 ### `_maxent_core` — `angular_repulsion_gradient` and `place_maxent_cpp`
 
@@ -278,6 +289,13 @@ three-term recurrence with no scipy call in the hot loop.  The symmetry
 m = 0..l.  When absent, `_steinhardt_per_atom_sparse` provides the same
 O(N·k) complexity using `scipy.spatial.cKDTree` for neighbor enumeration
 and `np.bincount` for accumulation.
+
+All computation is **single-threaded** (no OpenMP dependency).  v0.2.3
+introduced a pre-built `std::vector<std::vector<int>> nb_list` so that the
+atom loop could carry a `#pragma omp parallel for` annotation — but without
+`-fopenmp` the pragma is a no-op, leaving only the extra neighbor-list
+allocation as overhead.  v0.2.9 restores the original single-pass lambda
+that writes `re_buf`/`im_buf` directly during neighbor traversal.
 
 | Path | N=2000 | Speed-up vs dense Python |
 |---|:---:|:---:|

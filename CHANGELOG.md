@@ -5,6 +5,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.9] — 2026-03-20
+
+### Fixed
+
+* **`_ext/_graph_core.cpp`: reverted two-pass pair-collection to the
+  original single-pass lambda pattern.**
+
+  In v0.2.3 the pair-enumeration loop in `graph_metrics_cpp` and `rdf_h_cpp`
+  was refactored into a two-pass design: the `FlatCellList` pass collected
+  candidate pairs into an intermediate `std::vector<std::pair<int,int>>`, and
+  a second pass applied the distance test and populated per-thread
+  `local_pairs` buckets — all wired up with `#ifdef _OPENMP` guards intended
+  for future parallelism.  Because OpenMP was never linked in the build
+  (`setup.py` carries no `-fopenmp` flag and `_OPENMP` is never defined),
+  the scaffolding compiled down to `nthreads = 1` with a single
+  `local_pairs[0]` bucket: the full cost of two heap allocations per
+  metric call and an extra `std::vector<std::vector<...>>` merge loop,
+  with zero parallelism benefit.  At large N this produced a measurable
+  regression (~35% slower at N = 10,000) relative to v0.1.x.
+
+  The fix restores the original pattern: a single capturing lambda passed
+  directly to `cl.for_each_pair` / `cl.for_each_neighbor`, which writes
+  distance-filtered edges into the adjacency lists in one pass with no
+  intermediate allocation.  The `PAIR_PARALLEL_THRESHOLD` constant and all
+  `#ifdef _OPENMP` blocks are removed.
+
+* **`_ext/_steinhardt.cpp`: reverted two-pass neighbor-list build to the
+  original single-pass lambda accumulation.**
+
+  The same v0.2.3 refactor introduced a pre-built `nb_list` (a
+  `std::vector<std::vector<int>>`) so that the subsequent atom loop could
+  be annotated with `#pragma omp parallel for`.  Without an OpenMP-enabled
+  compiler, the pragma is silently ignored and the neighbor-list allocation
+  becomes dead overhead — an extra O(N·k) heap allocation that precedes
+  every `steinhardt_per_atom` call with no benefit.
+
+  Restored to the v0.1.x pattern: a single `accumulate` lambda that
+  increments `deg[i]` and updates `re_buf`/`im_buf` directly as pairs are
+  yielded by `FlatCellList::for_each_neighbor` /
+  `for_each_neighbor_full`.  The `#ifdef _OPENMP` guard and
+  `#pragma omp parallel for` directive are removed entirely.
+
+### Documentation
+
+* **`src/pasted/_metrics.py` (`compute_all_metrics` docstring)**: updated
+  the C++ path description to reflect the v0.2.9 reversion.  Previously
+  stated "OpenMP removed in v0.2.3"; now explains that the dead two-pass
+  scaffolding was itself removed in v0.2.9, restoring v0.1.x performance.
+
+* **`_ext/_graph_core.cpp` file header**: updated version tag from
+  `v0.1.14` to `v0.2.9`; added a "Threading" paragraph describing the
+  reversion and why the intermediate design was problematic.
+
+* **`_ext/_steinhardt.cpp` file header**: added a "Threading" section
+  mirroring the explanation in `_graph_core.cpp`.
+
+### Changed
+
+* `pyproject.toml` and fallback `__version__` string bumped to `0.2.9`.
+
+---
+
 ## [0.2.8] — 2026-03-20
 
 ### Documentation
