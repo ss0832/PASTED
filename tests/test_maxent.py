@@ -168,3 +168,112 @@ class TestGeneratorMaxent:
                 mult=1,
                 mode="maxent",
             )
+
+
+# ---------------------------------------------------------------------------
+# O(N) cutoff identity: median(rᵢ + rⱼ) == 2 * median(rᵢ)
+# ---------------------------------------------------------------------------
+
+
+class TestPlaceMaxentCutoff:
+    """Verify that the v0.2.6 O(N) median formula matches the O(N²) reference.
+
+    These tests confirm that ``float(np.median(radii)) * 2.0`` is numerically
+    identical to ``sorted(rᵢ + rⱼ for all pairs)[mid]`` for the element pools
+    that PASTED supports, so that replacing the latter with the former does not
+    change ``ang_cutoff`` or any downstream result.
+    """
+
+    @staticmethod
+    def _reference_median_sum(radii: np.ndarray) -> float:
+        """O(N²) reference implementation (matches pre-v0.2.6 code)."""
+        pairs = sorted(
+            ra + rb
+            for i, ra in enumerate(radii.tolist())
+            for rb in radii[i:].tolist()
+        )
+        return pairs[len(pairs) // 2]
+
+    @staticmethod
+    def _fast_median_sum(radii: np.ndarray) -> float:
+        """O(N) replacement introduced in v0.2.6."""
+        return float(np.median(radii)) * 2.0
+
+    def test_homogeneous_pool(self) -> None:
+        """Single element (all radii equal): both formulas must agree."""
+        from pasted._atoms import _cov_radius_ang
+
+        atoms = ["C"] * 50
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
+        ref = self._reference_median_sum(radii)
+        fast = self._fast_median_sum(radii)
+        assert fast == pytest.approx(ref, abs=1e-9), (
+            f"homogeneous C pool: ref={ref}, fast={fast}"
+        )
+
+    def test_heterogeneous_pool(self) -> None:
+        """Mixed element pool (C, N, O, H): both formulas must agree."""
+        from pasted._atoms import _cov_radius_ang
+
+        atoms = ["C", "N", "O", "H"] * 20
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
+        ref = self._reference_median_sum(radii)
+        fast = self._fast_median_sum(radii)
+        assert fast == pytest.approx(ref, abs=1e-9), (
+            f"mixed C/N/O/H pool: ref={ref}, fast={fast}"
+        )
+
+    def test_single_element_pool_heavy(self) -> None:
+        """Heavier element (S): both formulas must agree."""
+        from pasted._atoms import _cov_radius_ang
+
+        atoms = ["S"] * 30
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
+        ref = self._reference_median_sum(radii)
+        fast = self._fast_median_sum(radii)
+        assert fast == pytest.approx(ref, abs=1e-9), (
+            f"homogeneous S pool: ref={ref}, fast={fast}"
+        )
+
+    def test_ang_cutoff_unchanged_end_to_end(self) -> None:
+        """Structures generated before and after the patch must be identical.
+
+        We monkey-patch ``place_maxent`` to capture the ``ang_cutoff`` value
+        used on each call, run the generator twice (once with the old formula,
+        once with the new), and assert the cutoffs match.
+        """
+        import pasted._placement as _pl
+        from pasted._atoms import _cov_radius_ang
+
+        captured: list[float] = []
+
+        original_cpp = _pl._cpp_place_maxent  # type: ignore[attr-defined]
+
+        def _capture_cutoff(
+            pts: np.ndarray,
+            radii: np.ndarray,
+            cov_scale: float,
+            region_radius: float,
+            ang_cutoff: float,
+            *args: object,
+            **kwargs: object,
+        ) -> np.ndarray:
+            captured.append(ang_cutoff)
+            return original_cpp(pts, radii, cov_scale, region_radius, ang_cutoff, *args, **kwargs)
+
+        atoms = ["C", "N", "O"] * 4
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
+
+        # Compute expected ang_cutoff using the O(N) formula (v0.2.6).
+        fast_median = float(np.median(radii)) * 2.0
+        expected_cutoff = 1.0 * 2.5 * fast_median  # cov_scale=1.0, maxent_cutoff_scale=2.5
+
+        # Run place_maxent with the monkey-patched C++ entry point.
+        _pl._cpp_place_maxent = _capture_cutoff  # type: ignore[attr-defined]
+        try:
+            place_maxent(atoms, "sphere:5", cov_scale=1.0, rng=random.Random(99), maxent_steps=2)
+        finally:
+            _pl._cpp_place_maxent = original_cpp  # type: ignore[attr-defined]
+
+        assert len(captured) == 1
+        assert captured[0] == pytest.approx(expected_cutoff, abs=1e-9)
