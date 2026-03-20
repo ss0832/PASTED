@@ -45,6 +45,10 @@
 #include <numeric>
 #include <vector>
 
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
 namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 
@@ -245,44 +249,66 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
     std::vector<double> im_buf(static_cast<std::size_t>(n_l * lm1 * n), 0.0);
     std::vector<double> deg(static_cast<std::size_t>(n), 0.0);
 
-    // Reusable per-thread P_lm table
-    std::vector<std::vector<double>> plm;
-
-    auto accumulate = [&](int i, int j) {
-        const double dxr = pts[i*3+0] - pts[j*3+0];
-        const double dyr = pts[i*3+1] - pts[j*3+1];
-        const double dzr = pts[i*3+2] - pts[j*3+2];
-        const double d   = std::sqrt(dxr*dxr + dyr*dyr + dzr*dzr);
-        if (d < 1e-10) return;  // coincident atoms
-        const double inv_d = 1.0 / d;
-        const double cos_t = dzr * inv_d;  // cos(theta)
-        const double sin_t = std::sqrt(std::max(0.0, 1.0 - cos_t*cos_t));
-        const double phi   = std::atan2(dyr, dxr);
-
-        deg[static_cast<std::size_t>(i)] += 1.0;
-        compute_plm(cos_t, sin_t, l_max, plm);
-
-        for (int li = 0; li < n_l; ++li) {
-            const int l = l_values[static_cast<std::size_t>(li)];
-            for (int m = 0; m <= l; ++m) {
-                const double Nlm_Plm =
-                    norms[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)] *
-                    plm[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)];
-                const double cos_mp = std::cos(m * phi);
-                const double sin_mp = std::sin(m * phi);
-                const std::size_t idx = static_cast<std::size_t>(li * lm1 * n + m * n + i);
-                re_buf[idx] += Nlm_Plm * cos_mp;
-                im_buf[idx] += Nlm_Plm * sin_mp;
-            }
-        }
-    };
-
+    // Build neighbour list once (thread-safe read-only after construction)
+    std::vector<std::vector<int>> nb_list(static_cast<std::size_t>(n));
     if (n < CELL_THRESHOLD) {
-        for_each_neighbor_full(pts, n, cutoff * cutoff, accumulate);
+        const double cut2 = cutoff * cutoff;
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j) {
+                if (i == j) continue;
+                const double dx = pts[i*3]-pts[j*3];
+                const double dy = pts[i*3+1]-pts[j*3+1];
+                const double dz = pts[i*3+2]-pts[j*3+2];
+                if (dx*dx+dy*dy+dz*dz <= cut2)
+                    nb_list[static_cast<std::size_t>(i)].push_back(j);
+            }
     } else {
         FlatCellList cl;
         cl.build(pts, n, cutoff);
-        cl.for_each_neighbor(pts, n, cutoff * cutoff, accumulate);
+        const double cut2 = cutoff * cutoff;
+        cl.for_each_neighbor(pts, n, cut2, [&](int i, int j){
+            nb_list[static_cast<std::size_t>(i)].push_back(j);
+            nb_list[static_cast<std::size_t>(j)].push_back(i);
+        });
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic,64)
+#endif
+    for (int i = 0; i < n; ++i) {
+        const auto& nbi = nb_list[static_cast<std::size_t>(i)];
+        // thread-local P_lm table
+        std::vector<std::vector<double>> plm_local;
+        double deg_i = static_cast<double>(nbi.size());
+        deg[static_cast<std::size_t>(i)] = deg_i;
+
+        for (int j : nbi) {
+            const double dxr = pts[i*3+0] - pts[j*3+0];
+            const double dyr = pts[i*3+1] - pts[j*3+1];
+            const double dzr = pts[i*3+2] - pts[j*3+2];
+            const double d   = std::sqrt(dxr*dxr + dyr*dyr + dzr*dzr);
+            if (d < 1e-10) continue;
+            const double inv_d = 1.0 / d;
+            const double cos_t = dzr * inv_d;
+            const double sin_t = std::sqrt(std::max(0.0, 1.0 - cos_t*cos_t));
+            const double phi   = std::atan2(dyr, dxr);
+
+            compute_plm(cos_t, sin_t, l_max, plm_local);
+
+            for (int li = 0; li < n_l; ++li) {
+                const int l = l_values[static_cast<std::size_t>(li)];
+                for (int m = 0; m <= l; ++m) {
+                    const double Nlm_Plm =
+                        norms[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)] *
+                        plm_local[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)];
+                    const double cos_mp = std::cos(m * phi);
+                    const double sin_mp = std::sin(m * phi);
+                    const std::size_t idx = static_cast<std::size_t>(li * lm1 * n + m * n + i);
+                    re_buf[idx] += Nlm_Plm * cos_mp;
+                    im_buf[idx] += Nlm_Plm * sin_mp;
+                }
+            }
+        }
     }
 
     // Build result dict

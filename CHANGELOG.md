@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-20
+
+### Added
+
+* **OpenMP parallelization for all four C++ extension modules.**
+
+  All inner-loop hotspots now use OpenMP when built with `-fopenmp`.
+  Parallelization strategy per module:
+
+  | Module | Strategy | Parallel region |
+  | --- | --- | --- |
+  | `_relax_core` | Pair list pre-built serially; gradient accumulation via thread-local buffers merged after parallel loop | `PenaltyEvaluator::evaluate` |
+  | `_steinhardt_core` | Neighbour list pre-built serially; per-atom spherical harmonic accumulation parallelized | outer atom loop in `steinhardt_per_atom_cpp` |
+  | `_graph_core` | Pair list pre-built serially; distance filtering and adjacency construction via thread-local pair buckets merged serially | `graph_metrics_cpp`, `rdf_h_cpp` |
+  | `_maxent_core` | Per-atom angular repulsion gradient with thread-local gradient buffers | `eval_angular` outer atom loop |
+
+  Parallelization is **Linux only**. OpenMP is enabled automatically at build
+  time when `-fopenmp` is accepted by the compiler (GCC or Clang + libomp)
+  and `PASTED_DISABLE_OPENMP=1` is not set. On macOS and Windows the
+  extensions build without OpenMP and run single-threaded as before.
+
+  To opt out on Linux::
+
+      PASTED_DISABLE_OPENMP=1 pip install -e .
+
+* **`pasted.HAS_OPENMP`** — runtime boolean flag. ``True`` when the C++
+  extensions were compiled with OpenMP and the runtime library is reachable.
+
+* **`pasted.set_num_threads(n)`** — set the number of OpenMP threads used by
+  all C++ extensions at runtime. Equivalent to ``OMP_NUM_THREADS`` but takes
+  effect immediately without restarting the process. A no-op when
+  ``HAS_OPENMP`` is ``False`` or ``n <= 0``.
+
+  ```python
+  import pasted
+
+  if pasted.HAS_OPENMP:
+      pasted.set_num_threads(4)
+  ```
+
+* **`--n-threads N` CLI option** — passes ``N`` to ``set_num_threads`` before
+  any computation begins.
+
+  ```
+  pasted --n-atoms 50000 --mode gas --region sphere:250 \
+      --charge 0 --mult 1 --n-threads 8 -o out.xyz
+  ```
+
+* **5 new tests** in `tests/test_placement.py` (`TestOpenMP`):
+  + `test_has_openmp_is_bool` — flag type check.
+  + `test_set_num_threads_noop_when_no_openmp` — no raise on any input.
+  + `test_set_num_threads_exported_from_pasted` — public API presence.
+  + `test_relax_single_thread_matches_multi_thread` — numerical parity
+    between 1 and 2 threads (atol 1e-6 Å).
+  + `test_metrics_consistent_across_thread_counts` — all 13 metrics agree
+    between 1 and 2 threads.
+
+### Changed
+
+* `setup.py` rewritten to auto-detect OpenMP on Linux via a compile probe
+  (`-fopenmp` test on a minimal C program). Detection result is reported at
+  build time. `PASTED_DISABLE_OPENMP=1` suppresses the probe.
+* `pyproject.toml`: version bumped to `0.2.0`. Added `[tool.mypy.overrides]`
+  for `pasted._ext` to suppress `no-redef` and `warn_unused_ignores` caused
+  by the `try/except ImportError` pattern used for optional C++ extensions.
+
+### Platform support
+
+| Platform | C++ extensions | OpenMP |
+| --- | --- | --- |
+| **Linux** (GCC ≥ 7 or Clang + libomp) | ✅ supported | ✅ automatic |
+| macOS | best-effort | ❌ not attempted |
+| Windows | best-effort | ❌ not attempted |
+
 ## [0.1.17] - 2026-03-19
 
 ### Added

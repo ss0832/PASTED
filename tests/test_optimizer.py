@@ -735,7 +735,6 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = result_gen[0]
 
-        import numpy as np
 
         initial_positions = [tuple(p) for p in initial.positions]
         opt = self._opt(
@@ -784,7 +783,6 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-        import numpy as np
 
         initial_positions = [tuple(p) for p in initial.positions]
         opt = StructureOptimizer(
@@ -817,7 +815,6 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-        import numpy as np
 
         initial_positions = [tuple(p) for p in initial.positions]
         opt = StructureOptimizer(

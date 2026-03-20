@@ -41,12 +41,13 @@ src/pasted/
 ├── _placement.py        Placement algorithms + relax_positions dispatcher
 ├── cli.py               argparse CLI entry point
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH flags; None fallbacks
-    ├── _relax.cpp       C++17: relax_positions with flat Cell List (N≥64)
-    ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
-    ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
-    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration,
-                                moran_I_chi, h_spatial, rdf_dev — all O(N·k)
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH /
+    │                    HAS_OPENMP flags; set_num_threads(); None fallbacks
+    ├── _relax.cpp       C++17 + OpenMP: relax_positions with flat Cell List (N≥64)
+    ├── _maxent.cpp      C++17 + OpenMP: angular_repulsion_gradient with Cell List (N≥64)
+    ├── _steinhardt.cpp  C++17 + OpenMP: Steinhardt Q_l with sparse neighbor list (N≥64)
+    └── _graph_core.cpp  C++17 + OpenMP: graph_lcc/cc, ring_fraction, charge_frustration,
+                                         moran_I_chi, h_spatial, rdf_dev — all O(N·k)
 ```
 
 ---
@@ -221,7 +222,55 @@ and `np.bincount` for accumulation.
 
 ---
 
-## Generation flow
+## OpenMP parallelization (v0.2.0+)
+
+All four C++ extension modules are parallelized with OpenMP on Linux when
+built with `-fopenmp`.  The build system detects availability automatically;
+`PASTED_DISABLE_OPENMP=1` opts out.
+
+**Platform support**
+
+| Platform | C++ extensions | OpenMP |
+|---|:---:|:---:|
+| Linux (GCC ≥ 7 or Clang + libomp) | ✅ | ✅ automatic |
+| macOS | best-effort | ❌ not attempted |
+| Windows | best-effort | ❌ not attempted |
+
+**Parallelization strategy**
+
+The `FlatCellList` linked-list traversal is inherently serial, so
+parallelization follows a *pair-list-then-parallel* pattern:
+
+1. Build the pair list (or neighbor list) serially in a single
+   `FlatCellList` pass — O(N·k) work, not the bottleneck.
+2. Distribute the resulting flat `vector<pair<int,int>>` over threads.
+3. Each thread owns a private gradient buffer (or distance / adjacency
+   buffer); results are merged into the shared output after the parallel
+   loop, avoiding false sharing and atomic instructions.
+
+This pattern delivers linear speedup with thread count for large N where
+the pair-list step is negligible compared to the per-pair work.
+
+**Runtime thread control**
+
+```python
+import pasted
+
+print(pasted.HAS_OPENMP)        # True on Linux with -fopenmp build
+pasted.set_num_threads(4)       # use 4 threads for all subsequent calls
+```
+
+CLI equivalent::
+
+    pasted --n-atoms 50000 --mode gas --region sphere:250 \
+        --charge 0 --mult 1 --n-threads 4 -o out.xyz
+
+`OMP_NUM_THREADS` is also respected as the standard OpenMP environment
+variable.  `set_num_threads()` takes precedence over `OMP_NUM_THREADS`
+when called after import.
+
+---
+
 
 `StructureGenerator.stream()` is the single implementation of the generation
 loop.  It yields each passing structure immediately, enabling incremental

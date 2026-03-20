@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pasted"
-version = "0.1.17"
+version = "0.2.0"
 description = "Pointless Atom STructure with Entropy Diagnostics — structure fuzzer for QC/ML-potential codes"
 readme = "README.md"
 license = "MIT"
@@ -86,9 +86,15 @@ ignore_missing_imports = true
 module = ["pasted._metrics"]
 warn_unused_ignores = false
 
-# ---------------------------------------------------------------------------
-# pytest
-# ---------------------------------------------------------------------------
+# _ext/__init__.py uses try/except ImportError blocks that reassign HAS_* names
+# and type: ignore comments that mypy flags as unused when the .so is present.
+# Suppress no-redef and warn_unused_ignores for that file only.
+[[tool.mypy.overrides]]
+module = ["pasted._ext"]
+warn_unused_ignores = false
+disable_error_code = ["no-redef"]
+
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --import-mode=importlib"

@@ -8,10 +8,11 @@ import random
 import numpy as np
 import pytest
 
+import pasted
 from pasted import _ext
 from pasted._atoms import cov_radius_ang
 from pasted._ext import HAS_RELAX
-from pasted._metrics import compute_shape_anisotropy
+from pasted._metrics import compute_all_metrics, compute_shape_anisotropy
 from pasted._placement import (
     add_hydrogen,
     place_chain,
@@ -403,3 +404,68 @@ class TestAddHydrogen:
         original = list(atoms)
         add_hydrogen(atoms, random.Random(0))
         assert atoms == original
+
+
+# ---------------------------------------------------------------------------
+# OpenMP tests
+# ---------------------------------------------------------------------------
+
+
+class TestOpenMP:
+    """Tests for OpenMP parallelization (pasted._ext.HAS_OPENMP, set_num_threads)."""
+
+    def test_has_openmp_is_bool(self) -> None:
+        assert isinstance(_ext.HAS_OPENMP, bool)
+
+    def test_set_num_threads_noop_when_no_openmp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """set_num_threads must not raise regardless of HAS_OPENMP value."""
+        _ext.set_num_threads(1)
+        _ext.set_num_threads(0)   # zero: silently ignored
+        _ext.set_num_threads(-1)  # negative: silently ignored
+
+    def test_set_num_threads_exported_from_pasted(self) -> None:
+        assert hasattr(pasted, "set_num_threads")
+        assert hasattr(pasted, "HAS_OPENMP")
+
+    def test_relax_single_thread_matches_multi_thread(self) -> None:
+        """relax_positions must return the same result for n_threads=1 and n_threads=2."""
+        if not HAS_RELAX:
+            pytest.skip("_relax_core not available")
+
+        rng = random.Random(7)
+        atoms = ["C", "N", "O", "H"] * 25  # 100 atoms
+        _, positions = place_gas(atoms, "sphere:8", rng)
+
+        _ext.set_num_threads(1)
+        pos1, conv1 = relax_positions(atoms, positions, 1.0, 500, seed=42)
+
+        _ext.set_num_threads(2)
+        pos2, conv2 = relax_positions(atoms, positions, 1.0, 500, seed=42)
+
+        _ext.set_num_threads(0)  # reset to default
+
+        assert conv1 == conv2
+        arr1 = np.array(pos1)
+        arr2 = np.array(pos2)
+        np.testing.assert_allclose(
+            arr1, arr2, atol=1e-6,
+            err_msg="relax_positions differs between 1 and 2 threads",
+        )
+
+    def test_metrics_consistent_across_thread_counts(self) -> None:
+        """compute_all_metrics must return identical values for 1 and 2 threads."""
+        rng = random.Random(13)
+        atoms = ["C", "N", "O"] * 20  # 60 atoms
+        _, positions = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, rng)
+
+        _ext.set_num_threads(1)
+        m1 = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 3.0, 1.0)
+
+        _ext.set_num_threads(2)
+        m2 = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 3.0, 1.0)
+
+        _ext.set_num_threads(0)  # reset to default
+
+        for key in m1:
+            assert abs(m1[key] - m2[key]) < 1e-6, \
+                f"metric {key!r} differs: {m1[key]} vs {m2[key]}"

@@ -48,6 +48,7 @@ from ._atoms import (
     pauling_electronegativity,
     validate_charge_mult,
 )
+from ._ext import HAS_OPENMP, set_num_threads
 from ._generator import GenerationResult, Structure, StructureGenerator, generate, read_xyz
 from ._io import format_xyz, parse_xyz
 from ._metrics import (
@@ -97,6 +98,9 @@ __all__ = [
     "format_xyz",
     # Placement utilities
     "place_maxent",
+    # OpenMP / threading
+    "HAS_OPENMP",
+    "set_num_threads",
     # Package metadata
     "__version__",
 ]

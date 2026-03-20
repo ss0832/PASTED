@@ -518,3 +518,50 @@ np.testing.assert_allclose(
 > cannot both be set — at least one move type must be enabled.  Attempting
 > to do so raises a `ValueError`.
 
+---
+
+## OpenMP parallelization (Linux only)
+
+When PASTED is installed on Linux with a GCC or Clang toolchain, the C++
+extensions are compiled with `-fopenmp` automatically.  All four inner-loop
+modules (`_relax_core`, `_steinhardt_core`, `_graph_core`, `_maxent_core`)
+benefit from parallelization.
+
+### Checking availability
+
+```python
+import pasted
+
+print(pasted.HAS_OPENMP)   # True on a -fopenmp build, False otherwise
+```
+
+### Setting the thread count at runtime
+
+```python
+import pasted
+
+pasted.set_num_threads(4)  # use 4 threads for all subsequent calls
+```
+
+`set_num_threads` is a no-op when `HAS_OPENMP` is `False`, so it is safe to
+call unconditionally.  The standard `OMP_NUM_THREADS` environment variable is
+also respected; `set_num_threads` overrides it when called after import.
+
+### CLI
+
+```
+pasted --n-atoms 50000 --mode gas --region sphere:250 \
+    --charge 0 --mult 1 --n-threads 4 -o out.xyz
+```
+
+### Opting out
+
+To build without OpenMP (e.g. for reproducibility testing):
+
+```
+PASTED_DISABLE_OPENMP=1 pip install -e .
+```
+
+> **Platform note**: OpenMP is supported on Linux only.  On macOS and Windows
+> the extensions build without `-fopenmp` regardless of toolchain, and
+> `HAS_OPENMP` will be `False`.
