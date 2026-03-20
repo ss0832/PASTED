@@ -792,24 +792,20 @@ def place_maxent(
 
     Implementation notes
     --------------------
-    **O(N) cutoff computation (v0.2.6):**
-    Prior to v0.2.6 the angular-repulsion neighbor cutoff was derived from the
-    median of all N*(N+1)/2 pairwise covalent-radius sums, computed by building
-    the full generator and sorting it — O(N² log N) time and O(N²) memory.
-    For large structures this dominated total runtime (e.g., ~88% of wall time
-    at N=2,000 with ``maxent_steps=5``).
-
-    The identity ``median(rᵢ + rⱼ) = 2 · median(rᵢ)`` holds whenever the
-    element distribution is unimodal and symmetric about its median, which is
-    true for all built-in element pools.  The replacement computation
+    **O(N) cutoff computation:**
+    The angular-repulsion neighbor cutoff is derived from the median covalent
+    radius of the element pool using the identity
+    ``median(rᵢ + rⱼ) = 2 · median(rᵢ)``, which holds for all built-in element
+    pools.  This allows the cutoff to be computed in O(N) via a single
+    ``numpy.median`` call over the per-atom radii array rather than enumerating
+    all N*(N+1)/2 pairwise sums:
 
     .. code-block:: python
 
         median_sum = float(np.median(radii)) * 2.0
 
-    is O(N) and produces an identical ``ang_cutoff`` value for all tested
-    element pools (C, N, O, H, S, …), yielding wall-time reductions of
-    1.6× at N=100, 1.9× at N=1,000, 3.8× at N=5,000, and 4.5× at N=10,000.
+    The resulting ``ang_cutoff`` value is numerically identical to the
+    pairwise-median approach for all tested element pools (C, N, O, H, S, …).
     """
     # ── Initial random placement ─────────────────────────────────────────
     _, positions = place_gas(atoms, region, rng)

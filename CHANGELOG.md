@@ -5,6 +5,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.8] — 2026-03-20
+
+### Documentation
+
+* **`docs/quickstart.md`: separated Python API and CLI into independent
+  top-level sections.**
+
+  The previous `## CLI` section contained `### Functional API`,
+  `### Class API`, `### Streaming output`, and other Python API subsections
+  as children, making the document difficult to navigate for readers who
+  wanted either the API guide or the CLI guide specifically.
+
+  The guide now has two distinct top-level sections:
+  - `## Python API` — functional API, class API, `maxent` mode, file I/O,
+    `n_success`, streaming, and metrics access.
+  - `## CLI` — placement-mode examples, filtering, shell mode, and `maxent`
+    CLI usage, with a link to `cli.md` for the complete option reference.
+
+  All existing content is preserved; only the section structure changed.
+
+* **`src/pasted/_placement.py` (`place_maxent` docstring): removed
+  version-specific history from *Implementation notes*.**
+
+  The "O(N) cutoff computation (v0.2.6)" paragraph described the previous
+  O(N² log N) algorithm and the migration story.  Version history belongs in
+  `CHANGELOG.md` and `docs/architecture.md`, not in a function's API
+  docstring.  The section now documents *what* the computation does (the
+  `median(rᵢ + rⱼ) = 2·median(rᵢ)` identity and the O(N) derivation)
+  without reference to prior versions.
+
+* **`src/pasted/__init__.py` module docstring: removed `Changes in v0.2.3`
+  block; expanded *Quick start* section.**
+
+  Version-history prose belongs in `CHANGELOG.md`.  The module docstring
+  now serves purely as a quick-reference guide covering the functional API,
+  class API, streaming output, optimizer, `GeneratorConfig`, and CLI — each
+  with a minimal runnable example.
+
+### Changed
+
+* `pyproject.toml` and fallback `__version__` string bumped to `0.2.8`.
+
+---
+
 ## [0.2.7] — 2026-03-20
 
 ### Fixed

@@ -3,44 +3,81 @@ PASTED — Pointless Atom STructure with Entropy Diagnostics
 ==========================================================
 A structure fuzzer for quantum-chemistry and machine-learning potential codes.
 
+PASTED generates random atomic clusters with configurable disorder metrics and
+feeds them to QC/ML engines to expose edge-case failures.
+
 Quick start
 -----------
-**Class API**::
+**Functional API** — one call to get a list of structures::
 
-    from pasted import StructureGenerator
+    from pasted import generate
 
-    gen = StructureGenerator(
+    result = generate(
         n_atoms=12, charge=0, mult=1,
         mode="gas", region="sphere:9",
         elements="1-30", n_samples=50, seed=42,
     )
-    structures = gen.generate()
-    for s in structures:
-        print(s)               # Structure(n=14, comp='C2H8N2O2', mode='gas', H_total=2.341)
-        print(s.to_xyz())      # extended-XYZ string
+    for s in result:
+        print(s)            # Structure(n=14, comp='C2H8N2O2', mode='gas', H_total=2.341)
+        print(s.to_xyz())   # extended-XYZ string
 
-**Functional API**::
+**Class API** — more control over generation::
 
-    from pasted import generate
+    from pasted import StructureGenerator
 
-    structures = generate(
-        n_atoms=10, charge=0, mult=1,
+    gen = StructureGenerator(
+        n_atoms=15, charge=0, mult=1,
         mode="chain", elements="6,7,8",
-        n_samples=20, seed=0,
+        n_success=5,       # stop after 5 passing structures
+        n_samples=200,
+        filters=["H_total:2.0:-"],
+        seed=0,
     )
+    result = gen.generate()
+    print(result.summary())   # passed=5  attempted=73  rejected_filter=68
+
+**Streaming output** — write each result immediately::
+
+    for s in gen.stream():
+        s.write_xyz("out.xyz")   # appended on each pass
+
+**Optimizer** — maximize a disorder objective::
+
+    from pasted import StructureOptimizer
+
+    opt = StructureOptimizer(
+        n_atoms=12, charge=0, mult=1,
+        elements="6,7,8,15,16",
+        objective={"H_total": 1.0, "Q6": -2.0},
+        method="annealing",
+        max_steps=5000,
+        n_restarts=4,
+        seed=42,
+    )
+    result = opt.run()
+    print(result.best)           # highest-scoring structure
+    print(result.summary())      # restarts=4  best_f=…  method='annealing'
+
+**Immutable config** — type-safe, hashable, one-field override::
+
+    import dataclasses
+    from pasted import GeneratorConfig, StructureGenerator
+
+    cfg = GeneratorConfig(
+        n_atoms=20, charge=0, mult=1,
+        mode="gas", region="sphere:10",
+        elements="6,7,8", n_samples=100, seed=42,
+    )
+    result1 = StructureGenerator(cfg).generate()
+    result2 = StructureGenerator(dataclasses.replace(cfg, seed=99)).generate()
 
 **CLI**::
 
     pasted --n-atoms 12 --elements 1-30 --charge 0 --mult 1 \\
            --mode gas --region sphere:9 --n-samples 50 -o out.xyz
 
-Changes in v0.2.3
------------------
-Removed the OpenMP integration (``HAS_OPENMP``, ``set_num_threads``).
-Benchmarking showed that the thread-pool overhead in ``compute_all_metrics``
-produced a 1.4–2.5× performance regression compared to v0.1.17 across all
-practical structure sizes.  All computation is now single-threaded, which
-restores and slightly exceeds v0.1.17 metrics throughput.
+See ``docs/quickstart.md`` for the full guide; ``docs/cli.md`` for all
+command-line options.
 """
 
 import importlib.metadata
@@ -73,7 +110,7 @@ from ._placement import place_maxent
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.2.7"
+    __version__ = "0.2.8"
 
 __all__ = [
     # High-level API
