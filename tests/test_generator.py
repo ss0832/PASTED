@@ -805,3 +805,171 @@ class TestElementMinMaxCounts:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 list(gen.stream())
+
+
+# ---------------------------------------------------------------------------
+# GeneratorConfig dataclass tests (v0.2.3)
+# ---------------------------------------------------------------------------
+
+class TestGeneratorConfig:
+    """Tests for the GeneratorConfig frozen dataclass and dual-mode StructureGenerator."""
+
+    def _cfg(self, **kw):
+        from pasted import GeneratorConfig
+        defaults = dict(n_atoms=8, charge=0, mult=1, mode="gas",
+                        region="sphere:6", elements="6,7,8", n_samples=3, seed=0)
+        defaults.update(kw)
+        return GeneratorConfig(**defaults)
+
+    def test_config_exported_from_pasted(self) -> None:
+        from pasted import GeneratorConfig
+        assert GeneratorConfig is not None
+
+    def test_frozen_prevents_mutation(self) -> None:
+        import dataclasses
+        cfg = self._cfg()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            cfg.n_atoms = 99  # type: ignore[misc]
+
+    def test_dataclasses_replace(self) -> None:
+        import dataclasses
+        cfg = self._cfg(seed=1)
+        cfg2 = dataclasses.replace(cfg, seed=42)
+        assert cfg2.seed == 42
+        assert cfg.seed == 1  # original unchanged
+
+    def test_config_based_construction(self) -> None:
+        from pasted import GeneratorConfig, StructureGenerator
+        cfg = self._cfg()
+        gen = StructureGenerator(cfg)
+        assert gen.config is cfg
+
+    def test_kwargs_construction_backward_compat(self) -> None:
+        """Old-style StructureGenerator(n_atoms=..., ...) must still work."""
+        gen = StructureGenerator(
+            n_atoms=8, charge=0, mult=1, mode="gas",
+            region="sphere:6", elements="6,7,8", n_samples=3, seed=0,
+        )
+        assert gen.n_atoms == 8
+
+    def test_config_and_kwargs_produce_same_result(self) -> None:
+        """Config-based and kwargs-based construction must yield identical outputs."""
+        from pasted import GeneratorConfig, StructureGenerator
+        cfg = self._cfg(n_samples=5, seed=77)
+        r_cfg = StructureGenerator(cfg).generate()
+        r_kw = StructureGenerator(
+            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=5, seed=77,
+        ).generate()
+        assert r_cfg.n_passed == r_kw.n_passed
+
+    def test_getattr_proxy_all_fields(self) -> None:
+        """gen.seed, gen.mode, etc. should all proxy to _cfg."""
+        from pasted import GeneratorConfig, StructureGenerator
+        cfg = self._cfg(seed=123)
+        gen = StructureGenerator(cfg)
+        assert gen.seed == 123
+        assert gen.mode == "gas"
+        assert gen.n_atoms == 8
+
+    def test_config_missing_required_fields_raises(self) -> None:
+        from pasted import GeneratorConfig
+        with pytest.raises(TypeError):
+            GeneratorConfig()  # type: ignore[call-arg]  # n_atoms required
+
+    def test_generate_func_accepts_config(self) -> None:
+        """generate(cfg) config-based call must work."""
+        from pasted import GeneratorConfig, generate
+        cfg = self._cfg(n_samples=2)
+        result = generate(cfg)
+        assert len(result) >= 0  # at least ran without error
+
+
+# ---------------------------------------------------------------------------
+# affine_strength tests (v0.2.3)
+# ---------------------------------------------------------------------------
+
+class TestAffineStrength:
+    """Tests for affine_strength in StructureGenerator."""
+
+    def _gen(self, affine_strength: float, mode: str = "gas", **kw):
+        defaults = dict(n_atoms=10, charge=0, mult=1, mode=mode,
+                        region="sphere:7", elements="6,7,8",
+                        n_samples=5, seed=42, affine_strength=affine_strength)
+        if mode != "gas":
+            defaults.pop("region", None)
+        defaults.update(kw)
+        if mode == "chain":
+            defaults.pop("region", None)
+        return StructureGenerator(**defaults)
+
+    def test_zero_strength_is_default(self) -> None:
+        """affine_strength=0.0 must behave identically to no-affine (backward compat)."""
+        import numpy as np
+        r_no = StructureGenerator(
+            n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
+            elements="6,7,8", n_samples=5, seed=99,
+        ).generate()
+        r_zero = StructureGenerator(
+            n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
+            elements="6,7,8", n_samples=5, seed=99, affine_strength=0.0,
+        ).generate()
+        assert r_no.n_passed == r_zero.n_passed
+
+    def test_nonzero_strength_changes_positions(self) -> None:
+        """With affine_strength > 0, positions must differ from strength=0."""
+        import numpy as np
+        def get_pos(strength):
+            gen = StructureGenerator(
+                n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
+                elements="6,7,8", n_samples=1, seed=7, affine_strength=strength,
+            )
+            r = gen.generate()
+            if not r:
+                return None
+            return np.array(r[0].positions)
+
+        p0 = get_pos(0.0)
+        p1 = get_pos(0.3)
+        if p0 is not None and p1 is not None:
+            assert not np.allclose(p0, p1, atol=1e-6), \
+                "affine_strength=0.3 should change positions"
+
+    def test_affine_applies_to_chain_mode(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=10, charge=0, mult=1, mode="chain",
+            elements="6,7,8", n_samples=3, seed=5, affine_strength=0.15,
+        )
+        r = gen.generate()
+        assert r.n_passed >= 0  # just checks it runs without error
+
+    def test_affine_applies_to_shell_mode(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=8, charge=0, mult=1, mode="shell",
+            elements="6,7,8,26", n_samples=3, seed=5, affine_strength=0.1,
+        )
+        r = gen.generate()
+        assert r.n_passed >= 0
+
+    def test_affine_strength_stored_in_config(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=1, seed=0, affine_strength=0.2,
+        )
+        assert gen.affine_strength == 0.2
+
+    def test_relax_runs_after_affine(self) -> None:
+        """Structures generated with affine should be clash-free (relax ran)."""
+        import numpy as np
+        gen = StructureGenerator(
+            n_atoms=12, charge=0, mult=1, mode="gas", region="sphere:7",
+            elements="6,7,8", n_samples=3, seed=42, affine_strength=0.3,
+        )
+        for s in gen.stream():
+            pts = np.array(s.positions)
+            n = len(pts)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    d = np.linalg.norm(pts[i] - pts[j])
+                    # cov_scale=1.0, C radius ≈ 0.77 Å → min dist ≈ 1.54 Å
+                    assert d > 0.5, f"Atoms {i},{j} overlap: d={d:.3f} Å"

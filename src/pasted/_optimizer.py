@@ -68,7 +68,7 @@ from ._ext import relax_positions as _cpp_relax_positions
 from ._generator import Structure, StructureGenerator
 from ._io import _fmt
 from ._metrics import compute_all_metrics, compute_steinhardt_per_atom
-from ._placement import Vec3, place_gas, relax_positions
+from ._placement import Vec3, _affine_move, place_gas, relax_positions
 
 # ---------------------------------------------------------------------------
 # Public type alias
@@ -261,78 +261,6 @@ def _fragment_move(
             z + rng.uniform(-move_step, move_step),
         )
     return new_pos
-
-
-def _affine_move(
-    positions: list[Vec3],
-    move_step: float,
-    affine_strength: float,
-    rng: random.Random,
-) -> list[Vec3]:
-    """Apply a random affine transformation to all atom positions.
-
-    The transformation is a composition of:
-
-    * **Stretch / compress** along one random axis — scale factor drawn from
-      ``Uniform(1 − s, 1 + s)`` where ``s = affine_strength``.
-    * **Shear** — a small off-diagonal component drawn from
-      ``Uniform(-s/2, s/2)`` along a randomly chosen axis pair.
-    * **Global translation** jitter — each coordinate nudged by
-      ``Uniform(-move_step/4, move_step/4)`` to break symmetry.
-
-    The centre of mass is pinned before and after the transform so the
-    structure stays centred; no atom is moved outside the original bounding
-    sphere by more than ``affine_strength × max_radius``.
-
-    Parameters
-    ----------
-    positions:
-        Current atom positions.
-    move_step:
-        Maximum per-atom translation jitter added after the affine transform
-        (controls fine-grain disorder, consistent with :func:`_fragment_move`).
-    affine_strength:
-        Dimensionless strength ∈ (0, 1).  Typical values: 0.05–0.3.
-        At 0.1 the structure is stretched/compressed by up to 10%.
-    rng:
-        Seeded random-number generator.
-
-    Returns
-    -------
-    list[Vec3]
-        Transformed positions (same length as input).
-    """
-    pts = np.array(positions, dtype=float)   # (n, 3)
-    com = pts.mean(axis=0)
-    pts -= com                               # work around centre of mass
-
-    # ── Stretch / compress along a random axis ────────────────────────────
-    axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
-    scale = 1.0 + rng.uniform(-affine_strength, affine_strength)
-    A = np.eye(3)
-    A[axis, axis] = scale
-
-    # ── Random shear ──────────────────────────────────────────────────────
-    axes = [0, 1, 2]
-    axes.pop(axis)
-    a1, a2 = axes
-    shear = rng.uniform(-affine_strength * 0.5, affine_strength * 0.5)
-    A[a1, a2] += shear                       # shear in one direction
-
-    # Apply affine transform
-    pts = pts @ A.T                          # (n, 3)
-
-    # ── Small per-atom jitter (optional fine-grain noise) ─────────────────
-    jitter_scale = move_step * 0.25
-    pts += np.array([
-        [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
-        for _ in range(len(positions))
-    ])
-
-    # Restore centre of mass
-    pts += com
-
-    return [tuple(row) for row in pts.tolist()]
 
 
 def _composition_move(

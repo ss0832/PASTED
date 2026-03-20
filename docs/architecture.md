@@ -34,16 +34,18 @@ as long as the public API stays the same.
 src/pasted/
 ├── __init__.py          Public API exports and package docstring
 ├── _atoms.py            Element data, covalent radii, pool/filter parsing
+├── _config.py           GeneratorConfig frozen dataclass (all generator params)
 ├── _generator.py        StructureGenerator class and generate() function
 ├── _io.py               XYZ serialization (format_xyz)
 ├── _metrics.py          All disorder metrics: entropy, RDF, Steinhardt, graph
 ├── _optimizer.py        StructureOptimizer — basin-hopping on existing structures
-├── _placement.py        Placement algorithms + relax_positions dispatcher
+├── _placement.py        Placement algorithms + relax_positions + _affine_move
 ├── cli.py               argparse CLI entry point
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH /
+    ├── __init__.py      HAS_RELAX / HAS_POISSON / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH /
     │                    HAS_OPENMP flags; set_num_threads(); None fallbacks
-    ├── _relax.cpp       C++17 + OpenMP: relax_positions with flat Cell List (N≥64)
+    ├── _relax.cpp       C++17 + OpenMP: relax_positions with Verlet-list reuse (N≥64);
+    │                    Bridson Poisson-disk sampling (poisson_disk_sphere / poisson_disk_box)
     ├── _maxent.cpp      C++17 + OpenMP: angular_repulsion_gradient with Cell List (N≥64)
     ├── _steinhardt.cpp  C++17 + OpenMP: Steinhardt Q_l with sparse neighbor list (N≥64)
     └── _graph_core.cpp  C++17 + OpenMP: graph_lcc/cc, ring_fraction, charge_frustration,
@@ -129,20 +131,48 @@ return 0.0 for every PASTED output.
 The `_ext` sub-package contains four independently compiled pybind11
 modules.  Each can be absent without affecting the others.
 
-### `_relax_core` — `relax_positions`
+### `_relax_core` — `relax_positions` and Poisson-disk sampling
 
 Resolves distance violations by L-BFGS minimization of the harmonic
 steric-clash penalty energy:
 
 $$E = \sum_{i<j} \tfrac{1}{2} \max\!\bigl(0,\; \text{cov\_scale}\cdot(r_i+r_j) - d_{ij}\bigr)^2$$
 
-Gradients are computed analytically; pair enumeration uses `FlatCellList`
-for N ≥ 64 (O(N) per energy evaluation) and an O(N²) full-pair loop for
-N < 64.  The L-BFGS solver (history depth m = 7, Armijo backtracking) is
-implemented in C++17 standard library with no external dependencies.
+Gradients are computed analytically; pair enumeration uses a **Verlet list**
+for N ≥ 64: the list is rebuilt every `N_VERLET_REBUILD = 4` `evaluate()`
+calls using an extended cutoff `cell_size + skin`, where the skin is
+**adaptive** — `min(0.8 Å, cell_size × 0.3)` — capping the extended pair
+list at ≤ (1.3)³ ≈ 2.2× the base count regardless of element radii.  For N
+< 64 an O(N²) full-pair loop is used.  The L-BFGS solver (history depth m =
+7, Armijo backtracking) is implemented in C++17 standard library with no
+external dependencies.
 
 Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
 for dense 5000-atom structures.
+
+**Bridson Poisson-disk sampling** (added in v0.2.2):
+
+Two additional functions are exported from the same module and accessible via
+`pasted._ext` when `HAS_POISSON` is `True`:
+
+- **`_poisson_disk_sphere_cpp(n, radius, min_dist, seed=-1, k=30)`** — places
+  *n* atoms inside a sphere of *radius* Å with a guaranteed `min_dist`
+  separation between any two atoms (Bridson algorithm, flat-array grid).
+  Falls back to uniform random for any slots that could not be placed.
+- **`_poisson_disk_box_cpp(n, lx, ly, lz, min_dist, seed=-1, k=30)`** — same
+  for an axis-aligned box.
+
+`place_gas()` uses uniform random placement for performance predictability
+across all density regimes.  Call these functions directly when a
+minimum-separation guarantee is needed:
+
+```python
+from pasted._ext import HAS_POISSON, _poisson_disk_sphere_cpp
+
+if HAS_POISSON:
+    pts = _poisson_disk_sphere_cpp(n=100, radius=10.0, min_dist=1.5, seed=42)
+    # pts is an (n, 3) float64 ndarray
+```
 
 ### `_graph_core` — graph / ring / charge / Moran / RDF metrics
 
@@ -347,7 +377,59 @@ therefore `generate()`) returns bit-for-bit identical output.
 
 ---
 
-## Optimizer
+## GeneratorConfig (v0.2.2)
+
+`GeneratorConfig` is a `frozen=True` dataclass defined in `_config.py` that
+captures every parameter accepted by `StructureGenerator`.
+
+**Design goals:**
+
+- **Type safety** — every field carries a type annotation; mypy and IDEs can
+  check all call sites.
+- **Immutability** — `frozen=True` prevents accidental mutation after
+  construction and makes configs hashable.
+- **Convenient overrides** — `dataclasses.replace(cfg, seed=99)` creates a
+  new config with one field changed, leaving the original intact.
+- **Backward compatibility** — `StructureGenerator` and `generate()` retain
+  their original keyword-argument signatures; a `GeneratorConfig` is built
+  internally when raw kwargs are passed.
+
+**Calling conventions:**
+
+```python
+# Config-based (type-checked end-to-end)
+cfg = GeneratorConfig(n_atoms=20, charge=0, mult=1, mode="gas",
+                      region="sphere:10", elements="6,7,8", seed=42)
+gen = StructureGenerator(cfg)   # or generate(cfg)
+
+# Keyword-based (backward-compatible, unchanged from pre-v0.2.2)
+gen = StructureGenerator(n_atoms=20, charge=0, mult=1, mode="gas",
+                          region="sphere:10", elements="6,7,8", seed=42)
+```
+
+`StructureGenerator.__getattr__` proxies attribute access to `_cfg`, so
+`gen.n_atoms`, `gen.seed`, etc. continue to work in existing code.
+
+## Affine transform in StructureGenerator (v0.2.2)
+
+When `affine_strength > 0.0`, each structure goes through an extra step
+between placement and relax:
+
+```
+place_gas / place_chain / place_shell / place_maxent
+          ↓
+_affine_move(positions, move_step=0.0, affine_strength, rng)
+          ↓
+relax_positions
+```
+
+`_affine_move` is defined in `_placement.py` and shared with
+`StructureOptimizer` (which uses it per MC step when
+`allow_affine_moves=True`, passing `move_step=self.move_step`).  The
+Generator always passes `move_step=0.0` (pure geometric transform, no
+per-atom jitter) because a jitter before relax would simply be undone.
+
+
 
 `StructureOptimizer.run()` returns an `OptimizationResult` containing all
 per-restart structures sorted by objective value (highest first).
@@ -356,7 +438,8 @@ per-restart structures sorted by objective value (highest first).
 
 | Move | Probability | Description |
 |---|---|---|
-| Fragment coordinate | 50 % | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
+| Fragment coordinate | 50 % (or 25 % when affine moves enabled) | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
+| Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; centre of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch). |
 | Composition | 50 % | Parity-preserving element swap or replacement (see below) |
 
 **Parity-preserving composition move** — two paths:
@@ -405,7 +488,7 @@ Measured quality vs SA at equal wall time (n=10, C/N/O/P/S, H_total − Q6):
 | PT replicas=4, restarts=1, steps=200 | **102 ms** | **1.685** | 0.403 |
 | PT replicas=4, restarts=2, steps=500 | 579 ms | **1.713** | **0.293** |
 
-## Memory management in C++ extensions (v0.2.1)
+## Memory management in C++ extensions (v0.2.1 / v0.2.2)
 
 ### `_relax_core` — `PenaltyEvaluator`
 
@@ -417,6 +500,14 @@ every L-BFGS iteration.
 
 This eliminates several gigabytes of heap churn per structure at large N
 (e.g. ~8 GB / structure at n=150 000, 8 threads, 300 iterations).
+
+**Verlet-list reuse (v0.2.2):** `pairs_` is rebuilt only every
+`N_VERLET_REBUILD = 4` evaluate() calls via an extended `FlatCellList`
+pass with cutoff `cell_size + skin` (adaptive skin =
+`min(0.8 Å, cell_size × 0.3)`).  Between rebuilds the same extended pair
+list is reused, eliminating the dominant serial traversal cost per L-BFGS
+iteration.  The counter-based trigger avoids the O(N) displacement-check
+loop and is safe when L-BFGS trust radius is large relative to the skin.
 
 ### `_maxent_core` — `place_maxent_cpp_impl`
 

@@ -156,6 +156,7 @@ An interrupted run always produces a valid XYZ file.
 | `--cov-scale S` | 1.0 | Minimum-distance scale factor: `d_min = S × (r_i + r_j)` |
 | `--relax-cycles N` | 1500 | Maximum repulsion-relaxation iterations |
 | `--no-add-hydrogen` | flag | Disable automatic H augmentation |
+| `--affine-strength S` | 0.0 | Apply a random affine transform (stretch/shear) before relax. `0.0` = disabled. Typical range: 0.05–0.3. Works across all modes. |
 
 ## Optimizer mode
 

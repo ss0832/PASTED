@@ -17,6 +17,7 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ._atoms import (
     _Z_TO_SYM,
@@ -27,10 +28,12 @@ from ._atoms import (
     parse_filter,
     validate_charge_mult,
 )
+from ._config import GeneratorConfig
 from ._io import _fmt, format_xyz, parse_xyz
 from ._metrics import compute_all_metrics, passes_filters
 from ._placement import (
     Vec3,
+    _affine_move,
     add_hydrogen,
     place_chain,
     place_gas,
@@ -493,6 +496,17 @@ class StructureGenerator:
     add_hydrogen:
         Automatically append H atoms when H is in the pool but the sampled
         composition contains none (default: ``True``).
+    affine_strength:
+        Dimensionless scale of the affine transformation applied to every
+        generated structure **before** :func:`relax_positions` (default:
+        ``0.0`` = disabled).  When > 0 a random stretch/compress + shear is
+        applied once per structure, creating more anisotropic initial
+        geometries before the repulsion-relaxation step.  Practical range:
+        0.05–0.4.  At 0.1 the structure is stretched / compressed by up to
+        ±10 % along a random axis and sheared by up to ±5 %.  Works
+        identically across all placement modes (``gas``, ``chain``,
+        ``shell``, ``maxent``).  ``0.0`` preserves the behaviour of all
+        versions prior to v0.2.3.
     n_samples:
         Maximum number of placement attempts (default: 1).
         Use ``0`` to allow unlimited attempts (only valid when *n_success*
@@ -530,21 +544,22 @@ class StructureGenerator:
 
     Examples
     --------
-    Class API::
+    Class API (config-based, recommended)::
 
-        from pasted import StructureGenerator
+        from pasted import GeneratorConfig, StructureGenerator
 
-        gen = StructureGenerator(
+        cfg = GeneratorConfig(
             n_atoms=12, charge=0, mult=1,
             mode="gas", region="sphere:9",
             elements="1-30", n_samples=50, seed=42,
             filters=["H_total:2.0:-"],
         )
+        gen = StructureGenerator(cfg)
         structures = gen.generate()
         for s in structures:
             print(s)
 
-    Functional API::
+    Functional API (keyword-based, backward-compatible)::
 
         from pasted import generate
 
@@ -557,108 +572,77 @@ class StructureGenerator:
 
     def __init__(
         self,
+        config: GeneratorConfig | None = None,
         *,
-        n_atoms: int,
-        charge: int,
-        mult: int,
-        mode: str = "gas",
-        region: str | None = None,
-        branch_prob: float = 0.3,
-        chain_persist: float = 0.5,
-        chain_bias: float = 0.0,
-        bond_range: tuple[float, float] = (1.2, 1.6),
-        center_z: int | None = None,
-        coord_range: tuple[int, int] = (4, 8),
-        shell_radius: tuple[float, float] = (1.8, 2.5),
-        elements: str | list[str] | None = None,
-        element_fractions: dict[str, float] | None = None,
-        element_min_counts: dict[str, int] | None = None,
-        element_max_counts: dict[str, int] | None = None,
-        cov_scale: float = 1.0,
-        relax_cycles: int = 1500,
-        maxent_steps: int = 300,
-        maxent_lr: float = 0.05,
-        maxent_cutoff_scale: float = 2.5,
-        trust_radius: float = 0.5,
-        convergence_tol: float = 1e-3,
-        add_hydrogen: bool = True,
-        n_samples: int = 1,
-        n_success: int | None = None,
-        seed: int | None = None,
-        n_bins: int = 20,
-        w_atom: float = 0.5,
-        w_spatial: float = 0.5,
-        cutoff: float | None = None,
-        filters: list[str] | None = None,
-        verbose: bool = False,
+        n_atoms: int | None = None,
+        **kwargs: Any,
     ) -> None:
-        if mode not in ("gas", "chain", "shell", "maxent"):
+        """Construct a :class:`StructureGenerator`.
+
+        Two calling conventions are accepted:
+
+        **Config-based (recommended):**
+
+            gen = StructureGenerator(GeneratorConfig(n_atoms=12, charge=0, mult=1, ...))
+
+        **Keyword-based (backward-compatible):**
+
+            gen = StructureGenerator(n_atoms=12, charge=0, mult=1, ...)
+
+        When *config* is given all other arguments are ignored.
+        When *config* is ``None`` a :class:`GeneratorConfig` is built from
+        the keyword arguments; ``n_atoms``, ``charge``, and ``mult`` are
+        required.
+        """
+        if config is None:
+            if n_atoms is None:
+                raise TypeError(
+                    "StructureGenerator requires either a GeneratorConfig as the "
+                    "first argument, or keyword arguments including n_atoms=, "
+                    "charge=, and mult=."
+                )
+            config = GeneratorConfig(n_atoms=n_atoms, **kwargs)
+        self._cfg = config
+        cfg = config  # local alias for brevity inside __init__
+
+        # ── Mode / region validation ─────────────────────────────────────
+        if cfg.mode not in ("gas", "chain", "shell", "maxent"):
             raise ValueError(
-                f"mode must be 'gas', 'chain', 'shell', or 'maxent'; got {mode!r}"
+                f"mode must be 'gas', 'chain', 'shell', or 'maxent'; got {cfg.mode!r}"
             )
-        if mode in ("gas", "maxent") and region is None:
+        if cfg.mode in ("gas", "maxent") and cfg.region is None:
             raise ValueError(
-                f"region is required when mode={mode!r}. "
+                f"region is required when mode={cfg.mode!r}. "
                 "Pass e.g. region=\"sphere:8\" (radius 8 Å) or "
                 "region=\"box:10\" (10×10×10 Å box)."
             )
 
-        self.n_atoms = n_atoms
-        self.charge = charge
-        self.mult = mult
-        self.mode = mode
-        self.region = region
-        self.branch_prob = branch_prob
-        self.chain_persist = chain_persist
-        self.chain_bias = chain_bias
-        self.bond_range = bond_range
-        self.center_z = center_z
-        self.coord_range = coord_range
-        self.shell_radius = shell_radius
-        self.cov_scale = cov_scale
-        self.relax_cycles = relax_cycles
-        self.maxent_steps = maxent_steps
-        self.maxent_lr = maxent_lr
-        self.maxent_cutoff_scale = maxent_cutoff_scale
-        self.trust_radius = trust_radius
-        self.convergence_tol = convergence_tol
-        self._add_hydrogen = add_hydrogen
-        self.n_samples = n_samples
-        self.n_success = n_success
-        self.seed = seed
-        self.n_bins = n_bins
-        self.w_atom = w_atom
-        self.w_spatial = w_spatial
-        self.verbose = verbose
-
         # ── n_samples / n_success validation ────────────────────────────
-        if n_samples == 0 and n_success is None:
+        if cfg.n_samples == 0 and cfg.n_success is None:
             raise ValueError(
                 "n_samples=0 (unlimited) requires n_success to be set; "
                 "otherwise generation would run forever."
             )
-        if n_success is not None and n_success < 1:
-            raise ValueError(f"n_success must be >= 1; got {n_success}.")
+        if cfg.n_success is not None and cfg.n_success < 1:
+            raise ValueError(f"n_success must be >= 1; got {cfg.n_success}.")
 
         # ── Element pool ────────────────────────────────────────────────
-        if elements is None:
+        if cfg.elements is None:
             self._element_pool: list[str] = default_element_pool()
-        elif isinstance(elements, str):
-            self._element_pool = parse_element_spec(elements)
+        elif isinstance(cfg.elements, str):
+            self._element_pool = parse_element_spec(cfg.elements)
         else:
-            self._element_pool = list(elements)
+            self._element_pool = list(cfg.elements)
 
         # ── Element fractions ────────────────────────────────────────────
-        # Build a normalised weight list aligned with self._element_pool.
-        # Unknown keys in the dict raise ValueError immediately.
-        if element_fractions is not None:
-            unknown = set(element_fractions) - set(self._element_pool)
+        if cfg.element_fractions is not None:
+            unknown = set(cfg.element_fractions) - set(self._element_pool)
             if unknown:
                 raise ValueError(
                     f"element_fractions contains symbols not in the element pool: "
                     f"{sorted(unknown)}"
                 )
-            weights = [float(element_fractions.get(sym, 1.0)) for sym in self._element_pool]
+            weights = [float(cfg.element_fractions.get(sym, 1.0)) for sym in self._element_pool]
             if any(w < 0 for w in weights):
                 raise ValueError("element_fractions weights must be non-negative.")
             total = sum(weights)
@@ -670,61 +654,64 @@ class StructureGenerator:
             self._element_weights = [1.0 / n] * n
 
         # ── Element min/max counts ───────────────────────────────────────
-        # Validate and store; actual enforcement happens in stream().
-        if element_min_counts is not None:
-            unknown_min = set(element_min_counts) - set(self._element_pool)
+        if cfg.element_min_counts is not None:
+            unknown_min = set(cfg.element_min_counts) - set(self._element_pool)
             if unknown_min:
                 raise ValueError(
                     f"element_min_counts contains symbols not in the element pool: "
                     f"{sorted(unknown_min)}"
                 )
-            if any(v < 0 for v in element_min_counts.values()):
+            if any(v < 0 for v in cfg.element_min_counts.values()):
                 raise ValueError("element_min_counts values must be non-negative.")
-            total_min = sum(element_min_counts.values())
-            if total_min > n_atoms:
+            total_min = sum(cfg.element_min_counts.values())
+            if total_min > cfg.n_atoms:
                 raise ValueError(
-                    f"Sum of element_min_counts ({total_min}) exceeds n_atoms ({n_atoms})."
+                    f"Sum of element_min_counts ({total_min}) exceeds n_atoms ({cfg.n_atoms})."
                 )
-        if element_max_counts is not None:
-            unknown_max = set(element_max_counts) - set(self._element_pool)
+        if cfg.element_max_counts is not None:
+            unknown_max = set(cfg.element_max_counts) - set(self._element_pool)
             if unknown_max:
                 raise ValueError(
                     f"element_max_counts contains symbols not in the element pool: "
                     f"{sorted(unknown_max)}"
                 )
-            if any(v < 0 for v in element_max_counts.values()):
+            if any(v < 0 for v in cfg.element_max_counts.values()):
                 raise ValueError("element_max_counts values must be non-negative.")
-        if element_min_counts is not None and element_max_counts is not None:
-            for sym in element_min_counts:
-                lo = element_min_counts[sym]
-                hi = element_max_counts.get(sym, lo)
+        if cfg.element_min_counts is not None and cfg.element_max_counts is not None:
+            for sym in cfg.element_min_counts:
+                lo = cfg.element_min_counts[sym]
+                hi = cfg.element_max_counts.get(sym, lo)
                 if lo > hi:
                     raise ValueError(
                         f"element_min_counts[{sym!r}]={lo} > "
                         f"element_max_counts[{sym!r}]={hi}."
                     )
-        self._element_min_counts: dict[str, int] = dict(element_min_counts or {})
-        self._element_max_counts: dict[str, int] = dict(element_max_counts or {})
+        self._element_min_counts: dict[str, int] = dict(cfg.element_min_counts or {})
+        self._element_max_counts: dict[str, int] = dict(cfg.element_max_counts or {})
 
         # ── Filters ─────────────────────────────────────────────────────
-        self._filters: list[tuple[str, float, float]] = [parse_filter(f) for f in (filters or [])]
+        self._filters: list[tuple[str, float, float]] = [
+            parse_filter(f) for f in (cfg.filters or [])
+        ]
 
         # ── Cutoff ──────────────────────────────────────────────────────
-        self._cutoff: float = self._resolve_cutoff(cutoff)
+        self._cutoff: float = self._resolve_cutoff(cfg.cutoff)
 
         # ── Shell center ─────────────────────────────────────────────────
         self._fixed_center_sym: str | None = None
-        if mode == "shell" and center_z is not None:
-            if center_z not in _Z_TO_SYM:
-                raise ValueError(f"center_z={center_z}: unknown atomic number.")
-            sym = _Z_TO_SYM[center_z]
+        if cfg.mode == "shell" and cfg.center_z is not None:
+            if cfg.center_z not in _Z_TO_SYM:
+                raise ValueError(f"center_z={cfg.center_z}: unknown atomic number.")
+            sym = _Z_TO_SYM[cfg.center_z]
             if sym not in self._element_pool:
-                raise ValueError(f"center_z={center_z} ({sym}) is not in the element pool.")
+                raise ValueError(
+                    f"center_z={cfg.center_z} ({sym}) is not in the element pool."
+                )
             self._fixed_center_sym = sym
 
-        if self.verbose:
+        if cfg.verbose:
             self._log(f"[pool] {len(self._element_pool)} elements in pool")
-            if mode == "shell":
+            if cfg.mode == "shell":
                 if self._fixed_center_sym:
                     self._log(
                         f"[shell] center fixed: {self._fixed_center_sym} "
@@ -732,6 +719,7 @@ class StructureGenerator:
                     )
                 else:
                     self._log("[shell] center: random per sample (chaos mode)")
+
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -743,16 +731,16 @@ class StructureGenerator:
 
     def _resolve_cutoff(self, override: float | None) -> float:
         if override is not None:
-            if self.verbose:
+            if self._cfg.verbose:
                 self._log(f"[cutoff] {override:.3f} Å (user-specified)")
             return override
         radii = [_cov_radius_ang(s) for s in self._element_pool]
         pair_sums = sorted(ra + rb for i, ra in enumerate(radii) for rb in radii[i:])
         median_sum = pair_sums[len(pair_sums) // 2]
-        cutoff = self.cov_scale * 1.5 * median_sum
-        if self.verbose:
+        cutoff = self._cfg.cov_scale * 1.5 * median_sum
+        if self._cfg.verbose:
             self._log(
-                f"[cutoff] {cutoff:.3f} Å (auto: cov_scale={self.cov_scale} × 1.5 × "
+                f"[cutoff] {cutoff:.3f} Å (auto: cov_scale={self._cfg.cov_scale} × 1.5 × "
                 f"median(r_i+r_j)={median_sum:.3f} Å)"
             )
         return cutoff
@@ -783,7 +771,7 @@ class StructureGenerator:
 
         # Fast path: uniform weights, no bounds → identical to original behaviour
         if uniform and not min_c and not max_c:
-            return [rng.choice(pool) for _ in range(self.n_atoms)]
+            return [rng.choice(pool) for _ in range(self._cfg.n_atoms)]
 
         weights = self._element_weights
 
@@ -793,7 +781,7 @@ class StructureGenerator:
         for sym in pool:
             atoms.extend([sym] * counts[sym])
 
-        remaining = self.n_atoms - len(atoms)
+        remaining = self._cfg.n_atoms - len(atoms)
 
         # ── Step 2: weighted sampling for remaining slots ────────────────
         for _ in range(remaining):
@@ -848,6 +836,28 @@ class StructureGenerator:
         """Distance cutoff in Å used for Steinhardt and graph metrics."""
         return self._cutoff
 
+    @property
+    def config(self) -> GeneratorConfig:
+        """The :class:`GeneratorConfig` that was used to construct this generator."""
+        return self._cfg
+
+    def __getattr__(self, name: str) -> Any:
+        """Proxy attribute access to ``_cfg`` for all :class:`GeneratorConfig` fields.
+
+        This allows code written against the old kwargs-based API
+        (e.g. ``gen.n_atoms``, ``gen.seed``) to continue working without
+        modification after the migration to config-based construction.
+        """
+        # Avoid infinite recursion on _cfg itself during __init__
+        if name == "_cfg":
+            raise AttributeError(name)
+        try:
+            return getattr(self._cfg, name)
+        except AttributeError:
+            raise AttributeError(
+                f"'{type(self).__name__}' object has no attribute '{name}'"
+            ) from None
+
     # ------------------------------------------------------------------ #
     # Generation                                                           #
     # ------------------------------------------------------------------ #
@@ -868,41 +878,41 @@ class StructureGenerator:
         RuntimeError, ValueError
             Propagated from the underlying placement functions.
         """
-        bond_lo, bond_hi = self.bond_range
-        shell_lo, shell_hi = self.shell_radius
-        coord_lo, coord_hi = self.coord_range
+        bond_lo, bond_hi = self._cfg.bond_range
+        shell_lo, shell_hi = self._cfg.shell_radius
+        coord_lo, coord_hi = self._cfg.coord_range
 
         center_sym: str | None = None
-        if self.mode == "gas":
-            assert self.region is not None  # guaranteed by __init__ validation
+        if self._cfg.mode == "gas":
+            assert self._cfg.region is not None  # guaranteed by __init__ validation
             atoms_out, positions = place_gas(
                 atoms_list,
-                self.region,
+                self._cfg.region,
                 rng,
             )
-        elif self.mode == "chain":
+        elif self._cfg.mode == "chain":
             atoms_out, positions = place_chain(
                 atoms_list,
                 bond_lo,
                 bond_hi,
-                self.branch_prob,
-                self.chain_persist,
+                self._cfg.branch_prob,
+                self._cfg.chain_persist,
                 rng,
-                chain_bias=self.chain_bias,
+                chain_bias=self._cfg.chain_bias,
             )
-        elif self.mode == "maxent":
-            assert self.region is not None
+        elif self._cfg.mode == "maxent":
+            assert self._cfg.region is not None
             atoms_out, positions = place_maxent(
                 atoms_list,
-                self.region,
-                self.cov_scale,
+                self._cfg.region,
+                self._cfg.cov_scale,
                 rng,
-                maxent_steps=self.maxent_steps,
-                maxent_lr=self.maxent_lr,
-                maxent_cutoff_scale=self.maxent_cutoff_scale,
-                trust_radius=self.trust_radius,
-                convergence_tol=self.convergence_tol,
-                seed=self.seed,
+                maxent_steps=self._cfg.maxent_steps,
+                maxent_lr=self._cfg.maxent_lr,
+                maxent_cutoff_scale=self._cfg.maxent_cutoff_scale,
+                trust_radius=self._cfg.trust_radius,
+                convergence_tol=self._cfg.convergence_tol,
+                seed=self._cfg.seed,
             )
         else:  # shell
             center_sym = (
@@ -946,7 +956,7 @@ class StructureGenerator:
           reached, a warning is emitted to *stderr* and the iterator ends.
 
         Each call creates a fresh :class:`random.Random` seeded with
-        ``self.seed``, so repeated calls with the same seed are reproducible.
+        ``self._cfg.seed``, so repeated calls with the same seed are reproducible.
 
         Yields
         ------
@@ -965,25 +975,25 @@ class StructureGenerator:
             for s in gen.stream():
                 s.write_xyz("out.xyz")
         """
-        rng = random.Random(self.seed)
+        rng = random.Random(self._cfg.seed)
 
-        if self.verbose and self._filters:
+        if self._cfg.verbose and self._filters:
             self._log(
                 "[filter] "
                 + ",  ".join(f"{m} in [{lo:.4g},{hi:.4g}]" for m, lo, hi in self._filters)
             )
 
-        do_add_h = ("H" in self._element_pool) and self._add_hydrogen
+        do_add_h = ("H" in self._element_pool) and self._cfg.add_hydrogen
         n_passed = n_invalid = n_attempted = n_rejected_filter = 0
-        unlimited = (self.n_samples == 0)
-        denom = "∞" if unlimited else str(self.n_samples)
+        unlimited = (self._cfg.n_samples == 0)
+        denom = "∞" if unlimited else str(self._cfg.n_samples)
         width = len(denom)
 
         while True:
             # Stop conditions
-            if not unlimited and n_attempted >= self.n_samples:
+            if not unlimited and n_attempted >= self._cfg.n_samples:
                 break
-            if self.n_success is not None and n_passed >= self.n_success:
+            if self._cfg.n_success is not None and n_passed >= self._cfg.n_success:
                 break
 
             i = n_attempted
@@ -993,40 +1003,48 @@ class StructureGenerator:
             if do_add_h:
                 atoms_list = add_hydrogen(atoms_list, rng)
 
-            ok, val_msg = validate_charge_mult(atoms_list, self.charge, self.mult)
+            ok, val_msg = validate_charge_mult(atoms_list, self._cfg.charge, self._cfg.mult)
             if not ok:
                 n_invalid += 1
-                if self.verbose:
+                if self._cfg.verbose:
                     self._log(f"[{i + 1:>{width}}/{denom}:invalid] {val_msg}")
                 continue
 
             try:
                 atoms_out, positions, center_sym = self._place_one(atoms_list, rng)
             except (RuntimeError, ValueError) as exc:
-                if self.verbose:
+                if self._cfg.verbose:
                     self._log(f"[ERROR] sample {i + 1}: {exc}")
                 raise
 
+            # ── Optional affine transform (applied once, before relax) ────
+            if self._cfg.affine_strength > 0.0:
+                positions = _affine_move(
+                    positions, 0.0, self._cfg.affine_strength, rng
+                )
+
             positions, converged = relax_positions(
-                atoms_out, positions, self.cov_scale, self.relax_cycles, seed=self.seed
+                atoms_out, positions,
+                self._cfg.cov_scale, self._cfg.relax_cycles,
+                seed=self._cfg.seed,
             )
-            if not converged and self.verbose:
+            if not converged and self._cfg.verbose:
                 self._log(
                     f"[{i + 1:>{width}}/{denom}:warn] "
-                    f"relax_positions did not converge in {self.relax_cycles} cycles."
+                    f"relax_positions did not converge in {self._cfg.relax_cycles} cycles."
                 )
 
             metrics = compute_all_metrics(
                 atoms_out,
                 positions,
-                self.n_bins,
-                self.w_atom,
-                self.w_spatial,
+                self._cfg.n_bins,
+                self._cfg.w_atom,
+                self._cfg.w_spatial,
                 self._cutoff,
-                self.cov_scale,
+                self._cfg.cov_scale,
             )
             passed = passes_filters(metrics, self._filters)
-            if self.verbose:
+            if self._cfg.verbose:
                 flag = "PASS" if passed else "skip"
                 self._log(
                     f"[{i + 1:>{width}}/{denom}:{flag}]  "
@@ -1040,17 +1058,17 @@ class StructureGenerator:
             yield Structure(
                 atoms=atoms_out,
                 positions=positions,
-                charge=self.charge,
-                mult=self.mult,
+                charge=self._cfg.charge,
+                mult=self._cfg.mult,
                 metrics=metrics,
-                mode=self.mode,
+                mode=self._cfg.mode,
                 sample_index=n_passed,
-                center_sym=center_sym if self.mode == "shell" else None,
-                seed=self.seed,
+                center_sym=center_sym if self._cfg.mode == "shell" else None,
+                seed=self._cfg.seed,
             )
 
         n_skip = n_attempted - n_passed - n_invalid
-        if self.verbose:
+        if self._cfg.verbose:
             self._log(
                 f"[summary] attempted={n_attempted}  passed={n_passed}  "
                 f"rejected_parity={n_invalid}  rejected_filter={n_skip}"
@@ -1071,7 +1089,7 @@ class StructureGenerator:
                 f"multiplicity parity check ({n_invalid} invalid). "
                 f"No structures were generated. "
                 f"Check that your element pool can satisfy "
-                f"charge={self.charge}, mult={self.mult}.",
+                f"charge={self._cfg.charge}, mult={self._cfg.mult}.",
                 UserWarning,
                 stacklevel=4,
             )
@@ -1086,13 +1104,13 @@ class StructureGenerator:
                 stacklevel=4,
             )
         elif (
-            self.n_success is not None
-            and n_passed < self.n_success
+            self._cfg.n_success is not None
+            and n_passed < self._cfg.n_success
             and not unlimited
         ):
             warnings.warn(
                 f"Attempt budget exhausted ({n_attempted} attempts) before "
-                f"reaching n_success={self.n_success}; "
+                f"reaching n_success={self._cfg.n_success}; "
                 f"only {n_passed} structure(s) collected. "
                 f"Increase n_samples or relax filters.",
                 UserWarning,
@@ -1130,7 +1148,7 @@ class StructureGenerator:
         - The attempt budget is exhausted before ``n_success`` is reached.
 
         Each call creates a fresh :class:`random.Random` seeded with
-        ``self.seed``, so repeated calls with the same seed are
+        ``self._cfg.seed``, so repeated calls with the same seed are
         reproducible.
 
         Returns
@@ -1162,7 +1180,7 @@ class StructureGenerator:
             n_passed=stats.get("n_passed", len(structures)),
             n_rejected_parity=stats.get("n_rejected_parity", 0),
             n_rejected_filter=stats.get("n_rejected_filter", 0),
-            n_success_target=self.n_success,
+            n_success_target=self._cfg.n_success,
         )
 
     # ------------------------------------------------------------------ #
@@ -1176,10 +1194,10 @@ class StructureGenerator:
     def __repr__(self) -> str:
         return (
             f"StructureGenerator("
-            f"n_atoms={self.n_atoms}, mode={self.mode!r}, "
-            f"charge={self.charge:+d}, mult={self.mult}, "
-            f"n_samples={self.n_samples}, "
-            f"n_success={self.n_success}, "
+            f"n_atoms={self._cfg.n_atoms}, mode={self._cfg.mode!r}, "
+            f"charge={self._cfg.charge:+d}, mult={self._cfg.mult}, "
+            f"n_samples={self._cfg.n_samples}, "
+            f"n_success={self._cfg.n_success}, "
             f"pool_size={len(self._element_pool)})"
         )
 
@@ -1295,120 +1313,73 @@ def read_xyz(
 
 
 def generate(
+    config: GeneratorConfig | None = None,
     *,
-    n_atoms: int,
-    charge: int,
-    mult: int,
-    mode: str = "gas",
-    region: str | None = None,
-    branch_prob: float = 0.3,
-    chain_persist: float = 0.5,
-    chain_bias: float = 0.0,
-    bond_range: tuple[float, float] = (1.2, 1.6),
-    center_z: int | None = None,
-    coord_range: tuple[int, int] = (4, 8),
-    shell_radius: tuple[float, float] = (1.8, 2.5),
-    elements: str | list[str] | None = None,
-    element_fractions: dict[str, float] | None = None,
-    element_min_counts: dict[str, int] | None = None,
-    element_max_counts: dict[str, int] | None = None,
-    cov_scale: float = 1.0,
-    relax_cycles: int = 1500,
-    maxent_steps: int = 300,
-    maxent_lr: float = 0.05,
-    maxent_cutoff_scale: float = 2.5,
-    trust_radius: float = 0.5,
-    convergence_tol: float = 1e-3,
-    add_hydrogen: bool = True,
-    n_samples: int = 1,
-    n_success: int | None = None,
-    seed: int | None = None,
-    n_bins: int = 20,
-    w_atom: float = 0.5,
-    w_spatial: float = 0.5,
-    cutoff: float | None = None,
-    filters: list[str] | None = None,
-    verbose: bool = False,
+    n_atoms: int | None = None,
+    charge: int | None = None,
+    mult: int | None = None,
+    **kwargs: Any,
 ) -> GenerationResult:
     """Create a :class:`StructureGenerator` and immediately call
     :meth:`~StructureGenerator.generate`.
 
-    All parameters are forwarded unchanged.  See :class:`StructureGenerator`
-    for full documentation.
+    Two calling conventions are supported:
+
+    **Config-based (recommended for new code):**
+    Pass a :class:`GeneratorConfig` as the first positional argument.
+    Provides full mypy / IDE type-checking on every field::
+
+        from pasted import generate, GeneratorConfig
+
+        cfg = GeneratorConfig(n_atoms=10, charge=0, mult=1,
+                              mode="gas", region="sphere:8",
+                              elements="6,7,8", n_samples=20, seed=0)
+        result = generate(cfg)
+
+    **Keyword-based (backward-compatible, original API):**
+    Pass all parameters as keyword arguments.  ``n_atoms``, ``charge``,
+    and ``mult`` are required; all others are optional::
+
+        result = generate(
+            n_atoms=10, charge=0, mult=1,
+            mode="gas", region="sphere:8",
+            elements="6,7,8", n_samples=20, seed=0,
+        )
+
+    Both forms may not be mixed: if *config* is given, all other keyword
+    arguments are ignored.
+
+    Parameters
+    ----------
+    config:
+        A fully-populated :class:`GeneratorConfig` instance.  When given,
+        all other keyword arguments are ignored.
+    n_atoms:
+        Number of atoms per structure (**required** when *config* is ``None``).
+    charge:
+        Total system charge (**required** when *config* is ``None``).
+    mult:
+        Spin multiplicity 2S+1 (**required** when *config* is ``None``).
+    **kwargs:
+        Any optional :class:`GeneratorConfig` field, e.g.
+        ``mode``, ``region``, ``elements``, ``n_samples``, ``seed``,
+        ``filters``, ``affine_strength``, …
+        Ignored when *config* is provided.
 
     Returns
     -------
     GenerationResult
         A list-compatible object containing the structures that passed all
-        filters plus metadata about the generation run (attempt counts,
-        rejection breakdowns).  Behaves identically to ``list[Structure]``
-        in all normal usage (indexing, iteration, ``len``, ``bool``).
-
-        :class:`UserWarning` is raised whenever:
-
-        - attempts are rejected by the charge/multiplicity parity check,
-        - no structures pass the metric filters, or
-        - the attempt budget is exhausted before ``n_success`` is reached.
-
-    Examples
-    --------
-    Drop-in list usage::
-
-        from pasted import generate
-
-        # 20 random gas-phase structures drawn from C/N/O
-        structures = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=20, seed=0,
-        )
-        for i, s in enumerate(structures):
-            s.write_xyz("out.xyz", append=(i > 0))
-
-    Inspecting rejection metadata::
-
-        result = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=50, seed=0,
-            filters=["H_total:1.5:-"],
-        )
-        print(result.summary())
-        # e.g. "passed=3  attempted=50  rejected_parity=0  rejected_filter=47"
+        filters plus metadata about the generation run.
     """
-    gen = StructureGenerator(
-        n_atoms=n_atoms,
-        charge=charge,
-        mult=mult,
-        mode=mode,
-        region=region,
-        branch_prob=branch_prob,
-        chain_persist=chain_persist,
-        chain_bias=chain_bias,
-        bond_range=bond_range,
-        center_z=center_z,
-        coord_range=coord_range,
-        shell_radius=shell_radius,
-        elements=elements,
-        element_fractions=element_fractions,
-        element_min_counts=element_min_counts,
-        element_max_counts=element_max_counts,
-        cov_scale=cov_scale,
-        relax_cycles=relax_cycles,
-        maxent_steps=maxent_steps,
-        maxent_lr=maxent_lr,
-        maxent_cutoff_scale=maxent_cutoff_scale,
-        trust_radius=trust_radius,
-        convergence_tol=convergence_tol,
-        add_hydrogen=add_hydrogen,
-        n_samples=n_samples,
-        n_success=n_success,
-        seed=seed,
-        n_bins=n_bins,
-        w_atom=w_atom,
-        w_spatial=w_spatial,
-        cutoff=cutoff,
-        filters=filters,
-        verbose=verbose,
-    )
-    return gen.generate()
+    if config is not None:
+        return StructureGenerator(config).generate()
+
+    # Backward-compatible kwargs path
+    if n_atoms is None or charge is None or mult is None:
+        raise TypeError(
+            "generate() requires n_atoms, charge, and mult when no GeneratorConfig is given."
+        )
+    cfg = GeneratorConfig(n_atoms=n_atoms, charge=charge, mult=mult, **kwargs)
+    return StructureGenerator(cfg).generate()
+

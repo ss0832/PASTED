@@ -11,54 +11,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-* **Bridson Poisson-disk placement for `gas` and `box` regions (`_relax_core`, `_placement`).**
+* **`GeneratorConfig` frozen dataclass (`_config.py`).**
 
-  `place_gas()` now uses Bridson's O(N·k) algorithm (implemented in C++) to
-  guarantee a minimum inter-atom separation of `2 × median(cov_radius)` before
-  L-BFGS relaxation.  This reduces the number of initial clashes and therefore
-  the iterations needed by `relax_positions`.
+  All ~30 parameters of `StructureGenerator` are now encapsulated in a
+  single `GeneratorConfig(frozen=True)` dataclass.  This gives full
+  mypy / IDE type-checking on every field, hashability, and
+  `dataclasses.replace(cfg, seed=99)` for convenient one-field overrides.
+  `GeneratorConfig` is exported from the top-level `pasted` namespace.
 
-  New C++ exports (available when `HAS_RELAX` / `HAS_POISSON` are `True`):
+  `StructureGenerator.__init__` now accepts either a `GeneratorConfig`
+  instance *or* the original keyword arguments (backward-compatible):
+
+  ```python
+  from pasted import GeneratorConfig, StructureGenerator
+
+  # Config-based (recommended for new code)
+  cfg = GeneratorConfig(n_atoms=20, charge=0, mult=1,
+                        mode="gas", region="sphere:10",
+                        elements="6,7,8", seed=42)
+  gen = StructureGenerator(cfg)
+
+  # Keyword-based (original API — still works unchanged)
+  gen = StructureGenerator(n_atoms=20, charge=0, mult=1,
+                            mode="gas", region="sphere:10",
+                            elements="6,7,8", seed=42)
+  ```
+
+  `generate()` likewise accepts either `generate(cfg)` or the original
+  `generate(n_atoms=..., charge=..., mult=..., ...)` form.
+
+  All instance attributes previously set directly on `StructureGenerator`
+  (e.g. `gen.n_atoms`, `gen.seed`) continue to work via `__getattr__`
+  proxy to `gen._cfg`.
+
+* **`affine_strength` parameter for `StructureGenerator` / `generate()` / CLI.**
+
+  A random affine transformation (stretch/compress one axis + shear one
+  axis pair) is applied to every generated structure **before**
+  `relax_positions`, creating more anisotropic initial geometries.
+
+  | Parameter | Default | Effect |
+  |---|---|---|
+  | `affine_strength=0.0` | disabled — backward-compatible | no transform |
+  | `affine_strength=0.1` | ±10 % stretch/compress, ±5 % shear | moderate anisotropy |
+  | `affine_strength=0.3` | ±30 % stretch/compress, ±15 % shear | strong anisotropy |
+
+  Works across **all placement modes** (`gas`, `chain`, `shell`, `maxent`).
+  Centre of mass is pinned; clash resolution via `relax_positions` runs
+  after the transform.  CLI: `--affine-strength S`.
+
+  The underlying `_affine_move` function has been **moved from
+  `_optimizer.py` to `_placement.py`** and is now shared between
+  `StructureGenerator` (applied once per structure before relax) and
+  `StructureOptimizer` (applied per MC step when `allow_affine_moves=True`).
+  No behavioural change in the optimizer.
+
+* **Verlet-list reuse with adaptive skin in `PenaltyEvaluator` (`_relax_core`).**
+
+  `pairs_` is now rebuilt every `N_VERLET_REBUILD = 4` evaluate() calls
+  (counter-based, no O(N) displacement loop) using an extended cutoff of
+  `cell_size + skin`.  The skin is **adaptive**:
+  `skin = min(0.8 Å, cell_size × 0.3)`, keeping the extended pair list
+  within `(1.3)³ ≈ 2.2×` the original count regardless of element radii.
+  This prevents the 3–4× overhead that occurred with light elements
+  (C, O, H where `cell_size ≈ 1.5 Å`) under the old fixed-skin design.
+
+* **Bridson Poisson-disk C++ functions added to `_relax_core`.**
+
   `poisson_disk_sphere(n, radius, min_dist, seed, k)` and
-  `poisson_disk_box(n, lx, ly, lz, min_dist, seed, k)`.
-  When `HAS_POISSON` is `False` the function falls back to uniform random
-  placement — behaviour is identical to the pre-v0.2.2 path.
-
-* **Verlet-list reuse in `PenaltyEvaluator` (`_relax_core`).**
-
-  `pairs_` is rebuilt only when any atom has moved more than `VERLET_SKIN / 2`
-  (= 0.4 Å) since the last rebuild, using an extended cutoff of
-  `cell_size + 0.8 Å`.  Between rebuilds the existing pair list is reused,
-  eliminating the dominant serial `FlatCellList` traversal cost per iteration.
-  Benefit is largest for large-N, low-density systems (e.g. `sphere:80`
-  n ≥ 10 000) where rebuild frequency drops to 1-in-5 to 1-in-10 steps as
-  the optimiser converges.
+  `poisson_disk_box(n, lx, ly, lz, min_dist, seed, k)` are exported as
+  C++ pybind11 bindings and accessible via `pasted._ext` when
+  `HAS_POISSON` is `True`.  `place_gas()` itself uses uniform random
+  placement for performance predictability; callers that need minimum-
+  separation placement can call these functions directly.
 
 * **Affine displacement moves in `StructureOptimizer`.**
 
   New parameters `allow_affine_moves=False` (default) and
-  `affine_strength=0.1`.  When enabled, half of the displacement-move budget
-  is replaced by random affine transforms (stretch / compress one axis,
-  shear one axis pair, optional per-atom jitter).  The centre of mass is
-  pinned before and after.  This lets the optimiser explore elongated or
-  compressed configurations that fragment moves cannot reach efficiently.
+  `affine_strength=0.1`.  When enabled, half of the displacement-move
+  budget is replaced by random affine transforms (stretch / compress one
+  axis, shear one axis pair, per-atom jitter).  Centre of mass is pinned.
 
 * **`--n-threads` CLI default changed from `None` (all cores) to `1`.**
 
-  OpenMP parallelism is now opt-in at runtime.  Users who want multi-core
-  behaviour must pass `--n-threads N` explicitly.  The C++ OpenMP code is
-  unchanged; only the default is different.  This avoids unexpected slowdowns
-  on machines where thread-launch overhead exceeds the parallelism gain
-  (e.g. ≤ 2-core containers).
+  OpenMP parallelism is now opt-in.  Pass `--n-threads N` to enable.
 
 ### Fixed
 
 * **`allow_displacements=False` no longer moves atom positions.**
 
-  In all three optimisation methods (SA, BH, PT), `relax_positions` is now
-  skipped when `allow_displacements=False`.  Previously the relax step ran
-  after every composition move, drifting coordinates by up to ~1 Å relative
-  to the initial structure even when the user explicitly disabled displacements.
+  `relax_positions` is now skipped when `allow_displacements=False` in
+  all three optimisation methods (SA, BH, PT).
+
+### Performance
+
+Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
+
+| Scenario | v0.1.17 | v0.2.2 | Δ |
+|---|---:|---:|---:|
+| gas n=20, n_samples=50 | 9.2 ms | 7.1 ms | −23 % |
+| gas n=100, n_samples=10 | 6.5 ms | 4.8 ms | −26 % |
+| chain n=20, n_samples=50 | 13.5 ms | 12.4 ms | −8 % |
+| shell n=12, n_samples=50 | 8.7 ms | 7.1 ms | −18 % |
+| maxent n=12, n_samples=10 | 7.6 ms | 4.0 ms | −47 % |
+| gas n=20, affine=0.2, n_samples=50 | — | 7.4 ms | +4 % vs no-affine |
+
+`affine_strength` overhead is negligible (< 5 % vs `affine_strength=0.0`).
 
 ## [0.2.1] - 2026-03-20
 

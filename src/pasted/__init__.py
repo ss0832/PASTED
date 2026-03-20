@@ -48,6 +48,7 @@ from ._atoms import (
     pauling_electronegativity,
     validate_charge_mult,
 )
+from ._config import GeneratorConfig
 from ._ext import HAS_OPENMP, set_num_threads
 from ._generator import GenerationResult, Structure, StructureGenerator, generate, read_xyz
 from ._io import format_xyz, parse_xyz
@@ -70,6 +71,7 @@ except importlib.metadata.PackageNotFoundError:
 __all__ = [
     # High-level API
     "GenerationResult",
+    "GeneratorConfig",
     "OptimizationResult",
     "Structure",
     "StructureGenerator",

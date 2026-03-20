@@ -29,10 +29,7 @@ from ._atoms import _cov_radius_ang
 from ._ext import (
     HAS_MAXENT,
     HAS_MAXENT_LOOP,
-    HAS_POISSON,
     HAS_RELAX,
-    _poisson_disk_box_cpp,
-    _poisson_disk_sphere_cpp,
 )
 from ._ext import angular_repulsion_gradient as _cpp_angular_gradient
 from ._ext import place_maxent_cpp as _cpp_place_maxent
@@ -227,6 +224,86 @@ def _poisson_disk_box(
 
 
 # ---------------------------------------------------------------------------
+# Affine transformation (shared with StructureOptimizer)
+# ---------------------------------------------------------------------------
+
+
+def _affine_move(
+    positions: list[Vec3],
+    move_step: float,
+    affine_strength: float,
+    rng: random.Random,
+) -> list[Vec3]:
+    """Apply a random affine transformation to all atom positions.
+
+    The transformation is a composition of:
+
+    * **Stretch / compress** along one random axis — scale factor drawn from
+      ``Uniform(1 − s, 1 + s)`` where ``s = affine_strength``.
+    * **Shear** — a small off-diagonal component drawn from
+      ``Uniform(-s/2, s/2)`` along a randomly chosen axis pair.
+    * **Global translation jitter** — each coordinate nudged by
+      ``Uniform(-move_step/4, move_step/4)`` to break symmetry.
+      Pass ``move_step=0.0`` to skip the jitter (recommended for
+      :class:`StructureGenerator` use where the transform is applied once
+      before relaxation).
+
+    The centre of mass is pinned before and after the transform so the
+    structure stays centred.
+
+    Parameters
+    ----------
+    positions:
+        Current atom positions.
+    move_step:
+        Maximum per-atom translation jitter added after the affine transform.
+        Pass ``0.0`` for a pure affine transform with no per-atom noise.
+    affine_strength:
+        Dimensionless strength ∈ (0, 1).  Typical values: 0.05–0.3.
+        At 0.1 the structure is stretched/compressed by up to ±10 %.
+    rng:
+        Seeded random-number generator.
+
+    Returns
+    -------
+    list[Vec3]
+        Transformed positions (same length as input).
+    """
+    pts = np.array(positions, dtype=float)   # (n, 3)
+    com = pts.mean(axis=0)
+    pts -= com                               # work around centre of mass
+
+    # ── Stretch / compress along a random axis ────────────────────────────
+    axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
+    scale = 1.0 + rng.uniform(-affine_strength, affine_strength)
+    A = np.eye(3)
+    A[axis, axis] = scale
+
+    # ── Random shear ──────────────────────────────────────────────────────
+    axes = [0, 1, 2]
+    axes.pop(axis)
+    a1, a2 = axes
+    shear = rng.uniform(-affine_strength * 0.5, affine_strength * 0.5)
+    A[a1, a2] += shear                       # shear in one direction
+
+    # Apply affine transform
+    pts = pts @ A.T                          # (n, 3)
+
+    # ── Small per-atom jitter (optional fine-grain noise) ─────────────────
+    if move_step > 0.0:
+        jitter_scale = move_step * 0.25
+        pts += np.array([
+            [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
+            for _ in range(len(positions))
+        ])
+
+    # Restore centre of mass
+    pts += com
+
+    return [tuple(row) for row in pts.tolist()]
+
+
+# ---------------------------------------------------------------------------
 # Post-placement repulsion relaxation
 # ---------------------------------------------------------------------------
 
@@ -351,17 +428,13 @@ def place_gas(
     region: str,
     rng: random.Random,
 ) -> tuple[list[str], list[Vec3]]:
-    """Place atoms inside *region* using Poisson-disk sampling.
+    """Place all atoms uniformly at random inside *region*.
 
-    Attempts Bridson's Poisson-disk algorithm to guarantee a minimum
-    separation of ``cov_scale × median(r_i + r_j)`` between every placed
-    atom, which dramatically reduces the number of L-BFGS iterations needed
-    by :func:`relax_positions`.  Randomness is fully controlled by *rng*.
-
-    When the region is too dense to accommodate all atoms with the minimum-
-    distance guarantee (utilisation > ~80 %), the algorithm falls back to
-    uniform random placement for the remaining points — behaviour is
-    identical to the old pure-random path in those extreme cases.
+    No clash checking is performed — call :func:`relax_positions` afterwards.
+    The C++ Bridson Poisson-disk functions (``_poisson_disk_sphere_cpp``,
+    ``_poisson_disk_box_cpp``) are available via ``pasted._ext`` for callers
+    that want minimum-separation placement; ``place_gas`` itself uses uniform
+    random for performance predictability across all density regimes.
 
     Parameters
     ----------
@@ -382,47 +455,23 @@ def place_gas(
     ValueError
         On unrecognised region spec.
     """
-    n = len(atoms)
-
-    # Minimum separation: use the median cov-radius sum as a conservative
-    # lower bound.  This matches the cutoff used by relax_positions so that
-    # the initial placement is already at or just outside the clash threshold.
-    radii = [_cov_radius_ang(a) for a in atoms]
-    radii_sorted = sorted(radii)
-    mid = len(radii_sorted) // 2
-    if len(radii_sorted) % 2 == 0:
-        r_median = (radii_sorted[mid - 1] + radii_sorted[mid]) / 2
-    else:
-        r_median = radii_sorted[mid]
-    min_dist = 2.0 * r_median
-
-    # Derive an integer seed from the RNG state (reproducible but rng-state-agnostic)
-    seed_int: int = rng.randint(0, 2**31 - 1)
-
     if region.startswith("sphere:"):
         r = float(region.split(":")[1])
-        if HAS_POISSON and _poisson_disk_sphere_cpp is not None:
-            pts_np = _poisson_disk_sphere_cpp(n, r, min_dist, seed=seed_int)
-            positions = [tuple(row) for row in pts_np.tolist()]
-        else:
-            positions = _poisson_disk_sphere(n, r, min_dist, rng)
+
+        def sampler() -> Vec3:
+            return _sample_sphere(r, rng)
 
     elif region.startswith("box:"):
         dims = list(map(float, region.split(":")[1].split(",")))
         if len(dims) == 1:
             dims *= 3
-        if HAS_POISSON and _poisson_disk_box_cpp is not None:
-            pts_np = _poisson_disk_box_cpp(
-                n, dims[0], dims[1], dims[2], min_dist, seed=seed_int
-            )
-            positions = [tuple(row) for row in pts_np.tolist()]
-        else:
-            positions = _poisson_disk_box(n, dims[0], dims[1], dims[2], min_dist, rng)
+
+        def sampler() -> Vec3:
+            return _sample_box(dims[0], dims[1], dims[2], rng)
 
     else:
         raise ValueError(f"Unknown region spec: {region!r}")
-
-    return atoms, positions
+    return atoms, [sampler() for _ in atoms]
 
 
 # ---------------------------------------------------------------------------

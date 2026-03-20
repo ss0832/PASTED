@@ -18,6 +18,7 @@ from ._atoms import (
     parse_lo_hi,
     validate_charge_mult,
 )
+from ._config import GeneratorConfig
 from ._ext import set_num_threads
 from ._generator import StructureGenerator, read_xyz
 from ._optimizer import StructureOptimizer, parse_objective_spec
@@ -227,6 +228,22 @@ examples
             "By default, if H(Z=1) is in the element pool and the sampled "
             "composition contains no H, H atoms are appended "
             "(n_H ≈ 1 + uniform(0,1) × n_atoms × 1.2)."
+        ),
+    )
+    pg.add_argument(
+        "--affine-strength",
+        type=float,
+        default=0.0,
+        dest="affine_strength",
+        metavar="S",
+        help=(
+            "Apply a random affine transform (stretch/compress one axis + shear) "
+            "to each generated structure before relax_positions. "
+            "0.0 = disabled (default, backward-compatible). "
+            "Typical values: 0.05–0.3. "
+            "At 0.1 the structure is stretched/compressed by up to ±10%%. "
+            "Works across all placement modes (gas, chain, shell, maxent). "
+            "Equivalent to StructureOptimizer's affine_strength parameter."
         ),
     )
 
@@ -526,7 +543,7 @@ def _run_sample_mode(
 ) -> None:
     """Handle default sampling mode."""
     try:
-        gen = StructureGenerator(
+        cfg = GeneratorConfig(
             n_atoms=args.n_atoms,
             charge=args.charge,
             mult=args.mult,
@@ -545,6 +562,7 @@ def _run_sample_mode(
             element_max_counts=args.parsed_element_max_counts,
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
+            affine_strength=args.affine_strength,
             add_hydrogen=not args.no_add_hydrogen,
             n_samples=args.n_samples,
             n_success=args.n_success,
@@ -556,6 +574,7 @@ def _run_sample_mode(
             filters=args.filters,
             verbose=True,
         )
+        gen = StructureGenerator(cfg)
     except ValueError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)

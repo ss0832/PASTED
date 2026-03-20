@@ -220,7 +220,11 @@ struct FlatCellList {
 // when trust_radius is large relative to the skin.  With N_VERLET_REBUILD=4 and
 // trust_radius=0.5 Å the implicit skin is ~1 Å, safely above zero.
 static constexpr int    N_VERLET_REBUILD = 4;  // rebuild every 4 evaluate() calls
-static constexpr double VERLET_SKIN      = 1.0;  // Å — extended cutoff margin
+// Adaptive skin: min(0.8 Å, cell_size × 0.3).
+// Caps extended pair list at ≤ (1.3)^3 ≈ 2.2× the original count,
+// preventing the 3-4× overhead that occurs for small-radius elements (C, O, H).
+static constexpr double VERLET_SKIN_MAX  = 0.8;  // Å — absolute upper bound
+static constexpr double VERLET_SKIN_FRAC = 0.3;  // fraction of cell_size
 
 class PenaltyEvaluator {
     const double* radii_;
@@ -251,7 +255,8 @@ public:
         double max_r = 0.0;
         for (int i = 0; i < n; ++i) max_r = std::max(max_r, radii[i]);
         cell_size_     = std::max(1e-6, cov_scale_ * 2.0 * max_r);
-        cell_size_ext_ = cell_size_ + VERLET_SKIN;
+        const double skin = std::min(VERLET_SKIN_MAX, cell_size_ * VERLET_SKIN_FRAC);
+        cell_size_ext_ = cell_size_ + skin;
 #ifdef _OPENMP
         const int nthreads = omp_get_max_threads();
 #else
