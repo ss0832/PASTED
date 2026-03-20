@@ -273,7 +273,8 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
     }
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic,64)
+    // A guard: only parallelize when > 2 threads available (omp `if` clause)
+#pragma omp parallel for schedule(dynamic,64) if(omp_get_max_threads() > 2)
 #endif
     for (int i = 0; i < n; ++i) {
         const auto& nbi = nb_list[static_cast<std::size_t>(i)];

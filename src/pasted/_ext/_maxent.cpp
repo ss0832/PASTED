@@ -237,14 +237,78 @@ static double eval_angular(const double* p, int n,
         std::vector<double>(static_cast<std::size_t>(n * 3), 0.0));
 
 #ifdef _OPENMP
+    // A guard: only use OpenMP when > 2 threads are available
+    if (nthreads > 2) {
 #pragma omp parallel for schedule(dynamic,16) reduction(+:U)
-#endif
-    for (int i = 0; i < n; ++i) {
-#ifdef _OPENMP
-        const int tid = omp_get_thread_num();
+        for (int i = 0; i < n; ++i) {
+            const int tid = omp_get_thread_num();
+            const auto& nbi = nb[static_cast<std::size_t>(i)];
+            std::size_t nc = nbi.size();
+            if (nc < 2) continue;
+
+            std::vector<double> ux(nc), uy(nc), uz(nc), id(nc);
+            for (std::size_t idx = 0; idx < nc; ++idx) {
+                int j = nbi[idx];
+                double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
+                double d = std::sqrt(dx*dx+dy*dy+dz*dz);
+                if (d > 0) { double inv = 1.0/d; ux[idx]=dx*inv; uy[idx]=dy*inv; uz[idx]=dz*inv; id[idx]=inv; }
+                else { ux[idx]=uy[idx]=uz[idx]=id[idx]=0; }
+            }
+
+            auto& tg = tgrad[static_cast<std::size_t>(tid)];
+            for (std::size_t ji = 0; ji < nc; ++ji) {
+                if (id[ji] <= 0) continue;
+                double idj = id[ji], ujx = ux[ji], ujy = uy[ji], ujz = uz[ji];
+                for (std::size_t ki = 0; ki < nc; ++ki) {
+                    double cv  = ujx*ux[ki]+ujy*uy[ki]+ujz*uz[ki];
+                    double den = 1.0 - cv + EPS;
+                    if (ki > ji) U += 2.0/den;
+                    if (grad) {
+                        double w = 1.0/(den*den);
+                        tg[i*3  ] += w*(ux[ki]-cv*ujx)*idj;
+                        tg[i*3+1] += w*(uy[ki]-cv*ujy)*idj;
+                        tg[i*3+2] += w*(uz[ki]-cv*ujz)*idj;
+                    }
+                }
+            }
+        }
+    } else {
+        // Serial fallback: write directly to grad[0] buffer
+        for (int i = 0; i < n; ++i) {
+            const auto& nbi = nb[static_cast<std::size_t>(i)];
+            std::size_t nc = nbi.size();
+            if (nc < 2) continue;
+
+            std::vector<double> ux(nc), uy(nc), uz(nc), id(nc);
+            for (std::size_t idx = 0; idx < nc; ++idx) {
+                int j = nbi[idx];
+                double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
+                double d = std::sqrt(dx*dx+dy*dy+dz*dz);
+                if (d > 0) { double inv = 1.0/d; ux[idx]=dx*inv; uy[idx]=dy*inv; uz[idx]=dz*inv; id[idx]=inv; }
+                else { ux[idx]=uy[idx]=uz[idx]=id[idx]=0; }
+            }
+
+            auto& tg = tgrad[0];
+            for (std::size_t ji = 0; ji < nc; ++ji) {
+                if (id[ji] <= 0) continue;
+                double idj = id[ji], ujx = ux[ji], ujy = uy[ji], ujz = uz[ji];
+                for (std::size_t ki = 0; ki < nc; ++ki) {
+                    double cv  = ujx*ux[ki]+ujy*uy[ki]+ujz*uz[ki];
+                    double den = 1.0 - cv + EPS;
+                    if (ki > ji) U += 2.0/den;
+                    if (grad) {
+                        double w = 1.0/(den*den);
+                        tg[i*3  ] += w*(ux[ki]-cv*ujx)*idj;
+                        tg[i*3+1] += w*(uy[ki]-cv*ujy)*idj;
+                        tg[i*3+2] += w*(uz[ki]-cv*ujz)*idj;
+                    }
+                }
+            }
+        }
+    }
 #else
+    for (int i = 0; i < n; ++i) {
         const int tid = 0;
-#endif
         const auto& nbi = nb[static_cast<std::size_t>(i)];
         std::size_t nc = nbi.size();
         if (nc < 2) continue;
@@ -275,6 +339,7 @@ static double eval_angular(const double* p, int n,
             }
         }
     }
+#endif
 
     // Merge thread-local gradients
     if (grad) {

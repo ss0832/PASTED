@@ -65,8 +65,9 @@ using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 // ---------------------------------------------------------------------------
 // Compile-time constants
 // ---------------------------------------------------------------------------
-static constexpr int    CELL_LIST_THRESHOLD = 64;
-static constexpr int    LBFGS_M             = 7;
+static constexpr int    CELL_LIST_THRESHOLD     = 64;
+static constexpr int    PAIR_PARALLEL_THRESHOLD = 50000; // A+B guard: min pairs to use OpenMP
+static constexpr int    LBFGS_M                 = 7;
 static constexpr double ENERGY_TOL          = 1e-12; // per-pair residual < sqrt(2e-12) ~ 1.4e-6 Ang
 static constexpr double ARMIJO_C1           = 1e-4;
 static constexpr int    MAX_LS_STEPS        = 50;
@@ -271,15 +272,61 @@ public:
             }
         } else {
             const int npairs = static_cast<int>(pairs.size());
+            // A+B guard: only use OpenMP when enough threads AND enough pairs
+            // exist to amortise thread-spawn / merge overhead.
 #ifdef _OPENMP
+            if (nthreads > 2 && npairs >= PAIR_PARALLEL_THRESHOLD) {
 #pragma omp parallel for schedule(static) reduction(+:energy)
-#endif
-            for (int p = 0; p < npairs; ++p) {
-#ifdef _OPENMP
-                const int tid = omp_get_thread_num();
+                for (int p = 0; p < npairs; ++p) {
+                    const int tid = omp_get_thread_num();
+                    const int i = pairs[static_cast<std::size_t>(p)].first;
+                    const int j = pairs[static_cast<std::size_t>(p)].second;
+                    const double dx  = xd[3*i  ] - xd[3*j  ];
+                    const double dy  = xd[3*i+1] - xd[3*j+1];
+                    const double dz  = xd[3*i+2] - xd[3*j+2];
+                    const double d2  = dx*dx + dy*dy + dz*dz;
+                    const double thr = cov_scale_ * (radii_[i] + radii_[j]);
+                    if (d2 >= thr * thr) continue;
+                    const double d       = std::sqrt(d2);
+                    const double overlap = thr - d;
+                    energy += 0.5 * overlap * overlap;
+                    if (d > 1e-10) {
+                        const double gf = -overlap / d;
+                        const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
+                        auto& tg = tgrad[static_cast<std::size_t>(tid)];
+                        tg[3*i  ] += gx;  tg[3*i+1] += gy;  tg[3*i+2] += gz;
+                        tg[3*j  ] -= gx;  tg[3*j+1] -= gy;  tg[3*j+2] -= gz;
+                    }
+                }
+                // Merge thread-local gradients into gd
+                for (int t = 0; t < nthreads; ++t)
+                    for (int k = 0; k < dim3; ++k)
+                        gd[k] += tgrad[static_cast<std::size_t>(t)][k];
+            } else {
+                // Serial fallback: write directly to gd — no tgrad overhead.
+                for (int p = 0; p < npairs; ++p) {
+                    const int i = pairs[static_cast<std::size_t>(p)].first;
+                    const int j = pairs[static_cast<std::size_t>(p)].second;
+                    const double dx  = xd[3*i  ] - xd[3*j  ];
+                    const double dy  = xd[3*i+1] - xd[3*j+1];
+                    const double dz  = xd[3*i+2] - xd[3*j+2];
+                    const double d2  = dx*dx + dy*dy + dz*dz;
+                    const double thr = cov_scale_ * (radii_[i] + radii_[j]);
+                    if (d2 >= thr * thr) continue;
+                    const double d       = std::sqrt(d2);
+                    const double overlap = thr - d;
+                    energy += 0.5 * overlap * overlap;
+                    if (d > 1e-10) {
+                        const double gf = -overlap / d;
+                        const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
+                        gd[3*i  ] += gx;  gd[3*i+1] += gy;  gd[3*i+2] += gz;
+                        gd[3*j  ] -= gx;  gd[3*j+1] -= gy;  gd[3*j+2] -= gz;
+                    }
+                }
+            }
 #else
+            for (int p = 0; p < npairs; ++p) {
                 const int tid = 0;
-#endif
                 const int i = pairs[static_cast<std::size_t>(p)].first;
                 const int j = pairs[static_cast<std::size_t>(p)].second;
                 const double dx  = xd[3*i  ] - xd[3*j  ];
@@ -299,10 +346,11 @@ public:
                     tg[3*j  ] -= gx;  tg[3*j+1] -= gy;  tg[3*j+2] -= gz;
                 }
             }
-            // Merge thread-local gradients into gd
+            // Merge thread-local gradients into gd (nthreads=1)
             for (int t = 0; t < nthreads; ++t)
                 for (int k = 0; k < dim3; ++k)
                     gd[k] += tgrad[static_cast<std::size_t>(t)][k];
+#endif
         }
         return energy;
     }

@@ -48,10 +48,12 @@ import subprocess
 import sys
 import tempfile
 import warnings
+
 from setuptools import setup
 
 try:
-    from pybind11.setup_helpers import Pybind11Extension, build_ext as _pybind_build_ext
+    from pybind11.setup_helpers import Pybind11Extension
+    from pybind11.setup_helpers import build_ext as _pybind_build_ext
     _PYBIND11_AVAILABLE = True
 except ImportError:
     _PYBIND11_AVAILABLE = False
@@ -74,7 +76,7 @@ def _check_openmp() -> bool:
             with open(sp, "w") as fh:
                 fh.write(src)
             r = subprocess.run([compiler, "-fopenmp", sp, "-o", op],
-                               capture_output=True, timeout=30)
+                               capture_output=True, timeout=30, check=False)
             return r.returncode == 0
     except Exception:
         return False

@@ -55,8 +55,9 @@ namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 using I32Array = py::array_t<int32_t, py::array::c_style | py::array::forcecast>;
 
-static constexpr int    CELL_LIST_THRESHOLD = 64;
-static constexpr double PI                  = 3.14159265358979323846;
+static constexpr int    CELL_LIST_THRESHOLD     = 64;
+static constexpr int    PAIR_PARALLEL_THRESHOLD = 50000; // A+B guard: min pairs to use OpenMP
+static constexpr double PI                      = 3.14159265358979323846;
 
 // ===========================================================================
 // FlatCellList  (identical pattern to _relax_core / _steinhardt_core)
@@ -213,15 +214,36 @@ py::dict graph_metrics_cpp(
         static_cast<std::size_t>(nthreads));
 
     const int npairs = static_cast<int>(pairs.size());
+    // A+B guard: only use OpenMP when enough threads AND enough pairs.
 #ifdef _OPENMP
+    if (nthreads > 2 && npairs >= PAIR_PARALLEL_THRESHOLD) {
 #pragma omp parallel for schedule(static)
-#endif
-    for (int p = 0; p < npairs; ++p) {
-#ifdef _OPENMP
-        const int tid = omp_get_thread_num();
+        for (int p = 0; p < npairs; ++p) {
+            const int tid = omp_get_thread_num();
+            const int i = pairs[static_cast<std::size_t>(p)].first;
+            const int j = pairs[static_cast<std::size_t>(p)].second;
+            const double dx = pts[3*i  ]-pts[3*j  ];
+            const double dy = pts[3*i+1]-pts[3*j+1];
+            const double dz = pts[3*i+2]-pts[3*j+2];
+            const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
+            if (d <= cutoff && d > 1e-6)
+                local_pairs[static_cast<std::size_t>(tid)].emplace_back(i, j);
+        }
+    } else {
+        for (int p = 0; p < npairs; ++p) {
+            const int i = pairs[static_cast<std::size_t>(p)].first;
+            const int j = pairs[static_cast<std::size_t>(p)].second;
+            const double dx = pts[3*i  ]-pts[3*j  ];
+            const double dy = pts[3*i+1]-pts[3*j+1];
+            const double dz = pts[3*i+2]-pts[3*j+2];
+            const double d  = std::sqrt(dx*dx+dy*dy+dz*dz);
+            if (d <= cutoff && d > 1e-6)
+                local_pairs[0].emplace_back(i, j);
+        }
+    }
 #else
+    for (int p = 0; p < npairs; ++p) {
         const int tid = 0;
-#endif
         const int i = pairs[static_cast<std::size_t>(p)].first;
         const int j = pairs[static_cast<std::size_t>(p)].second;
         const double dx = pts[3*i  ]-pts[3*j  ];
@@ -231,6 +253,7 @@ py::dict graph_metrics_cpp(
         if (d <= cutoff && d > 1e-6)
             local_pairs[static_cast<std::size_t>(tid)].emplace_back(i, j);
     }
+#endif
 
     // Merge into adj lists (serial; adj list writes are not thread-safe)
     for (int t = 0; t < nthreads; ++t) {
@@ -403,15 +426,36 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
     std::vector<std::vector<double>> tlocal_dists(
         static_cast<std::size_t>(rdf_nthreads));
     const int rdf_npairs = static_cast<int>(rdf_pairs.size());
+    // A+B guard: only use OpenMP when enough threads AND enough pairs.
 #ifdef _OPENMP
+    if (rdf_nthreads > 2 && rdf_npairs >= PAIR_PARALLEL_THRESHOLD) {
 #pragma omp parallel for schedule(static)
-#endif
-    for (int p = 0; p < rdf_npairs; ++p) {
-#ifdef _OPENMP
-        const int tid = omp_get_thread_num();
+        for (int p = 0; p < rdf_npairs; ++p) {
+            const int tid = omp_get_thread_num();
+            const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
+            const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
+            const double dx = pts[3*i  ] - pts[3*j  ];
+            const double dy = pts[3*i+1] - pts[3*j+1];
+            const double dz = pts[3*i+2] - pts[3*j+2];
+            const double d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 <= cutoff2 && d2 > 1e-20)
+                tlocal_dists[static_cast<std::size_t>(tid)].push_back(std::sqrt(d2));
+        }
+    } else {
+        for (int p = 0; p < rdf_npairs; ++p) {
+            const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
+            const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
+            const double dx = pts[3*i  ] - pts[3*j  ];
+            const double dy = pts[3*i+1] - pts[3*j+1];
+            const double dz = pts[3*i+2] - pts[3*j+2];
+            const double d2 = dx*dx + dy*dy + dz*dz;
+            if (d2 <= cutoff2 && d2 > 1e-20)
+                tlocal_dists[0].push_back(std::sqrt(d2));
+        }
+    }
 #else
+    for (int p = 0; p < rdf_npairs; ++p) {
         const int tid = 0;
-#endif
         const int i = rdf_pairs[static_cast<std::size_t>(p)].first;
         const int j = rdf_pairs[static_cast<std::size_t>(p)].second;
         const double dx = pts[3*i  ] - pts[3*j  ];
@@ -421,6 +465,7 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
         if (d2 <= cutoff2 && d2 > 1e-20)
             tlocal_dists[static_cast<std::size_t>(tid)].push_back(std::sqrt(d2));
     }
+#endif
     // Merge thread-local distance vectors
     std::vector<double> pair_dists;
     for (int t = 0; t < rdf_nthreads; ++t)
