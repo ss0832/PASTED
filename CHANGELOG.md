@@ -6,6 +6,74 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.2] — 2026-03-21
+
+### Bug Fixes
+
+#### `StructureOptimizer.run()` leaked spurious `UserWarning` from internal
+retries (`_optimizer.py`)
+
+`_make_initial` generates a single-sample structure up to 50 times until a
+valid starting point is found.  Each failed attempt called
+`StructureGenerator.generate()` with `n_samples=1`, which emitted a
+`UserWarning` whenever the single attempt was rejected by the
+charge/multiplicity parity check.  Because `_make_initial` is an *internal*
+helper with its own retry loop, these transient failures are expected and
+irrelevant to the caller — yet the warnings surfaced visibly to end users,
+falsely suggesting that the optimization had failed even when it ultimately
+succeeded.
+
+**Fix:** Each `StructureGenerator.generate()` call inside `_make_initial` is
+now wrapped in `warnings.catch_warnings()` with `warnings.simplefilter("ignore",
+UserWarning)`.  The caller-visible warning in `run()` — emitted only when a
+restart *cannot* start at all — is unchanged.
+
+#### Quickstart warning example used an element pool that triggered the wrong
+warning (`docs/quickstart.md`)
+
+The documentation example intended to demonstrate the
+`"No structures passed the metric filters …"` warning.  However, the element
+pool `elements="6,7,8"` (C, N, O) combined with `charge=0, mult=1` and only
+10 attempts caused the charge/multiplicity parity check to reject *all*
+attempts before any filter evaluation.  The filter-rejection warning therefore
+never fired, and the comment in the code block was misleading.
+
+**Fix:** The example now uses `elements="6"` (carbon only), which always
+satisfies the parity constraint, so the metric-filter warning fires as
+documented.
+
+### New Features
+
+#### `StructureOptimizer.max_init_attempts` — configurable retry limit with
+early parity validation (`_optimizer.py`)
+
+Previously `_make_initial` used a hardcoded limit of 50 retries per restart.
+This was too conservative for element pools where parity-valid compositions
+are rare (e.g., large mixed pools with tight charge/mult constraints), and
+could silently skip restarts that would have succeeded with a few more tries.
+
+**Changes:**
+
+* A new `max_init_attempts: int = 0` parameter is added to
+  `StructureOptimizer.__init__`.  `0` means **unlimited retries** (the new
+  default); any positive integer caps the attempts and restores the old
+  bail-out behavior at the chosen limit.
+
+* `__init__` now calls `_pool_can_satisfy_parity()` — a new module-level
+  helper that checks whether the element pool's atomic-number parities can
+  ever satisfy the charge/multiplicity constraint — and raises `ValueError`
+  immediately if not.  This makes `max_init_attempts=0` safe: if
+  construction succeeds, a valid initial structure is guaranteed to exist.
+
+* The new helper `_pool_can_satisfy_parity(pool, n_atoms, charge, mult)`
+  is also exported for use in tests and downstream tools.
+
+**Migration:** No action required.  The default `max_init_attempts=0`
+(unlimited) replaces the former hardcoded limit of 50.  To restore the
+old behavior explicitly, pass `max_init_attempts=50`.
+
+---
+
 ## [0.3.1] — 2026-03-21
  
 ### Bug Fixes

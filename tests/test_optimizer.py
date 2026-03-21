@@ -1359,3 +1359,242 @@ class TestParallelTemperingSanitize:
         assert not unexpected, (
             f"Non-pool atoms in PT result with in-pool initial: {unexpected}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for 0.3.2 bug fixes
+# ---------------------------------------------------------------------------
+
+class TestMakeInitialNoSpuriousWarning:
+    """Regression test for 0.3.2 bug fix.
+
+    ``StructureOptimizer.run()`` must not leak UserWarnings that originate
+    from transient parity-check failures inside ``_make_initial``'s internal
+    retry loop.  Previously, every failed single-sample attempt emitted a
+    UserWarning that surfaced to the caller even when the optimization
+    ultimately succeeded.
+    """
+
+    def test_no_userwarning_on_successful_run(self) -> None:
+        """No UserWarning should be emitted when opt.run() succeeds."""
+        opt = StructureOptimizer(
+            n_atoms=12,
+            charge=0,
+            mult=1,
+            # Mixed-element pool where some compositions fail parity —
+            # this is the exact setup that triggered the spurious warnings.
+            elements="6,7,8,15,16",
+            objective={"H_total": 1.0, "Q6": -2.0},
+            method="annealing",
+            max_steps=200,
+            n_restarts=2,
+            seed=42,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = opt.run()
+
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert user_warns == [], (
+            f"Unexpected UserWarning(s) from opt.run(): "
+            f"{[str(x.message) for x in user_warns]}"
+        )
+        assert result.best is not None
+
+
+class TestFilterWarningWithCarbonOnlyPool:
+    """Regression test for 0.3.2 documentation fix.
+
+    The quickstart warning example now uses ``elements='6'`` (carbon only)
+    so that the parity check always passes and the filter-rejection warning
+    fires as documented.  This test validates that exact scenario.
+    """
+
+    def test_filter_warning_fires_not_parity_warning(self) -> None:
+        """With elements='6', the filter warning (not parity) should fire."""
+        from pasted import generate
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = generate(
+                n_atoms=8, charge=0, mult=1,
+                mode="gas", region="sphere:8",
+                elements="6",           # carbon-only: parity always satisfied
+                n_samples=10, seed=0,
+                filters=["H_total:999:-"],  # impossible threshold
+            )
+
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert len(user_warns) >= 1, "Expected at least one UserWarning"
+        msg = str(user_warns[0].message).lower()
+        assert "filter" in msg, (
+            f"Expected filter-rejection warning, got: {msg}"
+        )
+        assert "parity" not in msg, (
+            f"Unexpected parity warning with carbon-only pool: {msg}"
+        )
+        assert len(result) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests for max_init_attempts and __init__ parity validation (0.3.2)
+# ---------------------------------------------------------------------------
+
+class TestPoolParityValidation:
+    """StructureOptimizer.__init__ must raise ValueError for impossible pools."""
+
+    def test_all_odd_pool_even_natoms_wrong_parity(self) -> None:
+        """All-nitrogen pool (Z=7, odd) with n_atoms=8 (even sum→even electrons)
+        clashes with mult=1 which requires even electrons — but charge=0 and
+        n_atoms*7 gives even total_Z, so n_e is even and mult=1 is fine.
+        Use charge=1 to make n_e odd, which clashes with mult=1 (needs even n_e).
+        """
+        with pytest.raises(ValueError, match="cannot produce"):
+            StructureOptimizer(
+                n_atoms=8, charge=1, mult=1,
+                elements="7",          # all-odd Z; sum=56 → n_e=55 (odd) → mult=1 impossible
+                objective={"H_total": 1.0},
+            )
+
+    def test_all_odd_pool_raises_when_parity_impossible(self) -> None:
+        """N-only pool, n_atoms=1: total_Z=7, n_e=7 (odd) → mult=1 impossible."""
+        with pytest.raises(ValueError, match="cannot produce"):
+            StructureOptimizer(
+                n_atoms=1, charge=0, mult=1,
+                elements="7",          # Z=7 odd; n_e=7 → needs mult=2, not 1
+                objective={"H_total": 1.0},
+            )
+
+    def test_all_even_pool_wrong_parity(self) -> None:
+        """All-carbon pool (Z=6, even): total_Z always even → n_e always even.
+        mult=2 requires n_unpaired=1 → n_e must be odd → impossible.
+        """
+        with pytest.raises(ValueError, match="cannot produce"):
+            StructureOptimizer(
+                n_atoms=4, charge=0, mult=2,
+                elements="6",          # Z=6 even; sum always even → mult=2 impossible
+                objective={"H_total": 1.0},
+            )
+
+    def test_mixed_pool_does_not_raise(self) -> None:
+        """Mixed pool (even- and odd-Z) can always satisfy parity."""
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            elements="6,7",            # C (Z=6 even) + N (Z=7 odd) — mixed
+            objective={"H_total": 1.0},
+        )
+        assert opt._element_pool == ["C", "N"]
+
+    def test_single_even_element_correct_parity(self) -> None:
+        """Carbon-only pool: total_Z always even → n_e even → mult=1 OK."""
+        opt = StructureOptimizer(
+            n_atoms=4, charge=0, mult=1,
+            elements="6",
+            objective={"H_total": 1.0},
+        )
+        assert opt._element_pool == ["C"]
+
+    def test_charge_makes_min_electrons_nonpositive(self) -> None:
+        """Extreme positive charge that makes n_electrons <= 0 must raise."""
+        with pytest.raises(ValueError, match="cannot produce"):
+            StructureOptimizer(
+                n_atoms=1, charge=99, mult=1,
+                elements="6",          # Z=6, n_e = 6-99 = -93 ≤ 0
+                objective={"H_total": 1.0},
+            )
+
+
+class TestMaxInitAttempts:
+    """max_init_attempts controls the retry cap inside _make_initial."""
+
+    def test_default_is_unlimited(self) -> None:
+        """Default max_init_attempts=0 means unlimited."""
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            elements="6,7,8",
+            objective={"H_total": 1.0},
+        )
+        assert opt.max_init_attempts == 0
+
+    def test_explicit_value_stored(self) -> None:
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            elements="6,7,8",
+            objective={"H_total": 1.0},
+            max_init_attempts=100,
+        )
+        assert opt.max_init_attempts == 100
+
+    def test_unlimited_run_succeeds(self) -> None:
+        """max_init_attempts=0 must not prevent successful optimization."""
+        opt = StructureOptimizer(
+            n_atoms=8, charge=0, mult=1,
+            elements="6,7,8",
+            objective={"H_total": 1.0},
+            method="annealing",
+            max_steps=100,
+            max_init_attempts=0,
+            seed=1,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = opt.run()
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert user_warns == [], f"Unexpected warnings: {[str(x.message) for x in user_warns]}"
+        assert result.best is not None
+
+    def test_capped_run_succeeds_with_easy_pool(self) -> None:
+        """max_init_attempts=5 is plenty for an easy pool."""
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            elements="6,8",           # C+O: always even electrons
+            objective={"H_total": 1.0},
+            method="annealing",
+            max_steps=100,
+            max_init_attempts=5,
+            seed=2,
+        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = opt.run()
+        user_warns = [x for x in w if issubclass(x.category, UserWarning)]
+        assert user_warns == [], f"Unexpected warnings: {[str(x.message) for x in user_warns]}"
+        assert result.best is not None
+
+
+class TestPoolCanSatisfyParity:
+    """Unit tests for the _pool_can_satisfy_parity helper."""
+
+    def test_import(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        assert callable(_pool_can_satisfy_parity)
+
+    def test_mixed_pool_always_true(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # C (6, even) + N (7, odd) → mixed → always satisfiable
+        assert _pool_can_satisfy_parity(["C", "N"], 4, 0, 1) is True
+
+    def test_all_even_correct_target(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # C only (Z=6 even), charge=0, mult=1: target_parity = (0+1-1)%2 = 0 ✓
+        assert _pool_can_satisfy_parity(["C"], 4, 0, 1) is True
+
+    def test_all_even_wrong_target(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # C only (Z=6 even), charge=0, mult=2: target_parity = (0+2-1)%2 = 1 ✗
+        assert _pool_can_satisfy_parity(["C"], 4, 0, 2) is False
+
+    def test_all_odd_matching_natoms(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # N only (Z=7 odd), n_atoms=4 → sum%2==0, charge=0, mult=1: target=0 ✓
+        assert _pool_can_satisfy_parity(["N"], 4, 0, 1) is True
+
+    def test_all_odd_mismatched_natoms(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # N only (Z=7 odd), n_atoms=1 → sum%2==1, charge=0, mult=1: target=0 ✗
+        assert _pool_can_satisfy_parity(["N"], 1, 0, 1) is False
+
+    def test_nonpositive_electrons(self) -> None:
+        from pasted._optimizer import _pool_can_satisfy_parity
+        # charge=99 > min_z*n_atoms=6 → n_e would be ≤ 0
+        assert _pool_can_satisfy_parity(["C"], 1, 99, 1) is False

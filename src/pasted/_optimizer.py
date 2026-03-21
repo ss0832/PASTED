@@ -56,6 +56,7 @@ Use negative weights to penalise a metric.
 from __future__ import annotations
 
 import inspect
+import itertools
 import math
 import random
 import sys
@@ -365,6 +366,77 @@ class OptimizationResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _pool_can_satisfy_parity(
+    pool: list[str], n_atoms: int, charge: int, mult: int
+) -> bool:
+    """Return ``True`` if *any* composition of *n_atoms* from *pool* can pass
+    :func:`~pasted._atoms.validate_charge_mult`.
+
+    The parity rule (derived from :func:`~pasted._atoms.validate_charge_mult`)
+    is::
+
+        n_electrons = sum(Z_i) - charge  > 0
+        n_electrons % 2  ==  (mult - 1) % 2
+
+    The second condition simplifies to::
+
+        sum(Z_i) % 2  ==  (charge + mult - 1) % 2   [call this *target*]
+
+    The achievable parities of ``sum(Z_i)`` for *n_atoms* atoms drawn from
+    *pool* depend only on whether the pool contains both even-Z and odd-Z
+    elements:
+
+    * **mixed pool** — any parity is reachable → always satisfiable (modulo
+      the ``n_electrons > 0`` check below).
+    * **all-even pool** — ``sum(Z_i)`` is always even → only satisfiable when
+      ``target == 0``.
+    * **all-odd pool** — ``sum(Z_i) % 2 == n_atoms % 2`` → only satisfiable
+      when ``n_atoms % 2 == target``.
+
+    The ``n_electrons > 0`` check uses the minimum possible sum,
+    ``min(Z) × n_atoms``.
+
+    Parameters
+    ----------
+    pool:
+        Unique element symbols in the optimizer's element pool.
+    n_atoms:
+        Number of atoms in each generated structure.
+    charge:
+        Total charge (integer, may be negative).
+    mult:
+        Spin multiplicity (positive integer).
+
+    Returns
+    -------
+    bool
+        ``False`` when *no* composition of *n_atoms* atoms from *pool* can
+        ever pass the parity check; ``True`` otherwise.
+    """
+    z_values = [ATOMIC_NUMBERS[e] for e in pool]
+    min_z = min(z_values)
+
+    # Condition 1: n_electrons = sum(Z) - charge > 0 for at least one composition.
+    # The minimum achievable sum is min_z * n_atoms.
+    if min_z * n_atoms <= charge:
+        return False
+
+    # Condition 2: parity of sum(Z_i) must equal target_parity for some composition.
+    target_parity = (charge + mult - 1) % 2
+    has_even = any(z % 2 == 0 for z in z_values)
+    has_odd = any(z % 2 == 1 for z in z_values)
+
+    if has_even and has_odd:
+        # Mixed pool — can hit any parity by adjusting the odd/even atom count.
+        return True
+    if has_even:
+        # All-even pool: sum is always even.
+        return target_parity == 0
+    # All-odd pool: sum parity == n_atoms % 2.
+    return (n_atoms % 2) == target_parity
+
 
 
 def parse_objective_spec(specs: list[str]) -> dict[str, float]:
@@ -912,6 +984,27 @@ class StructureOptimizer:
     n_restarts:
         Independent optimisation runs (default: 1).  The best result
         across all restarts is returned.
+    max_init_attempts:
+        Maximum number of single-sample tries that :meth:`_make_initial`
+        makes per restart when generating the starting structure
+        (default: ``0`` = unlimited).
+
+        * ``0`` — unlimited retries (recommended for production runs with
+          large or constrained element pools).  Safe because
+          :meth:`__init__` validates at construction time that the element
+          pool can satisfy the charge/multiplicity parity constraint; if
+          that check passes, a valid structure is guaranteed to be found
+          eventually.
+        * ``> 0`` — at most *max_init_attempts* tries per restart.  If
+          exhausted the restart is skipped and a :class:`UserWarning` is
+          emitted.  Useful as a time-budget guard in automated pipelines.
+
+        .. note::
+            :meth:`__init__` raises :class:`ValueError` immediately when
+            the element pool is *structurally* incompatible with
+            ``charge``/``mult`` (e.g. an all-nitrogen pool with
+            ``charge=0, mult=1``), making an infinite loop impossible for
+            well-formed inputs.
     seed:
         Random seed (``None`` → non-deterministic).
     verbose:
@@ -974,6 +1067,7 @@ class StructureOptimizer:
         n_restarts: int = 1,
         n_replicas: int = 4,
         pt_swap_interval: int = 10,
+        max_init_attempts: int = 0,
         seed: int | None = None,
         verbose: bool = False,
     ) -> None:
@@ -1015,6 +1109,7 @@ class StructureOptimizer:
         self.n_restarts = n_restarts
         self.n_replicas = n_replicas
         self.pt_swap_interval = pt_swap_interval
+        self.max_init_attempts = max_init_attempts
         self.seed = seed
         self.verbose = verbose
 
@@ -1037,6 +1132,24 @@ class StructureOptimizer:
         else:
             # dict.fromkeys preserves insertion order and removes duplicates
             self._element_pool = list(dict.fromkeys(elements))
+
+        # Early parity validation — catch impossible element pools before run().
+        # This makes max_init_attempts=0 (unlimited) safe: if this check passes,
+        # _make_initial is guaranteed to eventually find a valid structure.
+        if not _pool_can_satisfy_parity(
+            self._element_pool, self.n_atoms, self.charge, self.mult
+        ):
+            even_odd = (
+                "all even-Z" if all(ATOMIC_NUMBERS[e] % 2 == 0 for e in self._element_pool)
+                else "all odd-Z"
+            )
+            raise ValueError(
+                f"Element pool {self._element_pool!r} ({even_odd}) cannot produce "
+                f"any composition of {self.n_atoms} atoms that satisfies "
+                f"charge={self.charge:+d}, mult={self.mult}.  "
+                f"Add at least one element with a different atomic-number parity, "
+                f"or adjust n_atoms / charge / mult."
+            )
 
         # Cutoff
         self._cutoff: float = self._resolve_cutoff(cutoff)
@@ -1074,26 +1187,49 @@ class StructureOptimizer:
         return f"sphere:{r * 1.2:.1f}"  # 20 % margin
 
     def _make_initial(self, rng: random.Random) -> Structure | None:
-        """Generate a valid initial structure using StructureGenerator."""
+        """Generate a valid initial structure using StructureGenerator.
+
+        Retries until a parity-valid structure is produced.  The number of
+        attempts is controlled by :attr:`max_init_attempts`:
+
+        * ``0`` (default) — unlimited retries.  Safe because
+          :meth:`__init__` already verified that the element pool can satisfy
+          the charge/multiplicity parity constraint.
+        * ``> 0`` — at most *max_init_attempts* tries; returns ``None`` on
+          exhaustion (caller logs and skips the restart).
+
+        Warnings from the internal single-sample generation attempts are
+        suppressed because this method manages its own retry loop.  A
+        caller-visible :class:`UserWarning` is emitted by :meth:`run` only
+        when a restart *cannot be started at all* (i.e., this method returns
+        ``None``), which is the actionable signal for the end user.
+        """
         region = self._auto_region()
-        for _ in range(50):
+        attempts = (
+            itertools.count()
+            if self.max_init_attempts == 0
+            else range(self.max_init_attempts)
+        )
+        for _ in attempts:
             seed = rng.randint(0, 2**31)
-            structs = StructureGenerator(
-                n_atoms=self.n_atoms,
-                charge=self.charge,
-                mult=self.mult,
-                mode="gas",
-                region=region,
-                elements=self._element_pool,
-                cov_scale=self.cov_scale,
-                relax_cycles=self.relax_cycles,
-                cutoff=self._cutoff,
-                n_bins=self.n_bins,
-                w_atom=self.w_atom,
-                w_spatial=self.w_spatial,
-                n_samples=1,
-                seed=seed,
-            ).generate()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", UserWarning)
+                structs = StructureGenerator(
+                    n_atoms=self.n_atoms,
+                    charge=self.charge,
+                    mult=self.mult,
+                    mode="gas",
+                    region=region,
+                    elements=self._element_pool,
+                    cov_scale=self.cov_scale,
+                    relax_cycles=self.relax_cycles,
+                    cutoff=self._cutoff,
+                    n_bins=self.n_bins,
+                    w_atom=self.w_atom,
+                    w_spatial=self.w_spatial,
+                    n_samples=1,
+                    seed=seed,
+                ).generate()
             if structs:
                 return structs.structures[0]
         return None
@@ -1703,7 +1839,12 @@ class StructureOptimizer:
         ``Structure`` should switch to ``opt.run().best`` or ``opt.run()[0]``.
 
         A :class:`UserWarning` is emitted when one or more restarts fail to
-        produce a valid initial structure.
+        produce a valid initial structure after all internal retries are
+        exhausted.  Transient parity-check failures inside the initial-
+        structure generation loop are silenced internally and do **not** reach
+        the caller; only a definitive inability to start a restart is reported.
+        The retry limit is controlled by :attr:`max_init_attempts`
+        (``0`` = unlimited, the default).
 
         Parameters
         ----------

@@ -100,7 +100,8 @@ with warnings.catch_warnings(record=True) as w:
     result = generate(
         n_atoms=8, charge=0, mult=1,
         mode="gas", region="sphere:8",
-        elements="6,7,8", n_samples=10, seed=0,
+        elements="6",       # carbon-only pool: parity always passes, so the
+        n_samples=10, seed=0,  # filter warning fires cleanly
         filters=["H_total:999:-"],      # impossible — nothing will pass
     )
 
@@ -626,6 +627,53 @@ opt = StructureOptimizer(
     elements="29,79",   # Cu, Au — both supported by EMT
     objective=ase_emt_objective,
     method="annealing", max_steps=500, seed=42,
+)
+```
+
+---
+
+### Controlling initial-structure generation retries (`max_init_attempts`)
+
+By default `StructureOptimizer` retries generating the initial structure for
+each restart **without a limit** (`max_init_attempts=0`).  This is safe
+because the constructor validates at build time that the element pool can
+satisfy the charge/multiplicity parity constraint — if construction succeeds,
+a valid structure is guaranteed to eventually be found.
+
+Pass a positive integer to cap the number of attempts per restart.  If the
+cap is reached without success the restart is skipped and a
+`UserWarning` is emitted.  This is useful in automated pipelines where a
+wall-time budget matters more than exhaustive search:
+
+```python
+from pasted import StructureOptimizer
+
+# At most 100 tries per restart — useful in time-constrained pipelines
+opt = StructureOptimizer(
+    n_atoms=20,
+    charge=0,
+    mult=1,
+    elements="6,7,8,15,16",
+    objective={"H_total": 1.0},
+    method="annealing",
+    max_steps=3000,
+    n_restarts=4,
+    max_init_attempts=100,   # cap retries; 0 (default) = unlimited
+    seed=42,
+)
+result = opt.run()
+```
+
+Passing an element pool that can *never* satisfy the parity constraint raises
+`ValueError` immediately at construction time — no retries are attempted:
+
+```python
+# Raises ValueError: all-nitrogen pool cannot satisfy charge=0, mult=1
+# (7 electrons per atom → odd total for any n_atoms, but mult=1 requires even)
+StructureOptimizer(
+    n_atoms=8, charge=0, mult=1,
+    elements="7",          # nitrogen only — all-odd-Z pool
+    objective={"H_total": 1.0},
 )
 ```
 
