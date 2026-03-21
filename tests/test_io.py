@@ -122,8 +122,14 @@ class TestStructureFromXyz:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             structs = generate(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=1, seed=0,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,8",
+                n_samples=1,
+                seed=0,
             )
         original = structs[0]  # type: ignore[union-attr]
         xyz_str = original.to_xyz()  # type: ignore[union-attr]
@@ -169,8 +175,14 @@ class TestReadXyz:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = generate(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=3, seed=42,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,8",
+                n_samples=3,
+                seed=42,
             )
         f = tmp_path / "batch.xyz"
         for i, s in enumerate(result):
@@ -184,10 +196,13 @@ class TestReadXyz:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             opt = StructureOptimizer(
-                n_atoms=len(s), charge=s.charge, mult=s.mult,
+                n_atoms=len(s),
+                charge=s.charge,
+                mult=s.mult,
                 objective={"H_total": 1.0},
                 elements=list(set(s.atoms)),
-                max_steps=20, seed=0,
+                max_steps=20,
+                seed=0,
             )
             result = opt.run(initial=s)
         assert result.best is not None

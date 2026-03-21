@@ -129,11 +129,13 @@ class TestComputeRdfDeviation:
         theta = np.arccos(1.0 - 2.0 * rng.uniform(size=n))
         phi = rng.uniform(0.0, 2.0 * math.pi, n)
         radii_ = 20.0 * u ** (1.0 / 3.0)
-        pts = np.column_stack([
-            radii_ * np.sin(theta) * np.cos(phi),
-            radii_ * np.sin(theta) * np.sin(phi),
-            radii_ * np.cos(theta),
-        ])
+        pts = np.column_stack(
+            [
+                radii_ * np.sin(theta) * np.cos(phi),
+                radii_ * np.sin(theta) * np.sin(phi),
+                radii_ * np.cos(theta),
+            ]
+        )
         result = compute_rdf_deviation(pts, cutoff=8.0, n_bins=20)
         assert result < 0.5
 
@@ -181,12 +183,23 @@ def test_steinhardt_range() -> None:
 def test_steinhardt_fcc_theoretical() -> None:
     """FCC 12-neighbor shell: Q4 ~ 0.1909, Q6 ~ 0.5745."""
     a = 2.87
-    pts = np.array([
-        [0.0, 0.0, 0.0],
-        [a/2, a/2, 0.0], [-a/2, a/2, 0.0], [a/2, -a/2, 0.0], [-a/2, -a/2, 0.0],
-        [a/2, 0.0, a/2], [-a/2, 0.0, a/2], [a/2, 0.0, -a/2], [-a/2, 0.0, -a/2],
-        [0.0, a/2, a/2], [0.0, -a/2, a/2], [0.0, a/2, -a/2], [0.0, -a/2, -a/2],
-    ])
+    pts = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [a / 2, a / 2, 0.0],
+            [-a / 2, a / 2, 0.0],
+            [a / 2, -a / 2, 0.0],
+            [-a / 2, -a / 2, 0.0],
+            [a / 2, 0.0, a / 2],
+            [-a / 2, 0.0, a / 2],
+            [a / 2, 0.0, -a / 2],
+            [-a / 2, 0.0, -a / 2],
+            [0.0, a / 2, a / 2],
+            [0.0, -a / 2, a / 2],
+            [0.0, a / 2, -a / 2],
+            [0.0, -a / 2, -a / 2],
+        ]
+    )
     per_atom = compute_steinhardt_per_atom(pts, [4, 6], cutoff=3.0)
     assert per_atom["Q4"][0] == pytest.approx(0.19094, abs=1e-4)
     assert per_atom["Q6"][0] == pytest.approx(0.57452, abs=1e-4)
@@ -335,22 +348,24 @@ class TestGraphCoreCpp:
         """C++ ring_fraction must agree with pure-Python to within 1e-9."""
         atoms = ["C", "C", "C", "N", "O"]
         side = 1.3
-        pts = np.array([
-            (0.0, 0.0, 0.0),
-            (side, 0.0, 0.0),
-            (side / 2, side * math.sqrt(3) / 2, 0.0),
-            (5.0, 0.0, 0.0),
-            (10.0, 0.0, 0.0),
-        ])
-        dmat    = squareform(pdist(pts))
-        radii   = np.array([_cov_radius_ang(a) for a in atoms])
+        pts = np.array(
+            [
+                (0.0, 0.0, 0.0),
+                (side, 0.0, 0.0),
+                (side / 2, side * math.sqrt(3) / 2, 0.0),
+                (5.0, 0.0, 0.0),
+                (10.0, 0.0, 0.0),
+            ]
+        )
+        dmat = squareform(pdist(pts))
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
         en_vals = np.array([pauling_electronegativity(a) for a in atoms])
 
-        cpp       = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
-        py_ring   = compute_ring_fraction(atoms, dmat, 2.13)
+        cpp = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
+        py_ring = compute_ring_fraction(atoms, dmat, 2.13)
         py_charge = compute_charge_frustration(atoms, dmat, 2.13)
 
-        assert cpp["ring_fraction"]      == pytest.approx(py_ring,   abs=1e-9)
+        assert cpp["ring_fraction"] == pytest.approx(py_ring, abs=1e-9)
         assert cpp["charge_frustration"] == pytest.approx(py_charge, abs=1e-9)
 
     @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
@@ -358,16 +373,16 @@ class TestGraphCoreCpp:
         """C++ graph_lcc and graph_cc must agree with pure-Python fallbacks."""
         atoms = ["C", "N", "O", "Fe", "H"]
         rng = np.random.default_rng(7)
-        pts     = rng.uniform(-3, 3, (5, 3))
-        dmat    = squareform(pdist(pts))
-        radii   = np.array([_cov_radius_ang(a) for a in atoms])
+        pts = rng.uniform(-3, 3, (5, 3))
+        dmat = squareform(pdist(pts))
+        radii = np.array([_cov_radius_ang(a) for a in atoms])
         en_vals = np.array([pauling_electronegativity(a) for a in atoms])
 
         cpp = _ext.graph_metrics_cpp(pts, radii, 1.0, en_vals, 2.13)
-        py  = compute_graph_metrics(dmat, 2.13)
+        py = compute_graph_metrics(dmat, 2.13)
 
         assert cpp["graph_lcc"] == pytest.approx(py["graph_lcc"], abs=1e-9)
-        assert cpp["graph_cc"]  == pytest.approx(py["graph_cc"],  abs=1e-9)
+        assert cpp["graph_cc"] == pytest.approx(py["graph_cc"], abs=1e-9)
 
     @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
     def test_rdf_h_cpp_non_negative(self) -> None:
@@ -389,20 +404,25 @@ class TestGraphCoreCpp:
         cpp = dict(_ext.rdf_h_cpp(pts, cutoff, 20))
         py_h = compute_h_spatial(pts, cutoff, 20)
         py_rdf = compute_rdf_deviation(pts, cutoff, 20)
-        assert cpp["h_spatial"] == pytest.approx(py_h,  abs=1e-9)
-        assert cpp["rdf_dev"]   == pytest.approx(py_rdf, abs=1e-9)
+        assert cpp["h_spatial"] == pytest.approx(py_h, abs=1e-9)
+        assert cpp["rdf_dev"] == pytest.approx(py_rdf, abs=1e-9)
 
     @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
     def test_cpp_all_metrics_roundtrip(self) -> None:
         """compute_all_metrics with C++ path returns finite values in range."""
         atoms = ["C", "N", "O", "Fe", "H"] * 10
         rng = np.random.default_rng(3)
-        positions = [tuple(float(x) for x in row)
-                     for row in rng.uniform(-5, 5, (50, 3))]  # type: ignore[arg-type]
+        positions = [tuple(float(x) for x in row) for row in rng.uniform(-5, 5, (50, 3))]  # type: ignore[arg-type]
         m = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 2.13, 1.0)  # type: ignore[arg-type]
 
-        for key in ("graph_lcc", "graph_cc", "ring_fraction", "charge_frustration",
-                    "H_spatial", "RDF_dev"):
+        for key in (
+            "graph_lcc",
+            "graph_cc",
+            "ring_fraction",
+            "charge_frustration",
+            "H_spatial",
+            "RDF_dev",
+        ):
             assert math.isfinite(m[key]), f"{key} is not finite: {m[key]}"
         for key in ("graph_lcc", "graph_cc", "ring_fraction"):
             assert 0.0 <= m[key] <= 1.0, f"{key}={m[key]} out of [0,1]"
@@ -424,16 +444,14 @@ class TestComputeMoranIChi:
     def test_alternating_negative(self) -> None:
         """Perfectly alternating high/low EN on a grid -> I = -1."""
         atoms = ["H", "F", "H", "F"]
-        pos = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0),
-               (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
+        pos = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0), (4.5, 0.0, 0.0)]
         result = compute_moran_I_chi(atoms, self._dmat(pos), cutoff=2.0)
         assert result == pytest.approx(-1.0, abs=1e-9)
 
     def test_clustered_positive(self) -> None:
         """Same-EN atoms clustered far apart -> I = +1."""
         atoms = ["H", "H", "F", "F"]
-        pos = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0),
-               (20.0, 0.0, 0.0), (21.0, 0.0, 0.0)]
+        pos = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (20.0, 0.0, 0.0), (21.0, 0.0, 0.0)]
         result = compute_moran_I_chi(atoms, self._dmat(pos), cutoff=1.5)
         assert result == pytest.approx(1.0, abs=1e-9)
 
@@ -472,7 +490,7 @@ class TestComputeMoranIChi:
         dmat = squareform(pdist(pts))
         en_vals = np.array([pauling_electronegativity(a) for a in atoms])
 
-        py_result  = compute_moran_I_chi(atoms, dmat, 2.13)
+        py_result = compute_moran_I_chi(atoms, dmat, 2.13)
         cpp_result = _ext.moran_I_chi_cpp(pts, en_vals, 2.13)
 
         assert cpp_result == pytest.approx(py_result, abs=1e-9)

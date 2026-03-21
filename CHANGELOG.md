@@ -6,6 +6,101 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.4] — 2026-03-22
+
+### Bug Fixes
+
+#### BUG-1 — `stream()` warning message incorrectly attributed all failures to parity (`_generator.py`)
+
+When both parity failures and metric-filter failures occurred in the same run
+and **no** structures passed (i.e. `n_passed == 0`), `stream()` emitted:
+
+```
+All 100 attempt(s) were rejected by the charge/multiplicity parity check (54 invalid).
+```
+
+even though 46 of those 100 attempts **did** pass the parity check and were
+instead rejected by `--filter` thresholds.  The misleading "All N" wording
+caused users to diagnose the wrong root cause (element pool / charge settings)
+instead of their filter configuration.
+
+**Fix:** the parity-failure warning is now split into two branches:
+
+- **Pure parity failure** (`n_rejected_filter == 0`): message unchanged —
+  `"All N attempt(s) were rejected by the parity check (N invalid). …"`
+- **Mixed failure** (`n_rejected_filter > 0`): new message —
+  `"M of N attempt(s) were rejected by the parity check, and the remaining K
+  that passed parity were rejected by metric filters. …"` — so both root
+  causes are visible at once.
+
+#### BUG-2 — `architecture.md` warning table listed a non-existent warning case
+
+The `warnings.warn` behaviour table in `docs/architecture.md` included a row
+for *"Some attempts rejected by parity"* (`M of N attempt(s) …`) that was
+never emitted by the implementation.  The intent (documented in a code
+comment) is that partial parity rejection where some structures still pass is
+**expected** behaviour and does not warrant a warning.  The table has been
+corrected to match the actual four-case implementation, and a note explaining
+why the partial-parity case is intentionally silent has been added.
+
+#### BUG-3 — O(N²) auto-cutoff computation in `compute_all_metrics`, `Structure.from_xyz`, and `_resolve_cutoff` (`_metrics.py`, `_generator.py`, `_optimizer.py`)
+
+`place_maxent` received an O(N) auto-cutoff fix in v0.2.6, but four other
+sites that compute the same `1.5 × median(rᵢ + rⱼ)` cutoff retained the
+original O(N² log N) `sorted(pair_sums)` implementation:
+
+| Site | File |
+|---|---|
+| `compute_all_metrics(cutoff=None)` | `_metrics.py` |
+| `Structure.from_xyz(recompute_metrics=True, cutoff=None)` — frame-0 path | `_generator.py` |
+| `Structure.from_xyz(recompute_metrics=True, cutoff=None)` — multi-frame path | `_generator.py` |
+| `StructureGenerator._resolve_cutoff` | `_generator.py` |
+| `StructureOptimizer._resolve_cutoff` | `_optimizer.py` |
+
+For large structures this made the cutoff calculation the dominant cost:
+
+| n_atoms | Before (O(N²)) | After (O(N)) | Speed-up |
+|---:|---:|---:|---:|
+| 500 | 20 ms | 0.11 ms | **176×** |
+| 1 000 | 85 ms | 0.19 ms | **459×** |
+| 2 000 | 385 ms | 0.33 ms | **1 179×** |
+| 5 000 | 2 532 ms | 0.76 ms | **3 319×** |
+
+**Fix:** all five sites now use the same O(N) identity as `place_maxent`:
+
+```python
+median_sum = float(np.median(radii)) * 2.0
+cutoff = cov_scale * 1.5 * median_sum
+```
+
+The redundant `import numpy as _np` statements that were inserted inline
+during the initial patch have also been removed; `numpy` is now imported
+once at module level in `_generator.py`.
+
+#### BUG-4 — `place_maxent` O(N) median approximation inaccurate for bimodal radius distributions (`_placement.py`, `architecture.md`)
+
+The `median(rᵢ + rⱼ) = 2 · median(rᵢ)` identity used in `place_maxent` since
+v0.2.6 was documented as holding for *"all built-in element pools"*.  This is
+incorrect: for strongly **bimodal** pools (e.g. H with radius 0.31 Å mixed
+with heavy metals at ~1.3 Å) the approximation can overestimate `ang_cutoff`
+by up to **~50 %**, causing the angular repulsion to act over a wider
+neighbourhood than intended and producing a weaker uniformity guarantee.
+
+The algorithm itself is not changed (the performance/accuracy trade-off is
+acceptable for standard element pools); the documentation and inline code
+comment have been corrected to state the limitation clearly and recommend
+passing an explicit `cutoff=` for bimodal pools.
+
+### Code Quality
+
+- `ruff check` and `ruff format` pass cleanly on all source and test files
+  (`src/pasted/`, `tests/`).
+- `mypy src/pasted/` and `mypy tests/` report no issues (25 source files
+  checked total).
+- Import order in `_generator.py` corrected to satisfy `isort` (`I001`).
+
+---
+
 ## [0.3.3] — 2026-03-22
 
 ### Bug Fixes

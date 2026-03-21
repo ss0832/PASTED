@@ -111,7 +111,6 @@ class TestComputeAngularEntropy:
         rng_gas = random.Random(42)
         rng_maxent = random.Random(42)
 
-
         _, pos_gas = place_gas(atoms, "sphere:6", rng_gas)
         pos_gas, _ = relax_positions(atoms, pos_gas, 1.0)
 
@@ -187,11 +186,7 @@ class TestPlaceMaxentCutoff:
     @staticmethod
     def _reference_median_sum(radii: np.ndarray) -> float:
         """O(N²) reference implementation (matches pre-v0.2.6 code)."""
-        pairs = sorted(
-            ra + rb
-            for i, ra in enumerate(radii.tolist())
-            for rb in radii[i:].tolist()
-        )
+        pairs = sorted(ra + rb for i, ra in enumerate(radii.tolist()) for rb in radii[i:].tolist())
         return pairs[len(pairs) // 2]
 
     @staticmethod
@@ -207,9 +202,7 @@ class TestPlaceMaxentCutoff:
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         ref = self._reference_median_sum(radii)
         fast = self._fast_median_sum(radii)
-        assert fast == pytest.approx(ref, abs=1e-9), (
-            f"homogeneous C pool: ref={ref}, fast={fast}"
-        )
+        assert fast == pytest.approx(ref, abs=1e-9), f"homogeneous C pool: ref={ref}, fast={fast}"
 
     def test_heterogeneous_pool(self) -> None:
         """Mixed element pool (C, N, O, H): both formulas must agree."""
@@ -219,9 +212,7 @@ class TestPlaceMaxentCutoff:
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         ref = self._reference_median_sum(radii)
         fast = self._fast_median_sum(radii)
-        assert fast == pytest.approx(ref, abs=1e-9), (
-            f"mixed C/N/O/H pool: ref={ref}, fast={fast}"
-        )
+        assert fast == pytest.approx(ref, abs=1e-9), f"mixed C/N/O/H pool: ref={ref}, fast={fast}"
 
     def test_single_element_pool_heavy(self) -> None:
         """Heavier element (S): both formulas must agree."""
@@ -231,9 +222,7 @@ class TestPlaceMaxentCutoff:
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         ref = self._reference_median_sum(radii)
         fast = self._fast_median_sum(radii)
-        assert fast == pytest.approx(ref, abs=1e-9), (
-            f"homogeneous S pool: ref={ref}, fast={fast}"
-        )
+        assert fast == pytest.approx(ref, abs=1e-9), f"homogeneous S pool: ref={ref}, fast={fast}"
 
     def test_ang_cutoff_unchanged_end_to_end(self) -> None:
         """Structures generated before and after the patch must be identical.

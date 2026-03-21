@@ -172,35 +172,35 @@ class EvalContext:
     """
 
     # ── Structure ─────────────────────────────────────────────────────────
-    atoms:     tuple[str, ...]
+    atoms: tuple[str, ...]
     positions: tuple[tuple[float, float, float], ...]
-    charge:    int
-    mult:      int
-    n_atoms:   int
-    metrics:   dict[str, float]
+    charge: int
+    mult: int
+    n_atoms: int
+    metrics: dict[str, float]
 
     # ── Optimizer runtime state ────────────────────────────────────────────
-    step:         int
-    max_steps:    int
-    temperature:  float
-    f_current:    float
-    best_f:       float
-    restart_idx:  int
-    n_restarts:   int
-    per_atom_q6:  np.ndarray   # shape [n_atoms], dtype float64; treat as read-only
+    step: int
+    max_steps: int
+    temperature: float
+    f_current: float
+    best_f: float
+    restart_idx: int
+    n_restarts: int
+    per_atom_q6: np.ndarray  # shape [n_atoms], dtype float64; treat as read-only
 
     # ── Parallel Tempering (None for non-PT methods) ───────────────────────
-    replica_idx:         int   | None
+    replica_idx: int | None
     replica_temperature: float | None
-    n_replicas:          int   | None
+    n_replicas: int | None
 
     # ── Optimizer configuration ────────────────────────────────────────────
     element_pool: tuple[str, ...]
-    cutoff:       float
-    method:       str
-    T_start:      float
-    T_end:        float
-    seed:         int | None
+    cutoff: float
+    method: str
+    T_start: float
+    T_end: float
+    seed: int | None
 
     # ── Convenience methods ────────────────────────────────────────────────
 
@@ -368,9 +368,7 @@ class OptimizationResult:
 # ---------------------------------------------------------------------------
 
 
-def _pool_can_satisfy_parity(
-    pool: list[str], n_atoms: int, charge: int, mult: int
-) -> bool:
+def _pool_can_satisfy_parity(pool: list[str], n_atoms: int, charge: int, mult: int) -> bool:
     """Return ``True`` if *any* composition of *n_atoms* from *pool* can pass
     :func:`~pasted._atoms.validate_charge_mult`.
 
@@ -438,7 +436,6 @@ def _pool_can_satisfy_parity(
     return (n_atoms % 2) == target_parity
 
 
-
 def parse_objective_spec(specs: list[str]) -> dict[str, float]:
     """Parse ``["METRIC:WEIGHT", ...]`` into a weight dict.
 
@@ -464,9 +461,7 @@ def parse_objective_spec(specs: list[str]) -> dict[str, float]:
             raise ValueError(f"Expected 'METRIC:WEIGHT', got {spec!r}")
         metric, weight_s = parts
         if metric not in ALL_METRICS:
-            raise ValueError(
-                f"Unknown metric {metric!r}. Valid: {sorted(ALL_METRICS)}"
-            )
+            raise ValueError(f"Unknown metric {metric!r}. Valid: {sorted(ALL_METRICS)}")
         result[metric] = float(weight_s)
     return result
 
@@ -500,9 +495,11 @@ def _eval_objective(
     try:
         sig = inspect.signature(objective)
         n_required = sum(
-            1 for p in sig.parameters.values()
+            1
+            for p in sig.parameters.values()
             if p.default is inspect.Parameter.empty
-            and p.kind not in (
+            and p.kind
+            not in (
                 inspect.Parameter.VAR_POSITIONAL,
                 inspect.Parameter.VAR_KEYWORD,
             )
@@ -543,9 +540,11 @@ def _objective_needs_ctx(objective: ObjectiveType) -> bool:
     try:
         sig = inspect.signature(objective)
         n_required = sum(
-            1 for p in sig.parameters.values()
+            1
+            for p in sig.parameters.values()
             if p.default is inspect.Parameter.empty
-            and p.kind not in (
+            and p.kind
+            not in (
                 inspect.Parameter.VAR_POSITIONAL,
                 inspect.Parameter.VAR_KEYWORD,
             )
@@ -743,8 +742,9 @@ def _composition_move(
     for _ in range(20):
         i = rng.randrange(n)
         zi = ATOMIC_NUMBERS[new_atoms[i]]
-        same_parity = [e for e in element_pool if ATOMIC_NUMBERS[e] % 2 == zi % 2
-                       and e != new_atoms[i]]
+        same_parity = [
+            e for e in element_pool if ATOMIC_NUMBERS[e] % 2 == zi % 2 and e != new_atoms[i]
+        ]
         if same_parity:
             new_atoms[i] = rng.choice(same_parity)
             return new_atoms
@@ -1148,11 +1148,10 @@ class StructureOptimizer:
         # Early parity validation — catch impossible element pools before run().
         # This makes max_init_attempts=0 (unlimited) safe: if this check passes,
         # _make_initial is guaranteed to eventually find a valid structure.
-        if not _pool_can_satisfy_parity(
-            self._element_pool, self.n_atoms, self.charge, self.mult
-        ):
+        if not _pool_can_satisfy_parity(self._element_pool, self.n_atoms, self.charge, self.mult):
             even_odd = (
-                "all even-Z" if all(ATOMIC_NUMBERS[e] % 2 == 0 for e in self._element_pool)
+                "all even-Z"
+                if all(ATOMIC_NUMBERS[e] % 2 == 0 for e in self._element_pool)
                 else "all odd-Z"
             )
             raise ValueError(
@@ -1216,9 +1215,7 @@ class StructureOptimizer:
         """
         region = self._auto_region()
         attempts = (
-            itertools.count()
-            if self.max_init_attempts == 0
-            else range(self.max_init_attempts)
+            itertools.count() if self.max_init_attempts == 0 else range(self.max_init_attempts)
         )
         for _ in attempts:
             seed = rng.randint(0, 2**31)
@@ -1265,7 +1262,7 @@ class StructureOptimizer:
         t_lo = max(self.T_end, 1e-6)
         t_hi = max(self.T_start, t_lo * 1.01)
         ratio = (t_hi / t_lo) ** (1.0 / (n - 1))
-        return [round(t_lo * ratio ** k, 8) for k in range(n)]  # cold→hot
+        return [round(t_lo * ratio**k, 8) for k in range(n)]  # cold→hot
 
     # ------------------------------------------------------------------ #
     # Parallel Tempering                                                  #
@@ -1311,9 +1308,7 @@ class StructureOptimizer:
         Returns all replica final states sorted best-first so that
         ``run()`` can incorporate them into ``OptimizationResult``.
         """
-        rng = random.Random(
-            None if self.seed is None else self.seed + restart_idx * 97
-        )
+        rng = random.Random(None if self.seed is None else self.seed + restart_idx * 97)
         temps = self._pt_temperatures()
         n_rep = len(temps)
         rc = self.relax_cycles
@@ -1331,11 +1326,11 @@ class StructureOptimizer:
         #
         # When allow_composition_moves=True replicas may diverge in
         # composition during the run anyway, so independent starts are fine.
-        states_atoms:     list[list[str]]   = []
-        states_positions: list[list[Vec3]]  = []
-        states_metrics:   list[dict[str, float]] = []
-        states_f:         list[float]       = []
-        states_q6:        list[np.ndarray]  = []
+        states_atoms: list[list[str]] = []
+        states_positions: list[list[Vec3]] = []
+        states_metrics: list[dict[str, float]] = []
+        states_f: list[float] = []
+        states_q6: list[np.ndarray] = []
 
         # If composition moves are disabled and no initial structure was
         # supplied, generate one shared initial structure whose composition
@@ -1364,8 +1359,7 @@ class StructureOptimizer:
                 # randomized while still being confined to the pool.
                 if _initial_needs_sanitize:
                     rng_san = random.Random(
-                        None if self.seed is None
-                        else self.seed + restart_idx * 97 + k * 13 + 7
+                        None if self.seed is None else self.seed + restart_idx * 97 + k * 13 + 7
                     )
                     a = _sanitize_atoms_to_pool(a, self._element_pool, rng_san)
             elif _shared_initial is not None:
@@ -1393,24 +1387,43 @@ class StructureOptimizer:
                 p = list(p_list)
 
             m = compute_all_metrics(
-                a, p, self.n_bins, self.w_atom, self.w_spatial,
-                self._cutoff, self.cov_scale,
+                a,
+                p,
+                self.n_bins,
+                self.w_atom,
+                self.w_spatial,
+                self._cutoff,
+                self.cov_scale,
             )
             pts = np.array(p)
             q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)["Q6"]
             ctx = (
                 _make_ctx(
-                    a, p, m, self.charge, self.mult,
-                    step=0, max_steps=self.max_steps,
-                    temperature=temps[k], f_current=0.0, best_f=0.0,
-                    restart_idx=restart_idx, n_restarts=self.n_restarts,
+                    a,
+                    p,
+                    m,
+                    self.charge,
+                    self.mult,
+                    step=0,
+                    max_steps=self.max_steps,
+                    temperature=temps[k],
+                    f_current=0.0,
+                    best_f=0.0,
+                    restart_idx=restart_idx,
+                    n_restarts=self.n_restarts,
                     per_atom_q6=q6,
-                    element_pool=self._element_pool, cutoff=self._cutoff,
-                    method=self.method, T_start=self.T_start, T_end=self.T_end,
+                    element_pool=self._element_pool,
+                    cutoff=self._cutoff,
+                    method=self.method,
+                    T_start=self.T_start,
+                    T_end=self.T_end,
                     seed=self.seed,
-                    replica_idx=k, replica_temperature=temps[k], n_replicas=n_rep,
+                    replica_idx=k,
+                    replica_temperature=temps[k],
+                    n_replicas=n_rep,
                 )
-                if self._needs_ctx else None
+                if self._needs_ctx
+                else None
             )
             f = _eval_objective(m, self.objective, ctx=ctx)
 
@@ -1420,25 +1433,24 @@ class StructureOptimizer:
             states_f.append(f)
             states_q6.append(q6)
 
-        best_atoms     = list(states_atoms[0])
+        best_atoms = list(states_atoms[0])
         best_positions = list(states_positions[0])
-        best_metrics   = dict(states_metrics[0])
-        best_f         = states_f[0]
+        best_metrics = dict(states_metrics[0])
+        best_f = states_f[0]
         for k in range(n_rep):
             if states_f[k] > best_f:
-                best_f         = states_f[k]
-                best_atoms     = list(states_atoms[k])
+                best_f = states_f[k]
+                best_atoms = list(states_atoms[k])
                 best_positions = list(states_positions[k])
-                best_metrics   = dict(states_metrics[k])
+                best_metrics = dict(states_metrics[k])
 
         # Exchange-attempt counts for diagnostics
         n_swap_attempted = 0
-        n_swap_accepted  = 0
+        n_swap_accepted = 0
 
         # Precompute radii per replica (updated on composition moves)
         replicas_radii: list[np.ndarray] = [
-            np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
-            for atoms in states_atoms
+            np.array([_cov_radius_ang(a) for a in atoms], dtype=float) for atoms in states_atoms
         ]
         seed_int = -1 if self.seed is None else int(self.seed + restart_idx * 97)
 
@@ -1474,7 +1486,10 @@ class StructureOptimizer:
                     new_atoms = list(atoms)
                 elif _move == "affine":
                     new_positions = _affine_move(
-                        positions, self.move_step, self.affine_strength, rng,
+                        positions,
+                        self.move_step,
+                        self.affine_strength,
+                        rng,
                         affine_stretch=self.affine_stretch,
                         affine_shear=self.affine_shear,
                         affine_jitter=self.affine_jitter,
@@ -1513,23 +1528,41 @@ class StructureOptimizer:
                     continue
 
                 new_metrics = compute_all_metrics(
-                    new_atoms, new_positions, self.n_bins,
-                    self.w_atom, self.w_spatial, self._cutoff, self.cov_scale,
+                    new_atoms,
+                    new_positions,
+                    self.n_bins,
+                    self.w_atom,
+                    self.w_spatial,
+                    self._cutoff,
+                    self.cov_scale,
                 )
                 ctx = (
                     _make_ctx(
-                        new_atoms, new_positions, new_metrics,
-                        self.charge, self.mult,
-                        step=step, max_steps=self.max_steps,
-                        temperature=T_k, f_current=f_k, best_f=best_f,
-                        restart_idx=restart_idx, n_restarts=self.n_restarts,
+                        new_atoms,
+                        new_positions,
+                        new_metrics,
+                        self.charge,
+                        self.mult,
+                        step=step,
+                        max_steps=self.max_steps,
+                        temperature=T_k,
+                        f_current=f_k,
+                        best_f=best_f,
+                        restart_idx=restart_idx,
+                        n_restarts=self.n_restarts,
                         per_atom_q6=states_q6[k],
-                        element_pool=self._element_pool, cutoff=self._cutoff,
-                        method=self.method, T_start=self.T_start, T_end=self.T_end,
+                        element_pool=self._element_pool,
+                        cutoff=self._cutoff,
+                        method=self.method,
+                        T_start=self.T_start,
+                        T_end=self.T_end,
                         seed=self.seed,
-                        replica_idx=k, replica_temperature=temps[k], n_replicas=n_rep,
+                        replica_idx=k,
+                        replica_temperature=temps[k],
+                        n_replicas=n_rep,
                     )
-                    if self._needs_ctx else None
+                    if self._needs_ctx
+                    else None
                 )
                 f_new = _eval_objective(new_metrics, self.objective, ctx=ctx)
 
@@ -1537,26 +1570,22 @@ class StructureOptimizer:
                     continue
 
                 delta = f_new - f_k
-                accept = delta >= 0 or (
-                    T_k > 1e-12 and rng.random() < math.exp(delta / T_k)
-                )
+                accept = delta >= 0 or (T_k > 1e-12 and rng.random() < math.exp(delta / T_k))
 
                 if accept:
-                    states_atoms[k]     = new_atoms
+                    states_atoms[k] = new_atoms
                     states_positions[k] = new_positions
-                    states_metrics[k]   = new_metrics
-                    states_f[k]         = f_new
-                    replicas_radii[k]   = radii_new
+                    states_metrics[k] = new_metrics
+                    states_f[k] = f_new
+                    replicas_radii[k] = radii_new
                     new_pts = np.array(new_positions)
-                    states_q6[k] = compute_steinhardt_per_atom(
-                        new_pts, [6], self._cutoff
-                    )["Q6"]
+                    states_q6[k] = compute_steinhardt_per_atom(new_pts, [6], self._cutoff)["Q6"]
 
                     if f_new > best_f:
-                        best_f         = f_new
-                        best_atoms     = list(new_atoms)
+                        best_f = f_new
+                        best_atoms = list(new_atoms)
                         best_positions = list(new_positions)
-                        best_metrics   = dict(new_metrics)
+                        best_metrics = dict(new_metrics)
 
             # ── Replica-exchange swaps every pt_swap_interval steps ───────
             if (step + 1) % self.pt_swap_interval == 0:
@@ -1564,42 +1593,51 @@ class StructureOptimizer:
                 pairs = list(range(n_rep - 1))
                 rng.shuffle(pairs)
                 for k in pairs:
-                    f_k  = states_f[k]
+                    f_k = states_f[k]
                     f_k1 = states_f[k + 1]
-                    T_k  = temps[k]
+                    T_k = temps[k]
                     T_k1 = temps[k + 1]
                     # Metropolis criterion for maximization:
                     #   ΔE = (β_k − β_{k+1}) × (f_{k+1} − f_k)
                     #   β = 1/T, higher T = more permissive
-                    beta_k  = 1.0 / T_k  if T_k  > 1e-12 else 1e12
+                    beta_k = 1.0 / T_k if T_k > 1e-12 else 1e12
                     beta_k1 = 1.0 / T_k1 if T_k1 > 1e-12 else 1e12
                     delta_swap = (beta_k - beta_k1) * (f_k1 - f_k)
                     n_swap_attempted += 1
                     if delta_swap >= 0 or rng.random() < math.exp(delta_swap):
                         # Exchange states k ↔ k+1
                         (
-                            states_atoms[k],     states_atoms[k + 1],
-                            states_positions[k], states_positions[k + 1],
-                            states_metrics[k],   states_metrics[k + 1],
-                            states_f[k],         states_f[k + 1],
-                            states_q6[k],        states_q6[k + 1],
-                            replicas_radii[k],   replicas_radii[k + 1],
+                            states_atoms[k],
+                            states_atoms[k + 1],
+                            states_positions[k],
+                            states_positions[k + 1],
+                            states_metrics[k],
+                            states_metrics[k + 1],
+                            states_f[k],
+                            states_f[k + 1],
+                            states_q6[k],
+                            states_q6[k + 1],
+                            replicas_radii[k],
+                            replicas_radii[k + 1],
                         ) = (
-                            states_atoms[k + 1],     states_atoms[k],
-                            states_positions[k + 1], states_positions[k],
-                            states_metrics[k + 1],   states_metrics[k],
-                            states_f[k + 1],         states_f[k],
-                            states_q6[k + 1],        states_q6[k],
-                            replicas_radii[k + 1],   replicas_radii[k],
+                            states_atoms[k + 1],
+                            states_atoms[k],
+                            states_positions[k + 1],
+                            states_positions[k],
+                            states_metrics[k + 1],
+                            states_metrics[k],
+                            states_f[k + 1],
+                            states_f[k],
+                            states_q6[k + 1],
+                            states_q6[k],
+                            replicas_radii[k + 1],
+                            replicas_radii[k],
                         )
                         n_swap_accepted += 1
 
             # ── Logging ──────────────────────────────────────────────────
             if self.verbose and (step + 1) % log_interval == 0:
-                swap_rate = (
-                    n_swap_accepted / n_swap_attempted
-                    if n_swap_attempted > 0 else 0.0
-                )
+                swap_rate = n_swap_accepted / n_swap_attempted if n_swap_attempted > 0 else 0.0
                 self._log(
                     f"[restart={restart_idx + 1} step={step + 1:>{width}}/{self.max_steps}] "
                     f"best_f={best_f:.4f}  "
@@ -1619,30 +1657,40 @@ class StructureOptimizer:
         # Return (score, structure) for each replica's final state + global best
         all_results: list[tuple[float, Structure]] = []
         # Global best first
-        all_results.append((best_f, Structure(
-            atoms=best_atoms,
-            positions=best_positions,
-            charge=self.charge,
-            mult=self.mult,
-            metrics=best_metrics,
-            mode="opt_parallel_tempering",
-            sample_index=restart_idx + 1,
-            seed=self.seed,
-        )))
+        all_results.append(
+            (
+                best_f,
+                Structure(
+                    atoms=best_atoms,
+                    positions=best_positions,
+                    charge=self.charge,
+                    mult=self.mult,
+                    metrics=best_metrics,
+                    mode="opt_parallel_tempering",
+                    sample_index=restart_idx + 1,
+                    seed=self.seed,
+                ),
+            )
+        )
         # Add each replica's final state (if not identical to best)
         for k in range(n_rep):
             f_k = states_f[k]
             if abs(f_k - best_f) > 1e-10 or states_atoms[k] != best_atoms:
-                all_results.append((f_k, Structure(
-                    atoms=list(states_atoms[k]),
-                    positions=list(states_positions[k]),
-                    charge=self.charge,
-                    mult=self.mult,
-                    metrics=dict(states_metrics[k]),
-                    mode=f"opt_parallel_tempering_T{temps[k]:.4f}",
-                    sample_index=restart_idx * n_rep + k + 1,
-                    seed=self.seed,
-                )))
+                all_results.append(
+                    (
+                        f_k,
+                        Structure(
+                            atoms=list(states_atoms[k]),
+                            positions=list(states_positions[k]),
+                            charge=self.charge,
+                            mult=self.mult,
+                            metrics=dict(states_metrics[k]),
+                            mode=f"opt_parallel_tempering_T{temps[k]:.4f}",
+                            sample_index=restart_idx * n_rep + k + 1,
+                            seed=self.seed,
+                        ),
+                    )
+                )
         return all_results
 
     # ------------------------------------------------------------------ #
@@ -1650,9 +1698,7 @@ class StructureOptimizer:
     # ------------------------------------------------------------------ #
 
     def _run_one(self, initial: Structure, restart_idx: int) -> tuple[float, Structure]:
-        rng = random.Random(
-            None if self.seed is None else self.seed + restart_idx * 97
-        )
+        rng = random.Random(None if self.seed is None else self.seed + restart_idx * 97)
 
         atoms: list[str] = list(initial.atoms)
         positions: list[Vec3] = list(initial.positions)
@@ -1675,24 +1721,39 @@ class StructureOptimizer:
         # Initial evaluation
         pts = np.array(positions)
         metrics = compute_all_metrics(
-            atoms, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff,
+            atoms,
+            positions,
+            self.n_bins,
+            self.w_atom,
+            self.w_spatial,
+            self._cutoff,
             self.cov_scale,
         )
-        per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)[
-            "Q6"
-        ]
+        per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)["Q6"]
         ctx0 = (
             _make_ctx(
-                atoms, positions, metrics, self.charge, self.mult,
-                step=0, max_steps=self.max_steps,
-                temperature=self._temperature(0), f_current=0.0, best_f=0.0,
-                restart_idx=restart_idx, n_restarts=self.n_restarts,
+                atoms,
+                positions,
+                metrics,
+                self.charge,
+                self.mult,
+                step=0,
+                max_steps=self.max_steps,
+                temperature=self._temperature(0),
+                f_current=0.0,
+                best_f=0.0,
+                restart_idx=restart_idx,
+                n_restarts=self.n_restarts,
                 per_atom_q6=per_atom_q6,
-                element_pool=self._element_pool, cutoff=self._cutoff,
-                method=self.method, T_start=self.T_start, T_end=self.T_end,
+                element_pool=self._element_pool,
+                cutoff=self._cutoff,
+                method=self.method,
+                T_start=self.T_start,
+                T_end=self.T_end,
                 seed=self.seed,
             )
-            if self._needs_ctx else None
+            if self._needs_ctx
+            else None
         )
         f_current = _eval_objective(metrics, self.objective, ctx=ctx0)
 
@@ -1727,7 +1788,10 @@ class StructureOptimizer:
                 new_atoms = list(atoms)
             elif _move == "affine":
                 new_positions = _affine_move(
-                    positions, self.move_step, self.affine_strength, rng,
+                    positions,
+                    self.move_step,
+                    self.affine_strength,
+                    rng,
                     affine_stretch=self.affine_stretch,
                     affine_shear=self.affine_shear,
                     affine_jitter=self.affine_jitter,
@@ -1776,17 +1840,28 @@ class StructureOptimizer:
             )
             ctx = (
                 _make_ctx(
-                    new_atoms, new_positions, new_metrics,
-                    self.charge, self.mult,
-                    step=step, max_steps=self.max_steps,
-                    temperature=T, f_current=f_current, best_f=best_f,
-                    restart_idx=restart_idx, n_restarts=self.n_restarts,
+                    new_atoms,
+                    new_positions,
+                    new_metrics,
+                    self.charge,
+                    self.mult,
+                    step=step,
+                    max_steps=self.max_steps,
+                    temperature=T,
+                    f_current=f_current,
+                    best_f=best_f,
+                    restart_idx=restart_idx,
+                    n_restarts=self.n_restarts,
                     per_atom_q6=per_atom_q6,
-                    element_pool=self._element_pool, cutoff=self._cutoff,
-                    method=self.method, T_start=self.T_start, T_end=self.T_end,
+                    element_pool=self._element_pool,
+                    cutoff=self._cutoff,
+                    method=self.method,
+                    T_start=self.T_start,
+                    T_end=self.T_end,
                     seed=self.seed,
                 )
-                if self._needs_ctx else None
+                if self._needs_ctx
+                else None
             )
             f_new = _eval_objective(new_metrics, self.objective, ctx=ctx)
 
@@ -1796,12 +1871,10 @@ class StructureOptimizer:
 
             # ── Accept / reject (Metropolis) ─────────────────────────────
             delta = f_new - f_current
-            accept = delta >= 0 or (
-                T > 1e-12 and rng.random() < math.exp(delta / T)
-            )
+            accept = delta >= 0 or (T > 1e-12 and rng.random() < math.exp(delta / T))
 
             if accept:
-                old_atoms = atoms          # snapshot before reassignment (fix: Bug #3)
+                old_atoms = atoms  # snapshot before reassignment (fix: Bug #3)
                 atoms = new_atoms
                 positions = new_positions
                 metrics = new_metrics
@@ -1814,9 +1887,7 @@ class StructureOptimizer:
                     radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
                 # Update per_atom_q6 for next fragment selection
                 new_pts = np.array(positions)
-                per_atom_q6 = compute_steinhardt_per_atom(
-                    new_pts, [6], self._cutoff
-                )["Q6"]
+                per_atom_q6 = compute_steinhardt_per_atom(new_pts, [6], self._cutoff)["Q6"]
 
                 if f_current > best_f:
                     best_f = f_current
@@ -1928,8 +1999,7 @@ class StructureOptimizer:
                 init = self._make_initial(rng)
             if init is None:
                 self._log(
-                    f"[optimize] restart {r + 1}: "
-                    "could not generate initial structure, skipping"
+                    f"[optimize] restart {r + 1}: could not generate initial structure, skipping"
                 )
                 continue
 
@@ -1985,12 +2055,10 @@ class StructureOptimizer:
             if self.method == "parallel_tempering"
             else ""
         )
-        comp_info  = "" if self.allow_composition_moves else ", allow_composition_moves=False"
-        disp_info  = "" if self.allow_displacements else ", allow_displacements=False"
+        comp_info = "" if self.allow_composition_moves else ", allow_composition_moves=False"
+        disp_info = "" if self.allow_displacements else ", allow_displacements=False"
         affine_info = (
-            f", affine_strength={self.affine_strength}"
-            if self.allow_affine_moves
-            else ""
+            f", affine_strength={self.affine_strength}" if self.allow_affine_moves else ""
         )
         return (
             f"StructureOptimizer("

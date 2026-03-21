@@ -307,7 +307,10 @@ examples
 
     xg = p.add_argument_group("metrics")
     xg.add_argument(
-        "--n-bins", type=int, default=20, help="Histogram bins for H_spatial/RDF_dev (default: 20)."
+        "--n-bins",
+        type=int,
+        default=20,
+        help="Histogram bins for H_spatial/RDF_dev (default: 20).",
     )
     xg.add_argument("--w-atom", type=float, default=0.5)
     xg.add_argument("--w-spatial", type=float, default=0.5)
@@ -340,9 +343,7 @@ examples
     )
     og.add_argument("-o", "--output", default=None, help="Output XYZ file (default: stdout).")
 
-    optg = p.add_argument_group(
-        "optimization (add --optimize to enable; replaces sampling mode)"
-    )
+    optg = p.add_argument_group("optimization (add --optimize to enable; replaces sampling mode)")
     optg.add_argument(
         "--optimize",
         action="store_true",
@@ -534,9 +535,9 @@ def _run_optimize_mode(args: argparse.Namespace, element_pool: list[str] | None)
             loaded = read_xyz(args.initial_xyz)
             if not loaded:
                 print(
-                f"[ERROR] --initial-xyz: no structures found in {args.initial_xyz!r}",
-                file=sys.stderr,
-            )
+                    f"[ERROR] --initial-xyz: no structures found in {args.initial_xyz!r}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             initial_structure = loaded[0]
             print(

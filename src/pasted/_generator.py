@@ -14,12 +14,12 @@ import random
 import sys
 import warnings
 from collections import Counter
-
-import numpy as np
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from ._atoms import (
     _Z_TO_SYM,
@@ -264,11 +264,10 @@ class Structure:
 
         if recompute_metrics:
             if cutoff is None:
-                import numpy as _np
-                radii = _np.array([_cov_radius_ang(a) for a in atoms])
+                radii = np.array([_cov_radius_ang(a) for a in atoms])
                 # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
                 # Avoids O(N² log N) pair enumeration for large structures.
-                cutoff = cov_scale * 1.5 * float(_np.median(radii)) * 2.0
+                cutoff = cov_scale * 1.5 * float(np.median(radii)) * 2.0
             metrics = compute_all_metrics(
                 atoms, positions, n_bins, w_atom, w_spatial, cutoff, cov_scale
             )
@@ -709,8 +708,8 @@ class StructureGenerator:
         if cfg.mode in ("gas", "maxent") and cfg.region is None:
             raise ValueError(
                 f"region is required when mode={cfg.mode!r}. "
-                "Pass e.g. region=\"sphere:8\" (radius 8 Å) or "
-                "region=\"box:10\" (10×10×10 Å box)."
+                'Pass e.g. region="sphere:8" (radius 8 Å) or '
+                'region="box:10" (10×10×10 Å box).'
             )
 
         # ── n_samples / n_success validation ────────────────────────────
@@ -779,8 +778,7 @@ class StructureGenerator:
                 hi = cfg.element_max_counts.get(sym, lo)
                 if lo > hi:
                     raise ValueError(
-                        f"element_min_counts[{sym!r}]={lo} > "
-                        f"element_max_counts[{sym!r}]={hi}."
+                        f"element_min_counts[{sym!r}]={lo} > element_max_counts[{sym!r}]={hi}."
                     )
         self._element_min_counts: dict[str, int] = dict(cfg.element_min_counts or {})
         self._element_max_counts: dict[str, int] = dict(cfg.element_max_counts or {})
@@ -800,9 +798,7 @@ class StructureGenerator:
                 raise ValueError(f"center_z={cfg.center_z}: unknown atomic number.")
             sym = _Z_TO_SYM[cfg.center_z]
             if sym not in self._element_pool:
-                raise ValueError(
-                    f"center_z={cfg.center_z} ({sym}) is not in the element pool."
-                )
+                raise ValueError(f"center_z={cfg.center_z} ({sym}) is not in the element pool.")
             self._fixed_center_sym = sym
 
         if cfg.verbose:
@@ -815,7 +811,6 @@ class StructureGenerator:
                     )
                 else:
                     self._log("[shell] center: random per sample (chaos mode)")
-
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -866,7 +861,7 @@ class StructureGenerator:
         min_c = self._element_min_counts
         max_c = self._element_max_counts
         n = len(pool)
-        uniform = (n > 0 and all(abs(w - 1.0 / n) < 1e-12 for w in self._element_weights))
+        uniform = n > 0 and all(abs(w - 1.0 / n) < 1e-12 for w in self._element_weights)
 
         # Fast path: uniform weights, no bounds → identical to original behavior
         if uniform and not min_c and not max_c:
@@ -1084,7 +1079,7 @@ class StructureGenerator:
 
         do_add_h = ("H" in self._element_pool) and self._cfg.add_hydrogen
         n_passed = n_invalid = n_attempted = n_rejected_filter = 0
-        unlimited = (self._cfg.n_samples == 0)
+        unlimited = self._cfg.n_samples == 0
         denom = "∞" if unlimited else str(self._cfg.n_samples)
         width = len(denom)
 
@@ -1119,15 +1114,20 @@ class StructureGenerator:
             # ── Optional affine transform (applied once, before relax) ────
             if self._cfg.affine_strength > 0.0:
                 positions = _affine_move(
-                    positions, 0.0, self._cfg.affine_strength, rng,
+                    positions,
+                    0.0,
+                    self._cfg.affine_strength,
+                    rng,
                     affine_stretch=self._cfg.affine_stretch,
                     affine_shear=self._cfg.affine_shear,
                     affine_jitter=self._cfg.affine_jitter,
                 )
 
             positions, converged = relax_positions(
-                atoms_out, positions,
-                self._cfg.cov_scale, self._cfg.relax_cycles,
+                atoms_out,
+                positions,
+                self._cfg.cov_scale,
+                self._cfg.relax_cycles,
                 seed=self._cfg.seed,
             )
             if not converged and self._cfg.verbose:
@@ -1220,11 +1220,7 @@ class StructureGenerator:
                 UserWarning,
                 stacklevel=4,
             )
-        elif (
-            self._cfg.n_success is not None
-            and n_passed < self._cfg.n_success
-            and not unlimited
-        ):
+        elif self._cfg.n_success is not None and n_passed < self._cfg.n_success and not unlimited:
             warnings.warn(
                 f"Attempt budget exhausted ({n_attempted} attempts) before "
                 f"reaching n_success={self._cfg.n_success}; "
@@ -1406,24 +1402,25 @@ def read_xyz(
         if recompute_metrics:
             cut = cutoff
             if cut is None:
-                import numpy as _np
-                radii = _np.array([_cov_radius_ang(a) for a in atoms])
+                radii = np.array([_cov_radius_ang(a) for a in atoms])
                 # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
-                cut = cov_scale * 1.5 * float(_np.median(radii)) * 2.0
+                cut = cov_scale * 1.5 * float(np.median(radii)) * 2.0
             metrics = compute_all_metrics(
                 atoms, positions, n_bins, w_atom, w_spatial, cut, cov_scale
             )
         else:
             metrics = embedded_metrics
 
-        result.append(Structure(
-            atoms=list(atoms),
-            positions=list(positions),
-            charge=charge,
-            mult=mult,
-            metrics=metrics,
-            mode="loaded_xyz",
-        ))
+        result.append(
+            Structure(
+                atoms=list(atoms),
+                positions=list(positions),
+                charge=charge,
+                mult=mult,
+                metrics=metrics,
+                mode="loaded_xyz",
+            )
+        )
     return result
 
 
@@ -1497,4 +1494,3 @@ def generate(
         )
     cfg = GeneratorConfig(n_atoms=n_atoms, charge=charge, mult=mult, **kwargs)
     return StructureGenerator(cfg).generate()
-

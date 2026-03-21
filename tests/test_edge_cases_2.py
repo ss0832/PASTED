@@ -73,6 +73,7 @@ from pasted._optimizer import OptimizationResult
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _gas(
     n: int = 6,
     elements: str | list[str] = "6,7,8",
@@ -110,17 +111,14 @@ def _one_structure(seed: int = 0) -> Structure:
 # regardless of the input being nominal or adversarial.
 # ---------------------------------------------------------------------------
 
+
 def _check_generation_result(r: object) -> None:
     """generate() / StructureGenerator.generate() → GenerationResult"""
-    assert isinstance(r, GenerationResult), (
-        f"Expected GenerationResult, got {type(r).__name__}"
-    )
+    assert isinstance(r, GenerationResult), f"Expected GenerationResult, got {type(r).__name__}"
     assert isinstance(r.n_attempted, int), (
         f"n_attempted: expected int, got {type(r.n_attempted).__name__}"
     )
-    assert isinstance(r.n_passed, int), (
-        f"n_passed: expected int, got {type(r.n_passed).__name__}"
-    )
+    assert isinstance(r.n_passed, int), f"n_passed: expected int, got {type(r.n_passed).__name__}"
     assert isinstance(r.n_rejected_parity, int), (
         f"n_rejected_parity: expected int, got {type(r.n_rejected_parity).__name__}"
     )
@@ -150,9 +148,7 @@ def _check_optimization_result(r: object) -> None:
     assert isinstance(r.n_restarts_attempted, int), (
         f"n_restarts_attempted: expected int, got {type(r.n_restarts_attempted).__name__}"
     )
-    assert isinstance(r.method, str), (
-        f"method: expected str, got {type(r.method).__name__}"
-    )
+    assert isinstance(r.method, str), f"method: expected str, got {type(r.method).__name__}"
     assert isinstance(r.summary(), str), (
         f"summary(): expected str, got {type(r.summary()).__name__}"
     )
@@ -165,9 +161,7 @@ def _check_to_xyz(r: object) -> None:
 
 def _check_from_xyz(r: object) -> None:
     """Structure.from_xyz() → Structure"""
-    assert isinstance(r, Structure), (
-        f"from_xyz(): expected Structure, got {type(r).__name__}"
-    )
+    assert isinstance(r, Structure), f"from_xyz(): expected Structure, got {type(r).__name__}"
 
 
 def _check_format_xyz(r: object) -> None:
@@ -208,10 +202,10 @@ def _check_compute_all_metrics(r: object) -> None:
         assert isinstance(v, float), f"value: expected float, got {type(v).__name__}"
 
 
-
 # ===========================================================================
 # NEC-A  GenerationResult contract
 # ===========================================================================
+
 
 class TestGenerationResultContract:
     """Accounting invariant, concatenation, bool, and + semantics."""
@@ -303,6 +297,7 @@ class TestGenerationResultContract:
 # NEC-B  GeneratorConfig frozen dataclass + __getattr__ proxy
 # ===========================================================================
 
+
 class TestGeneratorConfigFrozenAndProxy:
     """GeneratorConfig must be truly immutable; StructureGenerator must proxy
     all config fields transparently."""
@@ -310,9 +305,13 @@ class TestGeneratorConfigFrozenAndProxy:
     def test_mutation_raises_frozen_instance_error(self) -> None:
         """Assigning to any field on a frozen config must raise."""
         cfg = GeneratorConfig(
-            n_atoms=10, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=5, seed=0,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             cfg.n_atoms = 99  # type: ignore[misc]
@@ -320,9 +319,13 @@ class TestGeneratorConfigFrozenAndProxy:
     def test_replace_does_not_mutate_original(self) -> None:
         """dataclasses.replace() must return a new object, original unchanged."""
         cfg = GeneratorConfig(
-            n_atoms=10, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=5, seed=0,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         cfg_new = dataclasses.replace(cfg, seed=999)
         assert cfg.seed == 0
@@ -332,9 +335,13 @@ class TestGeneratorConfigFrozenAndProxy:
     def test_generator_proxy_forwards_n_atoms(self) -> None:
         """gen.n_atoms must equal the config's n_atoms via __getattr__."""
         cfg = GeneratorConfig(
-            n_atoms=12, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=5, seed=42,
+            n_atoms=12,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=42,
         )
         gen = StructureGenerator(cfg)
         assert gen.n_atoms == 12
@@ -342,9 +349,13 @@ class TestGeneratorConfigFrozenAndProxy:
     def test_generator_proxy_forwards_seed(self) -> None:
         """gen.seed must equal the config's seed via __getattr__."""
         cfg = GeneratorConfig(
-            n_atoms=8, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=5, seed=77,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=77,
         )
         gen = StructureGenerator(cfg)
         assert gen.seed == 77
@@ -352,9 +363,13 @@ class TestGeneratorConfigFrozenAndProxy:
     def test_generator_proxy_forwards_mode(self) -> None:
         """gen.mode must reflect the config mode."""
         cfg = GeneratorConfig(
-            n_atoms=8, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=5, seed=0,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         gen = StructureGenerator(cfg)
         assert gen.mode == "chain"
@@ -363,9 +378,14 @@ class TestGeneratorConfigFrozenAndProxy:
         """Keyword constructor and GeneratorConfig constructor must produce
         bit-identical results when given the same parameters."""
         common: dict[str, Any] = dict(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=20, seed=55,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=20,
+            seed=55,
         )
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
@@ -382,6 +402,7 @@ class TestGeneratorConfigFrozenAndProxy:
 # ===========================================================================
 # NEC-C  Structure data integrity
 # ===========================================================================
+
 
 class TestStructureDataIntegrity:
     """Pickle/deepcopy round-trips, manual construction, sample_index order."""
@@ -463,7 +484,10 @@ class TestStructureDataIntegrity:
         s = Structure(
             atoms=["Ar", "C", "H", "H"],
             positions=[(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)],
-            charge=0, mult=1, metrics={}, mode="gas",
+            charge=0,
+            mult=1,
+            metrics={},
+            mode="gas",
         )
         # Hill order would give 'CH2Ar'; alphabetical gives 'ArCH2'
         assert s.comp == "ArCH2"
@@ -473,7 +497,10 @@ class TestStructureDataIntegrity:
         s = Structure(
             atoms=["Na", "C", "H", "H"],
             positions=[(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)],
-            charge=0, mult=1, metrics={}, mode="gas",
+            charge=0,
+            mult=1,
+            metrics={},
+            mode="gas",
         )
         assert s.comp == "CH2Na"
 
@@ -481,6 +508,7 @@ class TestStructureDataIntegrity:
 # ===========================================================================
 # NEC-D  XYZ serialization round-trips
 # ===========================================================================
+
 
 class TestXYZSerializationRoundTrips:
     """to_xyz → from_xyz must preserve positions; format_xyz prefix contract."""
@@ -506,9 +534,7 @@ class TestXYZSerializationRoundTrips:
     def test_to_xyz_from_xyz_via_file_positions(self) -> None:
         """Positions must survive a write_xyz/from_xyz(path) cycle."""
         s = _one_structure(seed=22)
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".xyz", delete=False
-        ) as fh:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xyz", delete=False) as fh:
             fh.write(s.to_xyz())
             fname = fh.name
         try:
@@ -523,9 +549,7 @@ class TestXYZSerializationRoundTrips:
     def test_to_xyz_from_xyz_via_file_atoms(self) -> None:
         """Atom list must survive a write_xyz/from_xyz(path) cycle."""
         s = _one_structure(seed=23)
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".xyz", delete=False
-        ) as fh:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xyz", delete=False) as fh:
             fh.write(s.to_xyz())
             fname = fh.name
         try:
@@ -538,8 +562,7 @@ class TestXYZSerializationRoundTrips:
     def test_format_xyz_prefix_appears_in_comment_line(self) -> None:
         """A non-empty prefix must appear at the start of the comment line."""
         s = _one_structure(seed=24)
-        xyz = format_xyz(s.atoms, s.positions, s.charge, s.mult, s.metrics,
-                         prefix="MY_PREFIX")
+        xyz = format_xyz(s.atoms, s.positions, s.charge, s.mult, s.metrics, prefix="MY_PREFIX")
         _check_format_xyz(xyz)
         comment_line = xyz.splitlines()[1]
         assert comment_line.startswith("MY_PREFIX")
@@ -566,6 +589,7 @@ class TestXYZSerializationRoundTrips:
 # NEC-E  parse_filter pathological inputs
 # ===========================================================================
 
+
 class TestParseFilterPathological:
     """NaN bounds, whitespace, and case-sensitivity must be handled correctly."""
 
@@ -575,9 +599,14 @@ class TestParseFilterPathological:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
                 filters=["H_total:nan:-"],
             )
             _check_generation_result(r)
@@ -625,6 +654,7 @@ class TestParseFilterPathological:
 # NEC-F  parse_objective_spec contract
 # ===========================================================================
 
+
 class TestParseObjectiveSpecContract:
     """Empty input, duplicate keys, bad weights, all-metric round-trip."""
 
@@ -670,12 +700,11 @@ class TestParseObjectiveSpecContract:
 # NEC-G  compute_all_metrics direct API
 # ===========================================================================
 
+
 class TestComputeAllMetricsDirect:
     """Direct calls to compute_all_metrics with unusual configurations."""
 
-    _DEFAULT_KW: ClassVar[dict[str, Any]] = dict(
-        n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0
-    )
+    _DEFAULT_KW: ClassVar[dict[str, Any]] = dict(n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0)
 
     def test_two_atom_call_returns_all_13_keys(self) -> None:
         """A 2-atom system must still return all 13 metric keys."""
@@ -692,7 +721,10 @@ class TestComputeAllMetricsDirect:
         m = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0)],
-            n_bins=10, w_atom=1.0, w_spatial=0.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=1.0,
+            w_spatial=0.0,
+            cutoff=5.0,
         )
         _check_compute_all_metrics(m)
         assert m["H_total"] == pytest.approx(m["H_atom"])
@@ -702,7 +734,10 @@ class TestComputeAllMetricsDirect:
         m = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0)],
-            n_bins=10, w_atom=0.0, w_spatial=1.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=0.0,
+            w_spatial=1.0,
+            cutoff=5.0,
         )
         _check_compute_all_metrics(m)
         assert m["H_total"] == pytest.approx(m["H_spatial"])
@@ -716,14 +751,13 @@ class TestComputeAllMetricsDirect:
         )
         _check_compute_all_metrics(m)
         for key, val in m.items():
-            assert math.isfinite(val) or math.isnan(val), (
-                f"metric {key!r} is infinite: {val}"
-            )
+            assert math.isfinite(val) or math.isnan(val), f"metric {key!r} is infinite: {val}"
 
 
 # ===========================================================================
 # NEC-H  EvalContext field invariants
 # ===========================================================================
+
 
 class TestEvalContextFieldInvariants:
     """Immutability of tuple fields, step bounds, best_f monotonicity,
@@ -743,10 +777,15 @@ class TestEvalContextFieldInvariants:
             return m["H_total"]
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=_capture,
-            method="annealing", max_steps=max_steps,
-            n_restarts=1, seed=seed,
+            method="annealing",
+            max_steps=max_steps,
+            n_restarts=1,
+            seed=seed,
             **opt_kw,
         ).run()
         return contexts
@@ -795,7 +834,7 @@ class TestEvalContextFieldInvariants:
         best_fs = [ctx.best_f for ctx in contexts]
         for i in range(len(best_fs) - 1):
             assert best_fs[i] <= best_fs[i + 1] + 1e-12, (
-                f"best_f decreased at step {i}: {best_fs[i]:.6f} -> {best_fs[i+1]:.6f}"
+                f"best_f decreased at step {i}: {best_fs[i]:.6f} -> {best_fs[i + 1]:.6f}"
             )
 
     def test_temperature_always_positive(self) -> None:
@@ -809,9 +848,7 @@ class TestEvalContextFieldInvariants:
     def test_temperature_within_t_start_t_end(self) -> None:
         """ctx.temperature must stay within [T_end, T_start] for annealing."""
         T_START, T_END = 2.0, 0.01
-        contexts = self._collect_ctx(
-            max_steps=50, seed=8, T_start=T_START, T_end=T_END
-        )
+        contexts = self._collect_ctx(max_steps=50, seed=8, T_start=T_START, T_end=T_END)
         for ctx in contexts:
             assert T_END <= ctx.temperature <= T_START + 1e-12
 
@@ -846,16 +883,23 @@ class TestEvalContextFieldInvariants:
 # NEC-I  OptimizationResult contract
 # ===========================================================================
 
+
 class TestOptimizationResultContract:
     """summary() fields, n_restarts_attempted, basin_hopping name, idempotency."""
 
-    def _opt(self, method: str = "annealing", n_restarts: int = 2,
-             seed: int = 0, **kw: Any) -> OptimizationResult:
+    def _opt(
+        self, method: str = "annealing", n_restarts: int = 2, seed: int = 0, **kw: Any
+    ) -> OptimizationResult:
         return StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method=method, max_steps=30,
-            n_restarts=n_restarts, seed=seed,
+            method=method,
+            max_steps=30,
+            n_restarts=n_restarts,
+            seed=seed,
             **kw,
         ).run()
 
@@ -888,10 +932,15 @@ class TestOptimizationResultContract:
         """Calling run() twice on the same StructureOptimizer instance must
         succeed both times — the optimizer must not consume internal state."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method="annealing", max_steps=20,
-            n_restarts=1, seed=0,
+            method="annealing",
+            max_steps=20,
+            n_restarts=1,
+            seed=0,
         )
         r1 = opt.run()
         _check_optimization_result(r1)
@@ -920,18 +969,25 @@ class TestOptimizationResultContract:
 # NEC-J  Objective function flexibility
 # ===========================================================================
 
+
 class TestObjectiveFunctionFlexibility:
     """Integer-valued return, all-13-metrics objective."""
 
     def test_integer_returning_objective_does_not_crash(self) -> None:
         """An objective that returns int (not float) must run without error."""
+
         def int_obj(m: dict[str, float]) -> int:
             return int(m["H_total"] * 10)
 
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=int_obj,
-            method="annealing", max_steps=30, seed=0,
+            method="annealing",
+            max_steps=30,
+            seed=0,
         ).run()
         _check_optimization_result(result)
         assert result.best is not None
@@ -941,22 +997,33 @@ class TestObjectiveFunctionFlexibility:
         without KeyError or other crash."""
         full_obj = {k: 1.0 for k in ALL_METRICS}
         result = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=full_obj,
-            method="annealing", max_steps=30, seed=0,
+            method="annealing",
+            max_steps=30,
+            seed=0,
         ).run()
         _check_optimization_result(result)
         assert result.best is not None
 
     def test_callable_objective_covering_all_metrics(self) -> None:
         """A callable that reads every metric key from m must not raise."""
+
         def all_metrics_fn(m: dict[str, float]) -> float:
             return sum(m[k] for k in ALL_METRICS)
 
         result = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=all_metrics_fn,
-            method="annealing", max_steps=30, seed=1,
+            method="annealing",
+            max_steps=30,
+            seed=1,
         ).run()
         _check_optimization_result(result)
         assert result.best is not None
@@ -966,6 +1033,7 @@ class TestObjectiveFunctionFlexibility:
 # NEC-K  Shell-mode specifics
 # ===========================================================================
 
+
 class TestShellModeSpecifics:
     """center_sym populated, center_z pool membership, n_atoms=1 shell."""
 
@@ -974,9 +1042,14 @@ class TestShellModeSpecifics:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", center_z=6,
-                elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                center_z=6,
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
             )
             _check_generation_result(r)
         assert len(r) > 0
@@ -988,9 +1061,14 @@ class TestShellModeSpecifics:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", center_z=6,
-                elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                center_z=6,
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
             )
             _check_generation_result(r)
         assert len(r) > 0
@@ -1001,9 +1079,14 @@ class TestShellModeSpecifics:
         raise ValueError at construction time."""
         with pytest.raises(ValueError):
             generate(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", center_z=26,        # Fe, not in pool
-                elements="6,7,8", n_samples=5, seed=0,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                center_z=26,  # Fe, not in pool
+                elements="6,7,8",
+                n_samples=5,
+                seed=0,
             )
 
     def test_shell_mode_n_atoms_1_does_not_crash(self) -> None:
@@ -1011,9 +1094,14 @@ class TestShellModeSpecifics:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=1, charge=0, mult=1,
-                mode="shell", center_z=6,
-                elements="6,7,8", n_samples=10, seed=0,
+                n_atoms=1,
+                charge=0,
+                mult=1,
+                mode="shell",
+                center_z=6,
+                elements="6,7,8",
+                n_samples=10,
+                seed=0,
             )
             _check_generation_result(r)
         # May produce 0 structures depending on parity, but must not raise
@@ -1028,22 +1116,26 @@ class TestShellModeSpecifics:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", center_z=6,
-                elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                center_z=6,
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
                 add_hydrogen=False,
             )
             _check_generation_result(r)
         assert len(r) > 0
         for s in r:
-            assert len(s.atoms) == 4, (
-                f"Expected exactly 4 atoms but got {len(s.atoms)}: {s.atoms}"
-            )
+            assert len(s.atoms) == 4, f"Expected exactly 4 atoms but got {len(s.atoms)}: {s.atoms}"
 
 
 # ===========================================================================
 # NEC-L  High multiplicity
 # ===========================================================================
+
 
 class TestHighMultiplicity:
     """mult=7 (sextuplet) must generate valid structures, not crash."""
@@ -1054,9 +1146,14 @@ class TestHighMultiplicity:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=8, charge=0, mult=7,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=40, seed=0,
+                n_atoms=8,
+                charge=0,
+                mult=7,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=40,
+                seed=0,
             )
             _check_generation_result(r)
         # May produce 0 due to parity, but must not raise
@@ -1067,9 +1164,14 @@ class TestHighMultiplicity:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=8, charge=0, mult=7,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=40, seed=0,
+                n_atoms=8,
+                charge=0,
+                mult=7,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=40,
+                seed=0,
             )
             _check_generation_result(r)
         for s in r:
@@ -1080,6 +1182,7 @@ class TestHighMultiplicity:
 # NEC-M  Affine-shear-only path
 # ===========================================================================
 
+
 class TestAffineShearOnly:
     """affine_shear > 0 while affine_stretch=0 and affine_jitter=0 must work
     across all four placement modes and not raise or produce NaN positions."""
@@ -1088,9 +1191,14 @@ class TestAffineShearOnly:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             return generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=20, seed=seed,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=20,
+                seed=seed,
                 affine_strength=0.2,
                 affine_stretch=0.0,
                 affine_shear=0.3,
@@ -1113,8 +1221,13 @@ class TestAffineShearOnly:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r = generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="chain", elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="chain",
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
                 affine_strength=0.2,
                 affine_stretch=0.0,
                 affine_shear=0.3,
@@ -1127,6 +1240,7 @@ class TestAffineShearOnly:
 # ===========================================================================
 # NEC-N  validate_charge_mult direct API
 # ===========================================================================
+
 
 class TestValidateChargeMult:
     """Direct calls to the public validate_charge_mult function."""
@@ -1173,16 +1287,27 @@ class TestValidateChargeMult:
 # NEC-O  ALL_METRICS completeness
 # ===========================================================================
 
+
 class TestAllMetricsCompleteness:
     """ALL_METRICS must be exactly the 13 metrics documented in quickstart.md."""
 
-    _EXPECTED: frozenset[str] = frozenset({
-        "H_atom", "H_spatial", "H_total",
-        "RDF_dev", "shape_aniso",
-        "Q4", "Q6", "Q8",
-        "graph_lcc", "graph_cc",
-        "ring_fraction", "charge_frustration", "moran_I_chi",
-    })
+    _EXPECTED: frozenset[str] = frozenset(
+        {
+            "H_atom",
+            "H_spatial",
+            "H_total",
+            "RDF_dev",
+            "shape_aniso",
+            "Q4",
+            "Q6",
+            "Q8",
+            "graph_lcc",
+            "graph_cc",
+            "ring_fraction",
+            "charge_frustration",
+            "moran_I_chi",
+        }
+    )
 
     def test_all_metrics_is_frozenset(self) -> None:
         """ALL_METRICS must be a frozenset (immutable)."""

@@ -141,15 +141,15 @@ def _affine_move(
         Transformed positions (same length as input).
     """
     s_stretch = affine_strength if affine_stretch is None else affine_stretch
-    s_shear   = affine_strength if affine_shear   is None else affine_shear
-    s_jitter  = affine_strength if affine_jitter  is None else affine_jitter
+    s_shear = affine_strength if affine_shear is None else affine_shear
+    s_jitter = affine_strength if affine_jitter is None else affine_jitter
 
-    pts = np.array(positions, dtype=float)   # (n, 3)
+    pts = np.array(positions, dtype=float)  # (n, 3)
     com = pts.mean(axis=0)
-    pts -= com                               # work around center of mass
+    pts -= com  # work around center of mass
 
     # ── Stretch / compress along a random axis ────────────────────────────
-    axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
+    axis = rng.randrange(3)  # 0=x, 1=y, 2=z
     scale = 1.0 + rng.uniform(-s_stretch, s_stretch)
     A = np.eye(3)
     A[axis, axis] = scale
@@ -159,18 +159,22 @@ def _affine_move(
     axes.pop(axis)
     a1, a2 = axes
     shear = rng.uniform(-s_shear * 0.5, s_shear * 0.5)
-    A[a1, a2] += shear                       # shear in one direction
+    A[a1, a2] += shear  # shear in one direction
 
     # Apply affine transform
-    pts = pts @ A.T                          # (n, 3)
+    pts = pts @ A.T  # (n, 3)
 
     # ── Small per-atom jitter (optional fine-grain noise) ─────────────────
     if move_step > 0.0 and s_jitter > 0.0:
-        jitter_scale = move_step * 0.25 * (s_jitter / affine_strength if affine_strength > 0.0 else 1.0)
-        pts += np.array([
-            [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
-            for _ in range(len(positions))
-        ])
+        jitter_scale = (
+            move_step * 0.25 * (s_jitter / affine_strength if affine_strength > 0.0 else 1.0)
+        )
+        pts += np.array(
+            [
+                [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
+                for _ in range(len(positions))
+            ]
+        )
 
     # Restore center of mass
     pts += com
@@ -232,15 +236,13 @@ def relax_positions(
     if n < 2:
         return positions, True
 
-    pts = np.array(positions, dtype=float)          # (n, 3)
+    pts = np.array(positions, dtype=float)  # (n, 3)
     radii = np.array([_cov_radius_ang(a) for a in atoms])  # (n,)
 
     # ── C++ fast path ────────────────────────────────────────────────────
     if HAS_RELAX:
         seed_int: int = -1 if seed is None else int(seed)
-        pts_out, converged = _cpp_relax_positions(
-            pts, radii, cov_scale, max_cycles, seed_int
-        )
+        pts_out, converged = _cpp_relax_positions(pts, radii, cov_scale, max_cycles, seed_int)
         return [tuple(row) for row in pts_out], converged
 
     # ── Pure-Python / NumPy fallback ─────────────────────────────────────
@@ -250,7 +252,7 @@ def relax_positions(
     converged = False
     for _ in range(max_cycles):
         diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
-        dmat = np.sqrt((diff**2).sum(axis=2))                  # (n, n)
+        dmat = np.sqrt((diff**2).sum(axis=2))  # (n, n)
         np.fill_diagonal(dmat, np.inf)
 
         viol_mask = np.triu(dmat < thresh, k=1)
@@ -531,9 +533,7 @@ def place_shell(
 # ---------------------------------------------------------------------------
 
 
-def _angular_repulsion_gradient(
-    pts: np.ndarray, cutoff: float
-) -> np.ndarray:
+def _angular_repulsion_gradient(pts: np.ndarray, cutoff: float) -> np.ndarray:
     """Compute gradient of the angular repulsion potential.
 
     For each atom *i* and each neighbor *j* within *cutoff*, the potential
@@ -558,14 +558,14 @@ def _angular_repulsion_gradient(
     eps = 1e-6
 
     diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (n, n, 3)
-    dist = np.sqrt((diff**2).sum(axis=2))                  # (n, n)
+    dist = np.sqrt((diff**2).sum(axis=2))  # (n, n)
     np.fill_diagonal(dist, np.inf)
 
-    mask = dist <= cutoff                                   # (n, n) bool
+    mask = dist <= cutoff  # (n, n) bool
 
     # Unit vectors from j → i
     safe_dist = np.where(dist > 0, dist, 1.0)
-    uhat = diff / safe_dist[:, :, np.newaxis]              # (n, n, 3)
+    uhat = diff / safe_dist[:, :, np.newaxis]  # (n, n, 3)
 
     mask_f = mask.astype(float)
     for i in range(n):
@@ -574,7 +574,7 @@ def _angular_repulsion_gradient(
         for j in ni_idx:
             cos_vals = (ni_dirs[ni_idx] * ni_dirs[j]).sum(axis=1)  # (n_nb,)
             denom = 1.0 - cos_vals + eps
-            weights = 1.0 / denom**2                                # (n_nb,)
+            weights = 1.0 / denom**2  # (n_nb,)
             perp = ni_dirs[ni_idx] - cos_vals[:, np.newaxis] * ni_dirs[j]
             grad[i] += (weights[:, np.newaxis] * perp).sum(axis=0) / safe_dist[i, j]
 
@@ -716,8 +716,15 @@ def place_maxent(
     if HAS_MAXENT_LOOP:
         seed_int: int = -1 if seed is None else int(seed)
         pts = _cpp_place_maxent(
-            pts, radii, cov_scale, region_radius, ang_cutoff,
-            maxent_steps, trust_radius, convergence_tol, seed_int,
+            pts,
+            radii,
+            cov_scale,
+            region_radius,
+            ang_cutoff,
+            maxent_steps,
+            trust_radius,
+            convergence_tol,
+            seed_int,
         )
         return atoms, [tuple(row) for row in pts]
 

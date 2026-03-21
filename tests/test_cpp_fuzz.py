@@ -75,9 +75,7 @@ from pasted._ext import (
 # ---------------------------------------------------------------------------
 needs_relax = pytest.mark.skipif(not HAS_RELAX, reason="HAS_RELAX=False")
 needs_maxent = pytest.mark.skipif(not HAS_MAXENT, reason="HAS_MAXENT=False")
-needs_steinhardt = pytest.mark.skipif(
-    not HAS_STEINHARDT, reason="HAS_STEINHARDT=False"
-)
+needs_steinhardt = pytest.mark.skipif(not HAS_STEINHARDT, reason="HAS_STEINHARDT=False")
 needs_graph = pytest.mark.skipif(not HAS_GRAPH, reason="HAS_GRAPH=False")
 
 # ---------------------------------------------------------------------------
@@ -85,9 +83,7 @@ needs_graph = pytest.mark.skipif(not HAS_GRAPH, reason="HAS_GRAPH=False")
 # ---------------------------------------------------------------------------
 
 # Canonical 3-atom right-angle triangle
-PTS3: np.ndarray = np.array(
-    [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], dtype=np.float64
-)
+PTS3: np.ndarray = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], dtype=np.float64)
 RADII3: np.ndarray = np.full(3, 0.77, dtype=np.float64)
 EN3: np.ndarray = np.array([2.55, 3.04, 3.44], dtype=np.float64)
 
@@ -126,6 +122,7 @@ _RDF_KEYS = frozenset({"h_spatial", "rdf_dev"})
 # The C++ binding must honour its declared signature even for anomalous input.
 # ---------------------------------------------------------------------------
 
+
 def _assert_relax_contract(result: Any, n: int) -> tuple[np.ndarray, bool]:
     """relax_positions → tuple[NDArray[float64, (N,3)], bool]"""
     assert isinstance(result, tuple), f"Expected tuple, got {type(result).__name__}"
@@ -142,9 +139,7 @@ def _assert_relax_contract(result: Any, n: int) -> tuple[np.ndarray, bool]:
 
 def _assert_grad_contract(result: Any, n: int) -> np.ndarray:
     """angular_repulsion_gradient → NDArray[float64, (N,3)]"""
-    assert isinstance(result, np.ndarray), (
-        f"Expected ndarray, got {type(result).__name__}"
-    )
+    assert isinstance(result, np.ndarray), f"Expected ndarray, got {type(result).__name__}"
     assert result.dtype == np.float64, f"dtype: expected float64, got {result.dtype}"
     assert result.ndim == 2, f"ndim: expected 2, got {result.ndim}"
     assert result.shape[0] == n, f"shape[0]: expected {n}, got {result.shape[0]}"
@@ -157,9 +152,7 @@ def _assert_steinhardt_contract(result: Any, n: int) -> dict[str, np.ndarray]:
     assert isinstance(result, dict), f"Expected dict, got {type(result).__name__}"
     for k, v in result.items():
         assert isinstance(k, str), f"Key: expected str, got {type(k).__name__}"
-        assert isinstance(v, np.ndarray), (
-            f"{k!r}: expected ndarray, got {type(v).__name__}"
-        )
+        assert isinstance(v, np.ndarray), f"{k!r}: expected ndarray, got {type(v).__name__}"
         assert v.dtype == np.float64, f"{k!r}.dtype: expected float64, got {v.dtype}"
         assert v.ndim == 1, f"{k!r}.ndim: expected 1, got {v.ndim}"
         assert v.shape[0] == n, f"{k!r}.shape[0]: expected {n}, got {v.shape[0]}"
@@ -173,22 +166,16 @@ def _assert_graph_contract(result: Any) -> dict[str, float]:
         f"Keys mismatch: {set(result.keys())} != {_GRAPH_KEYS}"
     )
     for k, v in result.items():
-        assert isinstance(v, float), (
-            f"{k!r}: expected float, got {type(v).__name__}"
-        )
+        assert isinstance(v, float), f"{k!r}: expected float, got {type(v).__name__}"
     return result
 
 
 def _assert_rdf_contract(result: Any) -> dict[str, float]:
     """rdf_h_cpp → dict[str, float] with exactly 2 keys"""
     assert isinstance(result, dict), f"Expected dict, got {type(result).__name__}"
-    assert set(result.keys()) == _RDF_KEYS, (
-        f"Keys mismatch: {set(result.keys())} != {_RDF_KEYS}"
-    )
+    assert set(result.keys()) == _RDF_KEYS, f"Keys mismatch: {set(result.keys())} != {_RDF_KEYS}"
     for k, v in result.items():
-        assert isinstance(v, float), (
-            f"{k!r}: expected float, got {type(v).__name__}"
-        )
+        assert isinstance(v, float), f"{k!r}: expected float, got {type(v).__name__}"
     return result
 
 
@@ -208,70 +195,86 @@ class TestSubprocessIsolation:
     @needs_relax
     def test_relax_nx2_no_signal(self) -> None:
         """(N,2) array: pybind11 reinterprets as (floor(2N/3), 3)."""
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import relax_positions; "
-            "pts=np.zeros((4,2),dtype='f8'); r=np.full(4,0.77); "
-            "relax_positions(pts,r,1.0,10)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import relax_positions; "
+                "pts=np.zeros((4,2),dtype='f8'); r=np.full(4,0.77); "
+                "relax_positions(pts,r,1.0,10)"
+            )
+        )
 
     @needs_relax
     def test_relax_nx4_no_signal(self) -> None:
         """(N,4) array: buffer is wider than expected."""
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import relax_positions; "
-            "pts=np.zeros((3,4),dtype='f8'); r=np.full(3,0.77); "
-            "relax_positions(pts,r,1.0,10)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import relax_positions; "
+                "pts=np.zeros((3,4),dtype='f8'); r=np.full(3,0.77); "
+                "relax_positions(pts,r,1.0,10)"
+            )
+        )
 
     @needs_maxent
     def test_angular_gradient_nx2_no_signal(self) -> None:
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import angular_repulsion_gradient; "
-            "pts=np.zeros((4,2),dtype='f8'); "
-            "angular_repulsion_gradient(pts,5.0)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import angular_repulsion_gradient; "
+                "pts=np.zeros((4,2),dtype='f8'); "
+                "angular_repulsion_gradient(pts,5.0)"
+            )
+        )
 
     @needs_relax
     def test_relax_1d_array_no_signal(self) -> None:
         """1-D array: C++ reads uninitialized rows beyond the array bounds."""
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import relax_positions; "
-            "pts=np.array([0.0,1.5,0.0]); "
-            "relax_positions(pts,np.array([0.77]),1.0,10)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import relax_positions; "
+                "pts=np.array([0.0,1.5,0.0]); "
+                "relax_positions(pts,np.array([0.77]),1.0,10)"
+            )
+        )
 
     @needs_maxent
     def test_angular_gradient_1d_no_signal(self) -> None:
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import angular_repulsion_gradient; "
-            "pts=np.array([0.0,1.5,0.0]); "
-            "angular_repulsion_gradient(pts,5.0)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import angular_repulsion_gradient; "
+                "pts=np.array([0.0,1.5,0.0]); "
+                "angular_repulsion_gradient(pts,5.0)"
+            )
+        )
 
     @needs_relax
     def test_relax_radii_shorter_than_pts_no_signal(self) -> None:
         """radii length < pts rows: C++ reads past the radii buffer."""
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import relax_positions; "
-            "pts=np.zeros((6,3),dtype='f8'); r=np.full(3,0.77); "
-            "relax_positions(pts,r,1.0,10)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import relax_positions; "
+                "pts=np.zeros((6,3),dtype='f8'); r=np.full(3,0.77); "
+                "relax_positions(pts,r,1.0,10)"
+            )
+        )
 
     @needs_graph
     def test_graph_radii_shorter_than_pts_no_signal(self) -> None:
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import graph_metrics_cpp; "
-            "pts=np.zeros((5,3),dtype='f8'); r=np.full(2,0.77); en=np.full(2,2.5); "
-            "graph_metrics_cpp(pts,r,1.0,en,5.0)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import graph_metrics_cpp; "
+                "pts=np.zeros((5,3),dtype='f8'); r=np.full(2,0.77); en=np.full(2,2.5); "
+                "graph_metrics_cpp(pts,r,1.0,en,5.0)"
+            )
+        )
 
     @needs_graph
     def test_graph_en_vals_shorter_than_pts_no_signal(self) -> None:
-        _assert_no_signal(_run_isolated(
-            "import numpy as np; from pasted._ext import graph_metrics_cpp; "
-            "pts=np.zeros((5,3),dtype='f8'); r=np.full(5,0.77); en=np.full(2,2.5); "
-            "graph_metrics_cpp(pts,r,1.0,en,5.0)"
-        ))
+        _assert_no_signal(
+            _run_isolated(
+                "import numpy as np; from pasted._ext import graph_metrics_cpp; "
+                "pts=np.zeros((5,3),dtype='f8'); r=np.full(5,0.77); en=np.full(2,2.5); "
+                "graph_metrics_cpp(pts,r,1.0,en,5.0)"
+            )
+        )
 
 
 # ===========================================================================
@@ -294,7 +297,6 @@ class TestSubprocessIsolation:
 
 
 class TestNanCoordinates:
-
     def _pts_nan0(self) -> np.ndarray:
         pts = PTS3.copy()
         pts[0] = [float("nan"), 0.0, 0.0]
@@ -389,8 +391,11 @@ class TestNanCoordinates:
         result = graph_metrics_cpp(self._pts_nan0(), RADII3, 1.0, EN3, 5.0)
         result = _assert_graph_contract(result)
         assert set(result.keys()) == {
-            "graph_lcc", "graph_cc", "ring_fraction",
-            "charge_frustration", "moran_I_chi",
+            "graph_lcc",
+            "graph_cc",
+            "ring_fraction",
+            "charge_frustration",
+            "moran_I_chi",
         }
 
     @needs_graph
@@ -456,7 +461,6 @@ class TestNanCoordinates:
 
 
 class TestInfCoordinates:
-
     def _pts_all_inf(self, val: float = float("inf")) -> np.ndarray:
         return np.full((3, 3), val, dtype=np.float64)
 
@@ -537,7 +541,6 @@ class TestInfCoordinates:
 
 
 class TestGeometricCollapse:
-
     @needs_relax
     def test_relax_all_origin_moves_all_atoms_apart(self) -> None:
         """Coincident atoms trigger jitter+L-BFGS; all pairwise distances
@@ -586,9 +589,7 @@ class TestGeometricCollapse:
         result = graph_metrics_cpp(pts, np.full(4, 0.77), 1.0, np.full(4, 2.5), 5.0)
         result = _assert_graph_contract(result)
         for key, val in result.items():
-            assert math.isfinite(float(val)), (
-                f"graph[{key!r}] must be finite for all-origin input"
-            )
+            assert math.isfinite(float(val)), f"graph[{key!r}] must be finite for all-origin input"
 
     @needs_graph
     def test_rdf_all_origin_finite(self) -> None:
@@ -603,8 +604,7 @@ class TestGeometricCollapse:
         """All atoms in z=0: by symmetry the z-component of the angular
         repulsion gradient must be exactly 0."""
         pts = np.array(
-            [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0],
-             [0.0, 1.5, 0.0], [1.5, 1.5, 0.0]], dtype=np.float64
+            [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [1.5, 1.5, 0.0]], dtype=np.float64
         )
         grad = angular_repulsion_gradient(pts, 5.0)
         grad = _assert_grad_contract(grad, len(pts))
@@ -616,8 +616,7 @@ class TestGeometricCollapse:
     def test_steinhardt_collinear_q4_q6_all_one(self) -> None:
         """Four atoms on a line: perfect 1-D rod → Q4=Q6=1 for all."""
         pts = np.array(
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0],
-             [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=np.float64
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]], dtype=np.float64
         )
         result = steinhardt_per_atom(pts, 5.0, [4, 6])
         result = _assert_steinhardt_contract(result, len(pts))
@@ -743,7 +742,6 @@ class TestSingleAtom:
 
 
 class TestFortranOrderArrays:
-
     @needs_relax
     def test_relax_fortran_bit_identical(self) -> None:
         out_c, conv_c = relax_positions(PTS3.copy(), RADII3, 1.0, 200)
@@ -784,7 +782,6 @@ class TestFortranOrderArrays:
 
 
 class TestBoundaryScalarParameters:
-
     # ── relax_positions: cov_scale ───────────────────────────────────────────
 
     @needs_relax
@@ -997,7 +994,6 @@ class TestBoundaryScalarParameters:
 
 
 class TestAncillaryArrayAnomalies:
-
     @needs_relax
     def test_relax_nan_first_radius_all_nan_conv_false(self) -> None:
         """NaN in radii[0] enters the pairwise penalty for every pair (0,j).
@@ -1075,9 +1071,7 @@ class TestFloatOverflow:
     _FMAX: float = sys.float_info.max
 
     def _pts_fmax(self) -> np.ndarray:
-        return np.array(
-            [[self._FMAX, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float64
-        )
+        return np.array([[self._FMAX, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float64)
 
     @needs_relax
     def test_relax_fmax_coord_conv_true_shape_correct(self) -> None:
@@ -1108,9 +1102,7 @@ class TestFloatOverflow:
     def test_graph_fmax_coord_lcc_half_no_infinite(self) -> None:
         """Two disconnected atoms (distance > cutoff): each is its own
         component of size 1 → lcc = 1/2; no metric is infinite."""
-        result = graph_metrics_cpp(
-            self._pts_fmax(), np.full(2, 0.77), 1.0, np.full(2, 2.5), 5.0
-        )
+        result = graph_metrics_cpp(self._pts_fmax(), np.full(2, 0.77), 1.0, np.full(2, 2.5), 5.0)
         assert float(result["graph_lcc"]) == pytest.approx(0.5)
         for key, val in result.items():
             assert not math.isinf(float(val)), (

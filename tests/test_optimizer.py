@@ -299,14 +299,34 @@ class TestOptimizationResult:
     def test_best_returns_first(self) -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            s1 = StructureGenerator(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=1, seed=0,
-            ).generate().structures[0]
-            s2 = StructureGenerator(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=1, seed=1,
-            ).generate().structures[0]
+            s1 = (
+                StructureGenerator(
+                    n_atoms=6,
+                    charge=0,
+                    mult=1,
+                    mode="gas",
+                    region="sphere:6",
+                    elements="6,8",
+                    n_samples=1,
+                    seed=0,
+                )
+                .generate()
+                .structures[0]
+            )
+            s2 = (
+                StructureGenerator(
+                    n_atoms=6,
+                    charge=0,
+                    mult=1,
+                    mode="gas",
+                    region="sphere:6",
+                    elements="6,8",
+                    n_samples=1,
+                    seed=1,
+                )
+                .generate()
+                .structures[0]
+            )
         result = OptimizationResult(
             all_structures=[s1, s2],
             objective_scores=[2.0, 1.0],
@@ -318,9 +338,14 @@ class TestOptimizationResult:
 
     def test_summary_contains_fields(self) -> None:
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", max_steps=20, n_restarts=2, seed=0,
+            elements="6,8",
+            max_steps=20,
+            n_restarts=2,
+            seed=0,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -332,9 +357,14 @@ class TestOptimizationResult:
 
     def test_sorted_best_first(self) -> None:
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", max_steps=30, n_restarts=4, seed=5,
+            elements="6,8",
+            max_steps=30,
+            n_restarts=4,
+            seed=5,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -343,9 +373,13 @@ class TestOptimizationResult:
 
     def test_repr(self) -> None:
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", max_steps=10, seed=0,
+            elements="6,8",
+            max_steps=10,
+            seed=0,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -365,63 +399,85 @@ class TestObjectiveAlignment:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             structs = StructureGenerator(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:9",
-                elements="6,8", n_samples=n_samples, seed=99,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:9",
+                elements="6,8",
+                n_samples=n_samples,
+                seed=99,
             ).generate()
         return sum(s.metrics[metric] for s in structs) / len(structs)
 
     def test_sa_improves_h_total(self) -> None:
         baseline = self._baseline_mean("H_total")
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", method="annealing",
-            max_steps=1000, n_restarts=3, seed=42,
+            elements="6,8",
+            method="annealing",
+            max_steps=1000,
+            n_restarts=3,
+            seed=42,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = opt.run()
         assert result.best.metrics["H_total"] > baseline, (
-            f"SA H_total {result.best.metrics['H_total']:.3f} not above "
-            f"baseline {baseline:.3f}"
+            f"SA H_total {result.best.metrics['H_total']:.3f} not above baseline {baseline:.3f}"
         )
 
     def test_bh_improves_h_total(self) -> None:
         baseline = self._baseline_mean("H_total")
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", method="basin_hopping",
-            max_steps=300, n_restarts=3, seed=42,
+            elements="6,8",
+            method="basin_hopping",
+            max_steps=300,
+            n_restarts=3,
+            seed=42,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = opt.run()
         assert result.best.metrics["H_total"] > baseline, (
-            f"BH H_total {result.best.metrics['H_total']:.3f} not above "
-            f"baseline {baseline:.3f}"
+            f"BH H_total {result.best.metrics['H_total']:.3f} not above baseline {baseline:.3f}"
         )
 
     def test_negative_weight_reduces_metric(self) -> None:
         """Minimizing Q6 via negative weight should produce objective >= random best."""
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
             objective={"H_total": 0.5, "Q6": -2.0},
-            elements="6,8", method="annealing",
-            max_steps=1500, n_restarts=3, seed=7,
+            elements="6,8",
+            method="annealing",
+            max_steps=1500,
+            n_restarts=3,
+            seed=7,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = opt.run()
             baseline = StructureGenerator(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:9",
-                elements="6,8", n_samples=30, seed=99,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:9",
+                elements="6,8",
+                n_samples=30,
+                seed=99,
             ).generate()
         best_random_score = max(
-            0.5 * s.metrics["H_total"] - 2.0 * s.metrics["Q6"]
-            for s in baseline
+            0.5 * s.metrics["H_total"] - 2.0 * s.metrics["Q6"] for s in baseline
         )
         opt_score = 0.5 * result.best.metrics["H_total"] - 2.0 * result.best.metrics["Q6"]
         # Optimizer must match or beat the best random structure found in 30 samples
@@ -432,24 +488,34 @@ class TestObjectiveAlignment:
     def test_callable_objective_alignment(self) -> None:
         """Callable objective should also be maximized."""
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
             objective=lambda m: m["H_spatial"] - m["Q6"],
-            elements="6,8", method="annealing",
-            max_steps=800, n_restarts=2, seed=3,
+            elements="6,8",
+            method="annealing",
+            max_steps=800,
+            n_restarts=2,
+            seed=3,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = opt.run()
             baseline = StructureGenerator(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:9",
-                elements="6,8", n_samples=30, seed=99,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:9",
+                elements="6,8",
+                n_samples=30,
+                seed=99,
             ).generate()
         b_scores = [s.metrics["H_spatial"] - s.metrics["Q6"] for s in baseline]
         opt_score = result.best.metrics["H_spatial"] - result.best.metrics["Q6"]
         assert opt_score > sum(b_scores) / len(b_scores), (
             f"Callable objective score {opt_score:.3f} not above baseline mean "
-            f"{sum(b_scores)/len(b_scores):.3f}"
+            f"{sum(b_scores) / len(b_scores):.3f}"
         )
 
     def test_n_restarts_best_not_worse_than_single(self) -> None:
@@ -457,18 +523,28 @@ class TestObjectiveAlignment:
         single_scores = []
         for seed in range(4):
             o = StructureOptimizer(
-                n_atoms=6, charge=0, mult=1,
+                n_atoms=6,
+                charge=0,
+                mult=1,
                 objective={"H_total": 1.0},
-                elements="6,8", max_steps=200, n_restarts=1, seed=seed * 97,
+                elements="6,8",
+                max_steps=200,
+                n_restarts=1,
+                seed=seed * 97,
             )
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 single_scores.append(o.run().best.metrics["H_total"])
 
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
-            elements="6,8", max_steps=200, n_restarts=4, seed=0,
+            elements="6,8",
+            max_steps=200,
+            n_restarts=4,
+            seed=0,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -560,7 +636,9 @@ class TestParallelTempering:
     def test_bad_method_raises(self) -> None:
         with pytest.raises(ValueError, match="method"):
             StructureOptimizer(
-                n_atoms=6, charge=0, mult=1,
+                n_atoms=6,
+                charge=0,
+                mult=1,
                 objective={"H_total": 1.0},
                 method="gibbs_sampling",
             )
@@ -570,16 +648,26 @@ class TestParallelTempering:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             baseline = StructureGenerator(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:9",
-                elements="6,8", n_samples=30, seed=99,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:9",
+                elements="6,8",
+                n_samples=30,
+                seed=99,
             ).generate()
             opt = StructureOptimizer(
-                n_atoms=8, charge=0, mult=1,
+                n_atoms=8,
+                charge=0,
+                mult=1,
                 objective={"H_total": 1.0},
                 elements="6,8",
                 method="parallel_tempering",
-                max_steps=300, n_replicas=4, n_restarts=2, seed=42,
+                max_steps=300,
+                n_replicas=4,
+                n_restarts=2,
+                seed=42,
             )
             result = opt.run()
         baseline_mean = sum(s.metrics["H_total"] for s in baseline) / len(baseline)
@@ -620,8 +708,15 @@ class TestAllowCompositionMoves:
     def test_disabled_preserves_initial_composition(self) -> None:
         """With composition moves off, atom types must not change."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=5,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=5,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -629,7 +724,7 @@ class TestAllowCompositionMoves:
         if not result_gen:
             pytest.skip("Could not generate initial structure")
         initial = result_gen[0]
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         initial_composition = sorted(initial.atoms)  # type: ignore[union-attr]
         opt = self._opt(
             allow_composition_moves=False,
@@ -664,8 +759,15 @@ class TestAllowCompositionMoves:
     def test_parallel_tempering_respects_flag(self) -> None:
         """PT should also preserve composition when flag is off."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=3,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=3,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -673,20 +775,26 @@ class TestAllowCompositionMoves:
         if not gen_result:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         initial_composition = sorted(initial.atoms)  # type: ignore[union-attr]
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
             elements="6,7,8",
             method="parallel_tempering",
             allow_composition_moves=False,
-            max_steps=50, n_replicas=2, n_restarts=1, seed=3,
+            max_steps=50,
+            n_replicas=2,
+            n_restarts=1,
+            seed=3,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # type: ignore[arg-type]
             result = opt.run(initial=initial)  # type: ignore[arg-type]
         assert sorted(result.best.atoms) == initial_composition
+
 
 # ---------------------------------------------------------------------------
 # allow_displacements
@@ -740,8 +848,15 @@ class TestAllowDisplacements:
     def test_disabled_preserves_positions(self) -> None:
         """With displacements off, atom coordinates must not change."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=11,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=11,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -750,7 +865,7 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = result_gen[0]
 
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = self._opt(
             allow_displacements=False,
@@ -764,7 +879,9 @@ class TestAllowDisplacements:
 
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
-            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+            np.array(best_positions),
+            np.array(initial_positions),
+            atol=1e-9,
             err_msg="Positions changed despite allow_displacements=False",
         )
 
@@ -788,8 +905,15 @@ class TestAllowDisplacements:
 
     def test_basin_hopping_preserves_positions(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=22,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=22,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -798,30 +922,43 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_atom": 1.0},
             elements="6,7,8",
             method="basin_hopping",
             allow_displacements=False,
-            max_steps=50, n_restarts=1, seed=22,
+            max_steps=50,
+            n_restarts=1,
+            seed=22,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # type: ignore[arg-type]
             result = opt.run(initial=initial)  # type: ignore[arg-type]
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
-            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+            np.array(best_positions),
+            np.array(initial_positions),
+            atol=1e-9,
         )
 
     # ── Parallel Tempering respects flag ─────────────────────────────────
 
     def test_parallel_tempering_preserves_positions(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=33,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=33,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -830,22 +967,29 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_atom": 1.0},
             elements="6,7,8",
             method="parallel_tempering",
             allow_displacements=False,
-            max_steps=50, n_replicas=2, n_restarts=1, seed=33,
+            max_steps=50,
+            n_replicas=2,
+            n_restarts=1,
+            seed=33,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # type: ignore[arg-type]
             result = opt.run(initial=initial)  # type: ignore[arg-type]
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
-            np.array(best_positions), np.array(initial_positions), atol=1e-9,
+            np.array(best_positions),
+            np.array(initial_positions),
+            atol=1e-9,
         )
 
 
@@ -896,8 +1040,15 @@ class TestAllowAffineMoves:
     def test_affine_only_runs_and_returns_result(self) -> None:
         """affine-only optimisation must complete and return OptimizationResult."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=7,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=7,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -922,8 +1073,15 @@ class TestAllowAffineMoves:
     def test_affine_only_preserves_composition(self) -> None:
         """affine-only: composition must not change (no composition moves)."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=8,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=8,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -951,8 +1109,15 @@ class TestAllowAffineMoves:
     def test_affine_and_composition_no_displacement(self) -> None:
         """affine+composition with allow_displacements=False must not raise."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=9,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=9,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -976,8 +1141,15 @@ class TestAllowAffineMoves:
     def test_parallel_tempering_affine_only(self) -> None:
         """PT with affine-only moves must complete without error."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=50, n_success=1, seed=10,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=50,
+            n_success=1,
+            seed=10,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -987,14 +1159,19 @@ class TestAllowAffineMoves:
         initial = gen_result[0]  # type: ignore[union-attr]
 
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
             elements="6,7,8",
             method="parallel_tempering",
             allow_displacements=False,
             allow_composition_moves=False,
             allow_affine_moves=True,
-            max_steps=50, n_replicas=2, n_restarts=1, seed=10,
+            max_steps=50,
+            n_replicas=2,
+            n_restarts=1,
+            seed=10,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -1014,16 +1191,21 @@ class TestAllowAffineMoves:
 # TestEvalContext
 # ===========================================================================
 
+
 class TestEvalContext:
     """Tests for EvalContext and 2-argument objective dispatch."""
 
     def _make_opt(self, objective, method="annealing", n_atoms=6, seed=99, **kw):
         return StructureOptimizer(
-            n_atoms=n_atoms, charge=0, mult=1,
+            n_atoms=n_atoms,
+            charge=0,
+            mult=1,
             elements="6,7,8",
             objective=objective,
             method=method,
-            max_steps=30, n_restarts=1, seed=seed,
+            max_steps=30,
+            n_restarts=1,
+            seed=seed,
             **kw,
         )
 
@@ -1031,6 +1213,7 @@ class TestEvalContext:
 
     def test_evalcontext_in_public_api(self) -> None:
         import pasted
+
         assert hasattr(pasted, "EvalContext")
         from pasted import EvalContext  # noqa: F401
 
@@ -1038,25 +1221,31 @@ class TestEvalContext:
 
     def test_needs_ctx_dict(self) -> None:
         from pasted._optimizer import _objective_needs_ctx
+
         assert _objective_needs_ctx({"H_total": 1.0}) is False
 
     def test_needs_ctx_one_arg_lambda(self) -> None:
         from pasted._optimizer import _objective_needs_ctx
+
         assert _objective_needs_ctx(lambda m: m["H_total"]) is False
 
     def test_needs_ctx_two_arg_lambda(self) -> None:
         from pasted._optimizer import _objective_needs_ctx
+
         assert _objective_needs_ctx(lambda m, ctx: m["H_total"]) is True
 
     def test_needs_ctx_optional_second_arg(self) -> None:
         from pasted._optimizer import _objective_needs_ctx
+
         # second arg has default → treated as 1-arg
         assert _objective_needs_ctx(lambda m, ctx=None: m["H_total"]) is False
 
     def test_needs_ctx_two_arg_def(self) -> None:
         from pasted._optimizer import _objective_needs_ctx
+
         def f(m, ctx):
             return m["H_total"]
+
         assert _objective_needs_ctx(f) is True
 
     # ── _needs_ctx cached on instance ─────────────────────────────────────
@@ -1082,6 +1271,7 @@ class TestEvalContext:
 
     def test_two_arg_objective_receives_ctx(self) -> None:
         from pasted import EvalContext
+
         received: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1101,6 +1291,7 @@ class TestEvalContext:
 
     def test_ctx_structure_fields(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1124,6 +1315,7 @@ class TestEvalContext:
 
     def test_ctx_optimizer_state_fields(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1150,6 +1342,7 @@ class TestEvalContext:
 
     def test_ctx_config_fields(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1172,6 +1365,7 @@ class TestEvalContext:
 
     def test_ctx_non_pt_replica_fields_are_none(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1190,14 +1384,14 @@ class TestEvalContext:
 
     def test_ctx_pt_replica_fields_set(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
             seen.append(ctx)
             return m["H_total"]
 
-        opt = self._make_opt(f, method="parallel_tempering", n_atoms=6,
-                              n_replicas=2)
+        opt = self._make_opt(f, method="parallel_tempering", n_atoms=6, n_replicas=2)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             opt.run()
@@ -1213,6 +1407,7 @@ class TestEvalContext:
 
     def test_ctx_to_xyz(self) -> None:
         from pasted import EvalContext
+
         seen: list[EvalContext] = []
 
         def f(m, ctx):
@@ -1255,13 +1450,19 @@ class TestEvalContext:
         def spread_obj(m, ctx):
             pos = np.array(ctx.positions)
             diffs = pos[:, None, :] - pos[None, :, :]
-            dists = np.sqrt((diffs ** 2).sum(axis=-1))
+            dists = np.sqrt((diffs**2).sum(axis=-1))
             return float(dists[np.triu_indices(ctx.n_atoms, k=1)].mean())
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=spread_obj,
-            method="annealing", max_steps=200, n_restarts=1, seed=42,
+            method="annealing",
+            max_steps=200,
+            n_restarts=1,
+            seed=42,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -1352,8 +1553,14 @@ class TestRadiiCacheBugFix:
         from pasted import StructureOptimizer, generate
 
         initial = generate(
-            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=50, seed=5,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=50,
+            seed=5,
         )[0]
 
         pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
@@ -1375,9 +1582,7 @@ class TestRadiiCacheBugFix:
             result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         unexpected = set(result.best.atoms) - pool_set
-        assert not unexpected, (
-            f"Non-pool atoms found in composition-only result: {unexpected}"
-        )
+        assert not unexpected, f"Non-pool atoms found in composition-only result: {unexpected}"
 
 
 class TestSanitizeAtomsToPool:
@@ -1428,8 +1633,14 @@ class TestSanitizeAtomsToPool:
         from pasted import StructureOptimizer, generate
 
         initial = generate(
-            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=50, seed=11,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=50,
+            seed=11,
         )[0]
 
         opt = StructureOptimizer(
@@ -1471,8 +1682,14 @@ class TestParallelTemperingSanitize:
         from pasted import StructureOptimizer, generate
 
         initial = generate(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=30, seed=5,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=30,
+            seed=5,
         )[0]
 
         pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
@@ -1495,9 +1712,7 @@ class TestParallelTemperingSanitize:
             result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         unexpected = set(result.best.atoms) - pool_set
-        assert not unexpected, (
-            f"Non-pool atoms found in PT composition-only result: {unexpected}"
-        )
+        assert not unexpected, f"Non-pool atoms found in PT composition-only result: {unexpected}"
 
     def test_pt_with_initial_same_pool_unchanged(self) -> None:
         """When initial atoms already belong to the pool, PT must not alter them
@@ -1508,8 +1723,14 @@ class TestParallelTemperingSanitize:
 
         pool = ["C", "N", "O"]
         initial = generate(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=30, seed=3,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=30,
+            seed=3,
         )[0]
         # All atoms already in pool — sanitize must be a no-op.  # type: ignore[union-attr]
         assert all(a in set(pool) for a in initial.atoms)  # type: ignore[union-attr]
@@ -1532,14 +1753,13 @@ class TestParallelTemperingSanitize:
 
         pool_set = set(pool)
         unexpected = set(result.best.atoms) - pool_set
-        assert not unexpected, (
-            f"Non-pool atoms in PT result with in-pool initial: {unexpected}"
-        )
+        assert not unexpected, f"Non-pool atoms in PT result with in-pool initial: {unexpected}"
 
 
 # ---------------------------------------------------------------------------
 # Regression tests for 0.3.2 bug fixes
 # ---------------------------------------------------------------------------
+
 
 class TestMakeInitialNoSpuriousWarning:
     """Regression test for 0.3.2 bug fix.
@@ -1572,8 +1792,7 @@ class TestMakeInitialNoSpuriousWarning:
 
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert user_warns == [], (
-            f"Unexpected UserWarning(s) from opt.run(): "
-            f"{[str(x.message) for x in user_warns]}"
+            f"Unexpected UserWarning(s) from opt.run(): {[str(x.message) for x in user_warns]}"
         )
         assert result.best is not None
 
@@ -1593,28 +1812,29 @@ class TestFilterWarningWithCarbonOnlyPool:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6",           # carbon-only: parity always satisfied
-                n_samples=10, seed=0,
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6",  # carbon-only: parity always satisfied
+                n_samples=10,
+                seed=0,
                 filters=["H_total:999:-"],  # impossible threshold
             )
 
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(user_warns) >= 1, "Expected at least one UserWarning"
         msg = str(user_warns[0].message).lower()
-        assert "filter" in msg, (
-            f"Expected filter-rejection warning, got: {msg}"
-        )
-        assert "parity" not in msg, (
-            f"Unexpected parity warning with carbon-only pool: {msg}"
-        )
+        assert "filter" in msg, f"Expected filter-rejection warning, got: {msg}"
+        assert "parity" not in msg, f"Unexpected parity warning with carbon-only pool: {msg}"
         assert len(result) == 0
 
 
 # ---------------------------------------------------------------------------
 # Tests for max_init_attempts and __init__ parity validation (0.3.2)
 # ---------------------------------------------------------------------------
+
 
 class TestPoolParityValidation:
     """StructureOptimizer.__init__ must raise ValueError for impossible pools."""
@@ -1627,8 +1847,10 @@ class TestPoolParityValidation:
         """
         with pytest.raises(ValueError, match="cannot produce"):
             StructureOptimizer(
-                n_atoms=8, charge=1, mult=1,
-                elements="7",          # all-odd Z; sum=56 → n_e=55 (odd) → mult=1 impossible
+                n_atoms=8,
+                charge=1,
+                mult=1,
+                elements="7",  # all-odd Z; sum=56 → n_e=55 (odd) → mult=1 impossible
                 objective={"H_total": 1.0},
             )
 
@@ -1636,8 +1858,10 @@ class TestPoolParityValidation:
         """N-only pool, n_atoms=1: total_Z=7, n_e=7 (odd) → mult=1 impossible."""
         with pytest.raises(ValueError, match="cannot produce"):
             StructureOptimizer(
-                n_atoms=1, charge=0, mult=1,
-                elements="7",          # Z=7 odd; n_e=7 → needs mult=2, not 1
+                n_atoms=1,
+                charge=0,
+                mult=1,
+                elements="7",  # Z=7 odd; n_e=7 → needs mult=2, not 1
                 objective={"H_total": 1.0},
             )
 
@@ -1647,16 +1871,20 @@ class TestPoolParityValidation:
         """
         with pytest.raises(ValueError, match="cannot produce"):
             StructureOptimizer(
-                n_atoms=4, charge=0, mult=2,
-                elements="6",          # Z=6 even; sum always even → mult=2 impossible
+                n_atoms=4,
+                charge=0,
+                mult=2,
+                elements="6",  # Z=6 even; sum always even → mult=2 impossible
                 objective={"H_total": 1.0},
             )
 
     def test_mixed_pool_does_not_raise(self) -> None:
         """Mixed pool (even- and odd-Z) can always satisfy parity."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
-            elements="6,7",            # C (Z=6 even) + N (Z=7 odd) — mixed
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7",  # C (Z=6 even) + N (Z=7 odd) — mixed
             objective={"H_total": 1.0},
         )
         assert opt._element_pool == ["C", "N"]
@@ -1664,7 +1892,9 @@ class TestPoolParityValidation:
     def test_single_even_element_correct_parity(self) -> None:
         """Carbon-only pool: total_Z always even → n_e even → mult=1 OK."""
         opt = StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements="6",
             objective={"H_total": 1.0},
         )
@@ -1674,8 +1904,10 @@ class TestPoolParityValidation:
         """Extreme positive charge that makes n_electrons <= 0 must raise."""
         with pytest.raises(ValueError, match="cannot produce"):
             StructureOptimizer(
-                n_atoms=1, charge=99, mult=1,
-                elements="6",          # Z=6, n_e = 6-99 = -93 ≤ 0
+                n_atoms=1,
+                charge=99,
+                mult=1,
+                elements="6",  # Z=6, n_e = 6-99 = -93 ≤ 0
                 objective={"H_total": 1.0},
             )
 
@@ -1686,7 +1918,9 @@ class TestMaxInitAttempts:
     def test_default_is_unlimited(self) -> None:
         """Default max_init_attempts=0 means unlimited."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             elements="6,7,8",
             objective={"H_total": 1.0},
         )
@@ -1694,7 +1928,9 @@ class TestMaxInitAttempts:
 
     def test_explicit_value_stored(self) -> None:
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             elements="6,7,8",
             objective={"H_total": 1.0},
             max_init_attempts=100,
@@ -1704,7 +1940,9 @@ class TestMaxInitAttempts:
     def test_unlimited_run_succeeds(self) -> None:
         """max_init_attempts=0 must not prevent successful optimization."""
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
             elements="6,7,8",
             objective={"H_total": 1.0},
             method="annealing",
@@ -1722,8 +1960,10 @@ class TestMaxInitAttempts:
     def test_capped_run_succeeds_with_easy_pool(self) -> None:
         """max_init_attempts=5 is plenty for an easy pool."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
-            elements="6,8",           # C+O: always even electrons
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,8",  # C+O: always even electrons
             objective={"H_total": 1.0},
             method="annealing",
             max_steps=100,
@@ -1743,34 +1983,41 @@ class TestPoolCanSatisfyParity:
 
     def test_import(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         assert callable(_pool_can_satisfy_parity)
 
     def test_mixed_pool_always_true(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # C (6, even) + N (7, odd) → mixed → always satisfiable
         assert _pool_can_satisfy_parity(["C", "N"], 4, 0, 1) is True
 
     def test_all_even_correct_target(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # C only (Z=6 even), charge=0, mult=1: target_parity = (0+1-1)%2 = 0 ✓
         assert _pool_can_satisfy_parity(["C"], 4, 0, 1) is True
 
     def test_all_even_wrong_target(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # C only (Z=6 even), charge=0, mult=2: target_parity = (0+2-1)%2 = 1 ✗
         assert _pool_can_satisfy_parity(["C"], 4, 0, 2) is False
 
     def test_all_odd_matching_natoms(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # N only (Z=7 odd), n_atoms=4 → sum%2==0, charge=0, mult=1: target=0 ✓
         assert _pool_can_satisfy_parity(["N"], 4, 0, 1) is True
 
     def test_all_odd_mismatched_natoms(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # N only (Z=7 odd), n_atoms=1 → sum%2==1, charge=0, mult=1: target=0 ✗
         assert _pool_can_satisfy_parity(["N"], 1, 0, 1) is False
 
     def test_nonpositive_electrons(self) -> None:
         from pasted._optimizer import _pool_can_satisfy_parity
+
         # charge=99 > min_z*n_atoms=6 → n_e would be ≤ 0
         assert _pool_can_satisfy_parity(["C"], 1, 99, 1) is False

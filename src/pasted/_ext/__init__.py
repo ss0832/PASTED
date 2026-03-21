@@ -74,6 +74,7 @@ try:
     from ._relax_core import (  # type: ignore[import-untyped]
         relax_positions,
     )
+
     HAS_RELAX: bool = True
 except ImportError:
     relax_positions: Any = None  # type: ignore[no-redef]
@@ -87,6 +88,7 @@ try:
         angular_repulsion_gradient,
         place_maxent_cpp,
     )
+
     HAS_MAXENT: bool = True
     HAS_MAXENT_LOOP: bool = True
 except ImportError:
@@ -100,6 +102,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 try:
     from ._steinhardt_core import steinhardt_per_atom  # type: ignore[import-untyped]
+
     HAS_STEINHARDT: bool = True
 except ImportError:
     steinhardt_per_atom: Any = None  # type: ignore[no-redef]
@@ -114,11 +117,12 @@ try:
         moran_I_chi_cpp,
         rdf_h_cpp,
     )
+
     HAS_GRAPH: bool = True
 except ImportError:
     graph_metrics_cpp: Any = None  # type: ignore[no-redef]
-    moran_I_chi_cpp:   Any = None  # type: ignore[no-redef]
-    rdf_h_cpp:         Any = None  # type: ignore[no-redef]
+    moran_I_chi_cpp: Any = None  # type: ignore[no-redef]
+    rdf_h_cpp: Any = None  # type: ignore[no-redef]
     HAS_GRAPH = False
 
 __all__ = [

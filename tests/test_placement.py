@@ -115,8 +115,7 @@ class TestPlaceChain:
         """chain_bias=0.0 must produce exactly the same output as the default."""
         atoms = ["C"] * 12
         _, pos_default = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(20))
-        _, pos_bias0 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(20),
-                                   chain_bias=0.0)
+        _, pos_bias0 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(20), chain_bias=0.0)
         for p1, p2 in zip(pos_default, pos_bias0, strict=True):
             assert p1 == p2
 
@@ -125,10 +124,8 @@ class TestPlaceChain:
         atoms = ["C"] * 20
         sa_nobias, sa_bias = [], []
         for seed in range(100):
-            _, pos0 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed),
-                                  chain_bias=0.0)
-            _, pos1 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed),
-                                  chain_bias=0.8)
+            _, pos0 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed), chain_bias=0.0)
+            _, pos1 = place_chain(atoms, 1.2, 1.6, 0.0, 0.5, random.Random(seed), chain_bias=0.8)
             sa_nobias.append(compute_shape_anisotropy(np.array(pos0)))
             sa_bias.append(compute_shape_anisotropy(np.array(pos1)))
 
@@ -137,10 +134,8 @@ class TestPlaceChain:
     def test_chain_bias_seed_reproducible(self) -> None:
         """chain_bias results are reproducible with the same seed."""
         atoms = ["C"] * 15
-        _, pos1 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42),
-                              chain_bias=0.5)
-        _, pos2 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42),
-                              chain_bias=0.5)
+        _, pos1 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42), chain_bias=0.5)
+        _, pos2 = place_chain(atoms, 1.2, 1.6, 0.3, 0.5, random.Random(42), chain_bias=0.5)
         for p1, p2 in zip(pos1, pos2, strict=True):
             assert p1 == p2
 
@@ -257,7 +252,7 @@ class TestRelaxPositions:
             py_result, py_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)  # type: ignore[arg-type]
         finally:
             _ext.HAS_RELAX = original
-  # type: ignore[arg-type]
+        # type: ignore[arg-type]
         cpp_result, cpp_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)  # type: ignore[arg-type]
 
         # Both must converge
@@ -269,9 +264,7 @@ class TestRelaxPositions:
             n = len(atoms)
             for i in range(n):
                 for j in range(i + 1, n):
-                    d = math.sqrt(
-                        sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
-                    )
+                    d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
                     thr = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
                     assert d >= thr - 1e-5, (
                         f"{label}: pair ({atoms[i]},{atoms[j]}) d={d:.6f} < thr={thr:.6f}"
@@ -291,7 +284,6 @@ class TestRelaxPositions:
                 threshold = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
                 assert d >= threshold - 1e-5
 
-
     @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
     def test_large_dense_converges(self) -> None:
         """L-BFGS must converge for a highly dense random structure (N=200).
@@ -304,30 +296,24 @@ class TestRelaxPositions:
         rng = np.random.default_rng(0)
         n = 200
         mean_r = 0.77  # Angstrom, C-like
-        r_bulk = (
-            (3 * n * (4 / 3) * math.pi * mean_r**3) / (4 * math.pi * 0.64)
-        ) ** (1 / 3)
+        r_bulk = ((3 * n * (4 / 3) * math.pi * mean_r**3) / (4 * math.pi * 0.64)) ** (1 / 3)
         r_sphere = 0.55 * r_bulk  # ~55 % bulk packing radius — very dense
         u = rng.random(n)
         phi = rng.uniform(0, 2 * math.pi, n)
         costh = rng.uniform(-1, 1, n)
         sinth = np.sqrt(1 - costh**2)
         r = r_sphere * u ** (1 / 3)
-        pts = np.column_stack(
-            [r * sinth * np.cos(phi), r * sinth * np.sin(phi), r * costh]
-        )
+        pts = np.column_stack([r * sinth * np.cos(phi), r * sinth * np.sin(phi), r * costh])
         atoms = ["C"] * n
         pos = [tuple(float(x) for x in row) for row in pts]
-  # type: ignore[arg-type]
+        # type: ignore[arg-type]
         result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1500, seed=0)  # type: ignore[arg-type]
 
         assert converged, "L-BFGS did not converge on a dense N=200 structure"
         thr = cov_radius_ang("C") * 2.0  # same element
         for i in range(n):
             for j in range(i + 1, n):
-                d = math.sqrt(
-                    sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
-                )
+                d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
                 assert d >= thr - 1e-5, f"pair ({i},{j}) d={d:.6f} < thr={thr:.6f}"
 
     @pytest.mark.skipif(not HAS_RELAX, reason="_relax_core extension not built")
@@ -339,10 +325,10 @@ class TestRelaxPositions:
         """
         atoms = ["C", "N", "O", "Fe"]
         pos = [
-            (0.0,  0.0,  0.0),
-            (10.0, 0.0,  0.0),
-            (0.0,  10.0, 0.0),
-            (0.0,  0.0,  10.0),
+            (0.0, 0.0, 0.0),
+            (10.0, 0.0, 0.0),
+            (0.0, 10.0, 0.0),
+            (0.0, 0.0, 10.0),
         ]
         result, converged = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=42)
         assert converged
@@ -361,7 +347,7 @@ class TestRelaxPositions:
         atoms = ["C", "N", "O", "Fe", "H", "C", "N"]
         rng = np.random.default_rng(7)
         pos = [tuple(float(x) for x in rng.uniform(-0.3, 0.3, 3)) for _ in atoms]
-  # type: ignore[arg-type]
+        # type: ignore[arg-type]
         result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=7)  # type: ignore[arg-type]
         assert converged
 
@@ -369,18 +355,12 @@ class TestRelaxPositions:
         total_energy = 0.0
         for i in range(n):
             for j in range(i + 1, n):
-                d = math.sqrt(
-                    sum((result[i][k] - result[j][k]) ** 2 for k in range(3))
-                )
+                d = math.sqrt(sum((result[i][k] - result[j][k]) ** 2 for k in range(3)))
                 thr = cov_radius_ang(atoms[i]) + cov_radius_ang(atoms[j])
                 overlap = max(0.0, thr - d)
                 total_energy += 0.5 * overlap * overlap
-                assert d >= thr - 1e-5, (
-                    f"pair ({atoms[i]},{atoms[j]}) overlap={overlap:.2e} Ang"
-                )
-        assert total_energy < 1e-8, (
-            f"Residual penalty energy {total_energy:.2e} exceeds 1e-8"
-        )
+                assert d >= thr - 1e-5, f"pair ({atoms[i]},{atoms[j]}) overlap={overlap:.2e} Ang"
+        assert total_energy < 1e-8, f"Residual penalty energy {total_energy:.2e} exceeds 1e-8"
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +387,6 @@ class TestAddHydrogen:
         assert atoms == original
 
 
-
 # ---------------------------------------------------------------------------
 # _affine_move — per-operation strength (v0.2.10)
 # ---------------------------------------------------------------------------
@@ -418,13 +397,11 @@ class TestAffineMove:
 
     def _make_positions(self, n: int = 10) -> list:
         rng = random.Random(0)
-        return [
-            (rng.uniform(-5, 5), rng.uniform(-5, 5), rng.uniform(-5, 5))
-            for _ in range(n)
-        ]
+        return [(rng.uniform(-5, 5), rng.uniform(-5, 5), rng.uniform(-5, 5)) for _ in range(n)]
 
     def _import(self):
         from pasted._placement import _affine_move
+
         return _affine_move
 
     def test_backward_compat_none_params(self) -> None:
@@ -434,8 +411,9 @@ class TestAffineMove:
         rng1 = random.Random(42)
         rng2 = random.Random(42)
         out1 = _affine_move(pos, 0.0, 0.2, rng1)
-        out2 = _affine_move(pos, 0.0, 0.2, rng2,
-                            affine_stretch=None, affine_shear=None, affine_jitter=None)
+        out2 = _affine_move(
+            pos, 0.0, 0.2, rng2, affine_stretch=None, affine_shear=None, affine_jitter=None
+        )
         for p1, p2 in zip(out1, out2, strict=True):
             assert p1 == pytest.approx(p2, abs=1e-12)
 
@@ -445,33 +423,35 @@ class TestAffineMove:
         # With stretch=0, no axis should be scaled. Run many seeds to confirm
         # that the axis scale is always 1.0.
         import numpy as np
+
         for seed in range(20):
             pos = self._make_positions(8)
             rng = random.Random(seed)
-            out = _affine_move(pos, 0.0, 0.3, rng,
-                               affine_stretch=0.0, affine_shear=0.0)
+            out = _affine_move(pos, 0.0, 0.3, rng, affine_stretch=0.0, affine_shear=0.0)
             # With both stretch and shear=0 and move_step=0, CoM-centered
             # output must equal CoM-centered input (identity transform).
-            pts_in  = np.array(pos)
+            pts_in = np.array(pos)
             pts_out = np.array(out)
-            com_in  = pts_in.mean(axis=0)
+            com_in = pts_in.mean(axis=0)
             com_out = pts_out.mean(axis=0)
             np.testing.assert_allclose(
-                pts_in - com_in, pts_out - com_out, atol=1e-10,
-                err_msg=f"seed={seed}: identity transform not satisfied"
+                pts_in - com_in,
+                pts_out - com_out,
+                atol=1e-10,
+                err_msg=f"seed={seed}: identity transform not satisfied",
             )
 
     def test_shear_zero_no_off_diagonal(self) -> None:
         """affine_shear=0.0 means only diagonal scaling is applied."""
         _affine_move = self._import()
         import numpy as np
+
         # Run with shear=0 and stretch=0 → identity; result equals input up to CoM shift
         for seed in range(20):
             pos = self._make_positions(8)
             rng = random.Random(seed)
-            out = _affine_move(pos, 0.0, 0.3, rng,
-                               affine_stretch=0.0, affine_shear=0.0)
-            pts_in  = np.array(pos) - np.array(pos).mean(axis=0)
+            out = _affine_move(pos, 0.0, 0.3, rng, affine_stretch=0.0, affine_shear=0.0)
+            pts_in = np.array(pos) - np.array(pos).mean(axis=0)
             pts_out = np.array(out) - np.array(out).mean(axis=0)
             np.testing.assert_allclose(pts_in, pts_out, atol=1e-10)
 
@@ -479,14 +459,16 @@ class TestAffineMove:
         """affine_jitter=0.0 must suppress per-atom noise even when move_step>0."""
         _affine_move = self._import()
         import numpy as np
+
         # With stretch=0 and shear=0, only jitter would change positions.
         # With jitter=0 as well the output should equal the input (up to CoM).
         for seed in range(20):
             pos = self._make_positions(8)
             rng = random.Random(seed)
-            out = _affine_move(pos, 0.5, 0.3, rng,
-                               affine_stretch=0.0, affine_shear=0.0, affine_jitter=0.0)
-            pts_in  = np.array(pos) - np.array(pos).mean(axis=0)
+            out = _affine_move(
+                pos, 0.5, 0.3, rng, affine_stretch=0.0, affine_shear=0.0, affine_jitter=0.0
+            )
+            pts_in = np.array(pos) - np.array(pos).mean(axis=0)
             pts_out = np.array(out) - np.array(out).mean(axis=0)
             np.testing.assert_allclose(pts_in, pts_out, atol=1e-10)
 
@@ -495,8 +477,7 @@ class TestAffineMove:
         _affine_move = self._import()
         pos = self._make_positions()
         out_default = _affine_move(pos, 0.0, 0.2, random.Random(7))
-        out_override = _affine_move(pos, 0.0, 0.2, random.Random(7),
-                                    affine_stretch=0.5)
+        out_override = _affine_move(pos, 0.0, 0.2, random.Random(7), affine_stretch=0.5)
         # At least one coordinate should differ when stretch strength changes
         any_different = any(
             abs(a[i] - b[i]) > 1e-12
@@ -510,17 +491,24 @@ class TestAffineMove:
         _affine_move = self._import()
         for n in (1, 5, 20):
             pos = self._make_positions(n)
-            out = _affine_move(pos, 0.0, 0.2, random.Random(0),
-                               affine_stretch=0.1, affine_shear=0.05, affine_jitter=0.0)
+            out = _affine_move(
+                pos,
+                0.0,
+                0.2,
+                random.Random(0),
+                affine_stretch=0.1,
+                affine_shear=0.05,
+                affine_jitter=0.0,
+            )
             assert len(out) == n
 
     def test_com_preserved(self) -> None:
         """Center of mass must be restored to its original position after transform."""
         _affine_move = self._import()
         import numpy as np
+
         pos = self._make_positions(15)
         com_before = np.array(pos).mean(axis=0)
-        out = _affine_move(pos, 0.0, 0.3, random.Random(99),
-                           affine_stretch=0.3, affine_shear=0.15)
+        out = _affine_move(pos, 0.0, 0.3, random.Random(99), affine_stretch=0.3, affine_shear=0.15)
         com_after = np.array(out).mean(axis=0)
         np.testing.assert_allclose(com_before, com_after, atol=1e-10)

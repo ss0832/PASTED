@@ -294,6 +294,7 @@ class TestStructure:
     def test_n_property(self) -> None:
         # Regression test: repr(s) showed 'n=N' but s.n raised AttributeError.
         import re
+
         s = self._make_structure()
         assert s.n == len(s.atoms)
         assert s.n == len(s)
@@ -395,8 +396,11 @@ class TestNSuccess:
         """n_samples=0 without n_success must raise ValueError."""
         with pytest.raises(ValueError, match="n_success"):
             StructureGenerator(
-                n_atoms=6, charge=0, mult=1,
-                mode="gas", region="sphere:6",
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
                 elements="6,7,8",
                 n_samples=0,
             )
@@ -404,8 +408,11 @@ class TestNSuccess:
     def test_n_samples_zero_unlimited(self) -> None:
         """n_samples=0 with n_success runs until n_success is reached."""
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
             elements="6,7,8",
             n_samples=0,
             n_success=3,
@@ -499,17 +506,24 @@ class TestGenerationResult:
 
     def test_repr(self) -> None:
         result = GenerationResult(
-            structures=[], n_attempted=5, n_passed=0,
-            n_rejected_parity=0, n_rejected_filter=5,
+            structures=[],
+            n_attempted=5,
+            n_passed=0,
+            n_rejected_parity=0,
+            n_rejected_filter=5,
         )
         assert "GenerationResult" in repr(result)
 
     def test_generate_returns_generation_result(self) -> None:
         result = generate(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
             elements="6,8",  # C + O: even electrons, no parity warnings
-            n_samples=5, seed=0,
+            n_samples=5,
+            seed=0,
         )
         assert isinstance(result, GenerationResult)
 
@@ -519,10 +533,14 @@ class TestGenerationResult:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=6, charge=0, mult=1,
-                mode="gas", region="sphere:6",
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
                 elements="6,8",  # C + O only
-                n_samples=20, seed=42,
+                n_samples=20,
+                seed=42,
             )
         assert result.n_passed == len(result.structures)
         assert result.n_attempted == (
@@ -533,10 +551,14 @@ class TestGenerationResult:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=8, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,8",  # C + O: always even electrons, no parity failures
-                n_samples=10, seed=0,
+                n_samples=10,
+                seed=0,
                 filters=["H_total:999:-"],  # impossible threshold
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
@@ -550,9 +572,14 @@ class TestGenerationResult:
             warnings.simplefilter("always")
             # charge=99 makes parity impossible for any C/N/O composition
             result = generate(
-                n_atoms=6, charge=99, mult=1,
-                mode="gas", region="sphere:6",
-                elements="6,7,8", n_samples=10, seed=0,
+                n_atoms=6,
+                charge=99,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,7,8",
+                n_samples=10,
+                seed=0,
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(user_warns) >= 1
@@ -565,10 +592,14 @@ class TestGenerationResult:
             # Use C + O only (both even electrons) so the parity check
             # never fires; with no filters all structures pass cleanly.
             generate(
-                n_atoms=6, charge=0, mult=1,
-                mode="gas", region="sphere:6",
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
                 elements="6,8",  # C + O: always satisfies charge=0, mult=1
-                n_samples=10, seed=0,
+                n_samples=10,
+                seed=0,
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(user_warns) == 0
@@ -584,12 +615,24 @@ class TestGenerationResultAdd:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             r1 = generate(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=3, seed=0,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,8",
+                n_samples=3,
+                seed=0,
             )
             r2 = generate(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,8", n_samples=4, seed=1,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,8",
+                n_samples=4,
+                seed=1,
             )
         combined = r1 + r2
         assert len(combined) == len(r1) + len(r2)
@@ -597,12 +640,18 @@ class TestGenerationResultAdd:
 
     def test_add_accumulates_counters(self) -> None:
         r1 = GenerationResult(
-            structures=[], n_attempted=10, n_passed=4,
-            n_rejected_parity=2, n_rejected_filter=4,
+            structures=[],
+            n_attempted=10,
+            n_passed=4,
+            n_rejected_parity=2,
+            n_rejected_filter=4,
         )
         r2 = GenerationResult(
-            structures=[], n_attempted=8, n_passed=3,
-            n_rejected_parity=1, n_rejected_filter=4,
+            structures=[],
+            n_attempted=8,
+            n_passed=3,
+            n_rejected_parity=1,
+            n_rejected_filter=4,
         )
         combined = r1 + r2
         assert combined.n_attempted == 18
@@ -637,8 +686,14 @@ class TestParityWarningThreshold:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-                elements="6,7,8", n_samples=20, seed=0,
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,7,8",
+                n_samples=20,
+                seed=0,
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         # Warning should fire only when n_passed == 0; partial failures are silent
@@ -649,8 +704,14 @@ class TestParityWarningThreshold:
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=6, charge=99, mult=1, mode="gas", region="sphere:6",
-                elements="6,7,8", n_samples=5, seed=0,
+                n_atoms=6,
+                charge=99,
+                mult=1,
+                mode="gas",
+                region="sphere:6",
+                elements="6,7,8",
+                n_samples=5,
+                seed=0,
             )
         user_warns = [x for x in w if issubclass(x.category, UserWarning)]
         assert len(result) == 0
@@ -712,9 +773,7 @@ class TestElementFractions:
     def test_fractions_uniform_equivalent_to_none(self) -> None:
         """Equal weights should behave the same as no fractions (same atoms)."""
         gen_none = self._gen(seed=7)
-        gen_uniform = self._gen(
-            seed=7, element_fractions={"C": 1.0, "N": 1.0, "O": 1.0}
-        )
+        gen_uniform = self._gen(seed=7, element_fractions={"C": 1.0, "N": 1.0, "O": 1.0})
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             r_none = gen_none.generate()
@@ -760,9 +819,7 @@ class TestElementMinMaxCounts:
             result = self._gen(element_min_counts={"C": 3}, n_samples=20).generate()
         assert len(result) > 0
         for s in result:
-            assert Counter(s.atoms).get("C", 0) >= 3, (
-                f"C min violated: {Counter(s.atoms)}"
-            )
+            assert Counter(s.atoms).get("C", 0) >= 3, f"C min violated: {Counter(s.atoms)}"
 
     def test_max_counts_respected(self) -> None:
         with warnings.catch_warnings():
@@ -770,9 +827,7 @@ class TestElementMinMaxCounts:
             result = self._gen(element_max_counts={"N": 2}, n_samples=20).generate()
         assert len(result) > 0
         for s in result:
-            assert Counter(s.atoms).get("N", 0) <= 2, (
-                f"N max violated: {Counter(s.atoms)}"
-            )
+            assert Counter(s.atoms).get("N", 0) <= 2, f"N max violated: {Counter(s.atoms)}"
 
     def test_min_and_max_together(self) -> None:
         with warnings.catch_warnings():
@@ -821,28 +876,41 @@ class TestElementMinMaxCounts:
 # GeneratorConfig dataclass tests (v0.2.3)
 # ---------------------------------------------------------------------------
 
+
 class TestGeneratorConfig:
     """Tests for the GeneratorConfig frozen dataclass and dual-mode StructureGenerator."""
 
     def _cfg(self, **kw):
         from pasted import GeneratorConfig
-        defaults = dict(n_atoms=8, charge=0, mult=1, mode="gas",
-                        region="sphere:6", elements="6,7,8", n_samples=3, seed=0)
+
+        defaults = dict(
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=3,
+            seed=0,
+        )
         defaults.update(kw)
         return GeneratorConfig(**defaults)  # type: ignore[arg-type]
 
     def test_config_exported_from_pasted(self) -> None:
         from pasted import GeneratorConfig
+
         assert GeneratorConfig is not None
 
     def test_frozen_prevents_mutation(self) -> None:
         import dataclasses
+
         cfg = self._cfg()
         with pytest.raises(dataclasses.FrozenInstanceError):
             cfg.n_atoms = 99  # type: ignore[misc]
 
     def test_dataclasses_replace(self) -> None:
         import dataclasses
+
         cfg = self._cfg(seed=1)
         cfg2 = dataclasses.replace(cfg, seed=42)
         assert cfg2.seed == 42
@@ -850,6 +918,7 @@ class TestGeneratorConfig:
 
     def test_config_based_construction(self) -> None:
         from pasted import StructureGenerator
+
         cfg = self._cfg()
         gen = StructureGenerator(cfg)
         assert gen.config is cfg
@@ -857,25 +926,39 @@ class TestGeneratorConfig:
     def test_kwargs_construction_backward_compat(self) -> None:
         """Old-style StructureGenerator(n_atoms=..., ...) must still work."""
         gen = StructureGenerator(
-            n_atoms=8, charge=0, mult=1, mode="gas",
-            region="sphere:6", elements="6,7,8", n_samples=3, seed=0,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=3,
+            seed=0,
         )
         assert gen.n_atoms == 8
 
     def test_config_and_kwargs_produce_same_result(self) -> None:
         """Config-based and kwargs-based construction must yield identical outputs."""
         from pasted import StructureGenerator
+
         cfg = self._cfg(n_samples=5, seed=77)
         r_cfg = StructureGenerator(cfg).generate()
         r_kw = StructureGenerator(
-            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=5, seed=77,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=5,
+            seed=77,
         ).generate()
         assert r_cfg.n_passed == r_kw.n_passed
 
     def test_getattr_proxy_all_fields(self) -> None:
         """gen.seed, gen.mode, etc. should all proxy to _cfg."""
         from pasted import StructureGenerator
+
         cfg = self._cfg(seed=123)
         gen = StructureGenerator(cfg)
         assert gen.seed == 123
@@ -884,12 +967,14 @@ class TestGeneratorConfig:
 
     def test_config_missing_required_fields_raises(self) -> None:
         from pasted import GeneratorConfig
+
         with pytest.raises(TypeError):
             GeneratorConfig()  # type: ignore[call-arg]  # n_atoms required
 
     def test_generate_func_accepts_config(self) -> None:
         """generate(cfg) config-based call must work."""
         from pasted import generate
+
         cfg = self._cfg(n_samples=2)
         result = generate(cfg)
         assert len(result) >= 0  # at least ran without error
@@ -899,13 +984,22 @@ class TestGeneratorConfig:
 # affine_strength tests (v0.2.3)
 # ---------------------------------------------------------------------------
 
+
 class TestAffineStrength:
     """Tests for affine_strength in StructureGenerator."""
 
     def _gen(self, affine_strength: float, mode: str = "gas", **kw):
-        defaults = dict(n_atoms=10, charge=0, mult=1, mode=mode,
-                        region="sphere:7", elements="6,8",
-                        n_samples=5, seed=42, affine_strength=affine_strength)
+        defaults = dict(
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode=mode,
+            region="sphere:7",
+            elements="6,8",
+            n_samples=5,
+            seed=42,
+            affine_strength=affine_strength,
+        )
         if mode != "gas":
             defaults.pop("region", None)
         defaults.update(kw)
@@ -916,64 +1010,114 @@ class TestAffineStrength:
     def test_zero_strength_is_default(self) -> None:
         """affine_strength=0.0 must behave identically to no-affine (backward compat)."""
         r_no = StructureGenerator(
-            n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,8", n_samples=5, seed=99,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,8",
+            n_samples=5,
+            seed=99,
         ).generate()
         r_zero = StructureGenerator(
-            n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,8", n_samples=5, seed=99, affine_strength=0.0,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,8",
+            n_samples=5,
+            seed=99,
+            affine_strength=0.0,
         ).generate()
         assert r_no.n_passed == r_zero.n_passed
 
     def test_nonzero_strength_changes_positions(self) -> None:
         """With affine_strength > 0, positions must differ from strength=0."""
         import numpy as np
+
         def get_pos(strength):
             gen = StructureGenerator(
-                n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-                elements="6,8", n_samples=1, seed=7, affine_strength=strength,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:7",
+                elements="6,8",
+                n_samples=1,
+                seed=7,
+                affine_strength=strength,
             )
             r = gen.generate()
             if not r:
                 return None
             from typing import cast
+
             return np.array(cast("Structure", r[0]).positions)
 
         p0 = get_pos(0.0)
         p1 = get_pos(0.3)
         if p0 is not None and p1 is not None:
-            assert not np.allclose(p0, p1, atol=1e-6), \
+            assert not np.allclose(p0, p1, atol=1e-6), (
                 "affine_strength=0.3 should change positions"
+            )
 
     def test_affine_applies_to_chain_mode(self) -> None:
         gen = StructureGenerator(
-            n_atoms=10, charge=0, mult=1, mode="chain",
-            elements="6,8", n_samples=3, seed=5, affine_strength=0.15,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,8",
+            n_samples=3,
+            seed=5,
+            affine_strength=0.15,
         )
         r = gen.generate()
         assert r.n_passed >= 0  # just checks it runs without error
 
     def test_affine_applies_to_shell_mode(self) -> None:
         gen = StructureGenerator(
-            n_atoms=8, charge=0, mult=1, mode="shell",
-            elements="6,8,26", n_samples=3, seed=5, affine_strength=0.1,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="shell",
+            elements="6,8,26",
+            n_samples=3,
+            seed=5,
+            affine_strength=0.1,
         )
         r = gen.generate()
         assert r.n_passed >= 0
 
     def test_affine_strength_stored_in_config(self) -> None:
         gen = StructureGenerator(
-            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,8", n_samples=1, seed=0, affine_strength=0.2,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,8",
+            n_samples=1,
+            seed=0,
+            affine_strength=0.2,
         )
         assert gen.affine_strength == 0.2
 
     def test_relax_runs_after_affine(self) -> None:
         """Structures generated with affine should be clash-free (relax ran)."""
         import numpy as np
+
         gen = StructureGenerator(
-            n_atoms=12, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,8", n_samples=3, seed=42, affine_strength=0.3,
+            n_atoms=12,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,8",
+            n_samples=3,
+            seed=42,
+            affine_strength=0.3,
         )
         for s in gen.stream():
             pts = np.array(s.positions)
@@ -995,10 +1139,17 @@ class TestStructureCompProperty:
 
     def test_comp_returns_string(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=5, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = gen.generate()
@@ -1009,10 +1160,17 @@ class TestStructureCompProperty:
 
     def test_comp_matches_repr(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=5, seed=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=5,
+            seed=1,
         )
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = gen.generate()
@@ -1022,21 +1180,26 @@ class TestStructureCompProperty:
 
     def test_comp_consistent_with_atoms(self) -> None:
         from collections import Counter
+
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=5, seed=2,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=5,
+            seed=2,
         )
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = gen.generate()
         assert result
         s = result[0]  # type: ignore[union-attr]
         counts = Counter(s.atoms)  # type: ignore[union-attr]
-        expected = "".join(
-            f"{sym}{n}" if n > 1 else sym
-            for sym, n in sorted(counts.items())
-        )  # type: ignore[union-attr]
+        expected = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))  # type: ignore[union-attr]
         assert s.comp == expected  # type: ignore[union-attr]
 
     def test_comp_accessible_on_optimizer_result(self) -> None:
@@ -1044,8 +1207,11 @@ class TestStructureCompProperty:
         import warnings
 
         from pasted import StructureOptimizer
+
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             objective={"H_total": 1.0},
             elements="6,7,8",
             max_steps=20,

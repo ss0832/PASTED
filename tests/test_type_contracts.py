@@ -111,9 +111,7 @@ needs_graph = pytest.mark.skipif(not HAS_GRAPH, reason="HAS_GRAPH=False")
 # Shared fixtures — canonical valid inputs
 # ---------------------------------------------------------------------------
 
-PTS3: np.ndarray = np.array(
-    [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], dtype=np.float64
-)
+PTS3: np.ndarray = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0]], dtype=np.float64)
 RADII3: np.ndarray = np.full(3, 0.77, dtype=np.float64)
 EN3: np.ndarray = np.array([2.55, 3.04, 3.44], dtype=np.float64)
 
@@ -127,8 +125,14 @@ def _gas(seed: int = 0, n: int = 8, n_samples: int = 30) -> GenerationResult:
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always")
         return generate(
-            n_atoms=n, charge=0, mult=1, mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=n_samples, seed=seed,
+            n_atoms=n,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=n_samples,
+            seed=seed,
         )
 
 
@@ -146,9 +150,15 @@ def _collect_ctx(max_steps: int = 20, seed: int = 0) -> list[EvalContext]:
         return m["H_total"]
 
     StructureOptimizer(
-        n_atoms=6, charge=0, mult=1, elements="6,7,8",
-        objective=_cap, method="annealing",
-        max_steps=max_steps, n_restarts=1, seed=seed,
+        n_atoms=6,
+        charge=0,
+        mult=1,
+        elements="6,7,8",
+        objective=_cap,
+        method="annealing",
+        max_steps=max_steps,
+        n_restarts=1,
+        seed=seed,
     ).run()
     return captured
 
@@ -156,6 +166,7 @@ def _collect_ctx(max_steps: int = 20, seed: int = 0) -> list[EvalContext]:
 # ===========================================================================
 # TC-1  C++ extension: relax_positions
 # ===========================================================================
+
 
 class TestRelaxPositionsReturnType:
     """relax_positions → tuple[NDArray[float64], bool]"""
@@ -198,6 +209,7 @@ class TestRelaxPositionsReturnType:
 # TC-2  C++ extension: angular_repulsion_gradient
 # ===========================================================================
 
+
 class TestAngularRepulsionGradientReturnType:
     """angular_repulsion_gradient → NDArray[float64]"""
 
@@ -222,6 +234,7 @@ class TestAngularRepulsionGradientReturnType:
 # ===========================================================================
 # TC-3  C++ extension: steinhardt_per_atom
 # ===========================================================================
+
 
 class TestSteindhardtPerAtomReturnType:
     """steinhardt_per_atom → dict[str, NDArray[float64]]"""
@@ -270,6 +283,7 @@ class TestSteindhardtPerAtomReturnType:
 # TC-4  C++ extension: graph_metrics_cpp
 # ===========================================================================
 
+
 class TestGraphMetricsCppReturnType:
     """graph_metrics_cpp → dict[str, float] with exactly 5 keys"""
 
@@ -286,14 +300,13 @@ class TestGraphMetricsCppReturnType:
     def test_values_are_float(self) -> None:
         result = graph_metrics_cpp(PTS3, RADII3, 1.0, EN3, 5.0)
         for key, val in result.items():
-            assert isinstance(val, float), (
-                f"{key!r}: expected float, got {type(val).__name__}"
-            )
+            assert isinstance(val, float), f"{key!r}: expected float, got {type(val).__name__}"
 
 
 # ===========================================================================
 # TC-5  C++ extension: rdf_h_cpp
 # ===========================================================================
+
 
 class TestRdfHCppReturnType:
     """rdf_h_cpp → dict[str, float] with exactly 2 keys"""
@@ -311,14 +324,13 @@ class TestRdfHCppReturnType:
     def test_values_are_float(self) -> None:
         result = rdf_h_cpp(PTS3, 5.0, 20)
         for key, val in result.items():
-            assert isinstance(val, float), (
-                f"{key!r}: expected float, got {type(val).__name__}"
-            )
+            assert isinstance(val, float), f"{key!r}: expected float, got {type(val).__name__}"
 
 
 # ===========================================================================
 # TC-6  generate() / StructureGenerator.generate()
 # ===========================================================================
+
 
 class TestGenerateReturnType:
     """generate() → GenerationResult"""
@@ -372,8 +384,13 @@ class TestGenerateReturnType:
 
     def test_structuregenerator_generate_returns_generationresult(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="chain",
-            elements="6,7,8", n_samples=10, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=10,
+            seed=0,
         )
         assert isinstance(gen.generate(), GenerationResult)
 
@@ -382,21 +399,36 @@ class TestGenerateReturnType:
 # TC-7  StructureGenerator.stream()
 # ===========================================================================
 
+
 class TestStreamReturnType:
     """stream() → Iterator[Structure]"""
 
     def test_stream_is_iterator(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:8",
-            elements="6,7,8", n_success=2, n_samples=30, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_success=2,
+            n_samples=30,
+            seed=0,
         )
         it = gen.stream()
         assert isinstance(it, collections.abc.Iterator)
 
     def test_stream_yields_structure(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:8",
-            elements="6,7,8", n_success=2, n_samples=30, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_success=2,
+            n_samples=30,
+            seed=0,
         )
         for s in gen.stream():
             assert isinstance(s, Structure)
@@ -405,6 +437,7 @@ class TestStreamReturnType:
 # ===========================================================================
 # TC-8  Structure attributes
 # ===========================================================================
+
 
 class TestStructureAttributeTypes:
     """All Structure attributes must match their declared types."""
@@ -455,9 +488,7 @@ class TestStructureAttributeTypes:
 
     def test_metrics_values_are_float(self) -> None:
         for k, v in self.s.metrics.items():
-            assert isinstance(v, float), (
-                f"metrics[{k!r}]: expected float, got {type(v).__name__}"
-            )
+            assert isinstance(v, float), f"metrics[{k!r}]: expected float, got {type(v).__name__}"
 
     def test_comp_is_str(self) -> None:
         assert isinstance(self.s.comp, str)
@@ -489,14 +520,21 @@ class TestStructureAttributeTypes:
 # TC-9  StructureOptimizer.run() → OptimizationResult
 # ===========================================================================
 
+
 class TestOptimizationResultReturnType:
     """StructureOptimizer.run() → OptimizationResult"""
 
     def setup_method(self) -> None:
         self.result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective={"H_total": 1.0}, method="annealing",
-            max_steps=30, n_restarts=1, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective={"H_total": 1.0},
+            method="annealing",
+            max_steps=30,
+            n_restarts=1,
+            seed=0,
         ).run()
 
     def test_return_is_optimizationresult(self) -> None:
@@ -532,6 +570,7 @@ class TestOptimizationResultReturnType:
 # ===========================================================================
 # TC-10  EvalContext field types
 # ===========================================================================
+
 
 class TestEvalContextFieldTypes:
     """EvalContext fields must match their documented types."""
@@ -584,9 +623,7 @@ class TestEvalContextFieldTypes:
 
     def test_metrics_values_are_float(self) -> None:
         for k, v in self.ctx.metrics.items():
-            assert isinstance(v, float), (
-                f"metrics[{k!r}]: expected float, got {type(v).__name__}"
-            )
+            assert isinstance(v, float), f"metrics[{k!r}]: expected float, got {type(v).__name__}"
 
     def test_step_is_int(self) -> None:
         assert isinstance(self.ctx.step, int)
@@ -646,9 +683,16 @@ class TestEvalContextFieldTypes:
             return m["H_total"]
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=_cap, method="parallel_tempering",
-            n_replicas=2, max_steps=10, n_restarts=1, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=_cap,
+            method="parallel_tempering",
+            n_replicas=2,
+            max_steps=10,
+            n_restarts=1,
+            seed=0,
         ).run()
 
         assert pt_contexts, "No PT EvalContext captured"
@@ -664,6 +708,7 @@ class TestEvalContextFieldTypes:
 # ===========================================================================
 # TC-11  parse_filter()
 # ===========================================================================
+
 
 class TestParseFilterReturnType:
     """parse_filter → tuple[str, float, float]"""
@@ -689,6 +734,7 @@ class TestParseFilterReturnType:
     def test_open_upper_bound_is_float_inf(self) -> None:
         """'-' as upper bound must be float('inf'), not None or a string."""
         import math
+
         _, _, hi = parse_filter("H_total:1.0:-")
         assert isinstance(hi, float)
         assert math.isinf(hi)
@@ -696,6 +742,7 @@ class TestParseFilterReturnType:
     def test_open_lower_bound_is_float_neg_inf(self) -> None:
         """'-' as lower bound must be float('-inf')."""
         import math
+
         _, lo, _ = parse_filter("H_total:-:2.0")
         assert isinstance(lo, float)
         assert math.isinf(lo)
@@ -705,6 +752,7 @@ class TestParseFilterReturnType:
 # ===========================================================================
 # TC-12  parse_objective_spec()
 # ===========================================================================
+
 
 class TestParseObjectiveSpecReturnType:
     """parse_objective_spec → dict[str, float]"""
@@ -729,6 +777,7 @@ class TestParseObjectiveSpecReturnType:
 # ===========================================================================
 # TC-13  validate_charge_mult()
 # ===========================================================================
+
 
 class TestValidateChargeMultReturnType:
     """validate_charge_mult → tuple[bool, str]"""
@@ -759,6 +808,7 @@ class TestValidateChargeMultReturnType:
 # TC-14  compute_all_metrics()
 # ===========================================================================
 
+
 class TestComputeAllMetricsReturnType:
     """compute_all_metrics → dict[str, float]"""
 
@@ -766,7 +816,10 @@ class TestComputeAllMetricsReturnType:
         result = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0)],
-            n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=1.0,
+            w_spatial=1.0,
+            cutoff=5.0,
         )
         assert isinstance(result, dict)
 
@@ -774,7 +827,10 @@ class TestComputeAllMetricsReturnType:
         result = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0)],
-            n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=1.0,
+            w_spatial=1.0,
+            cutoff=5.0,
         )
         for k in result:
             assert isinstance(k, str)
@@ -783,7 +839,10 @@ class TestComputeAllMetricsReturnType:
         result = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0)],
-            n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=1.0,
+            w_spatial=1.0,
+            cutoff=5.0,
         )
         for k, v in result.items():
             assert isinstance(v, float), (
@@ -795,7 +854,10 @@ class TestComputeAllMetricsReturnType:
         result = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0)],
-            n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0,
+            n_bins=10,
+            w_atom=1.0,
+            w_spatial=1.0,
+            cutoff=5.0,
         )
         assert set(result.keys()) == ALL_METRICS
 
@@ -804,6 +866,7 @@ class TestComputeAllMetricsReturnType:
 # TC-15  format_xyz()
 # ===========================================================================
 
+
 class TestFormatXyzReturnType:
     """format_xyz → str"""
 
@@ -811,7 +874,9 @@ class TestFormatXyzReturnType:
         result = format_xyz(
             ["C", "N"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)],
-            charge=0, mult=1, metrics={},
+            charge=0,
+            mult=1,
+            metrics={},
         )
         assert isinstance(result, str)
 
@@ -819,6 +884,7 @@ class TestFormatXyzReturnType:
 # ===========================================================================
 # TC-16  ALL_METRICS
 # ===========================================================================
+
 
 class TestAllMetricsType:
     """ALL_METRICS → frozenset[str]"""
@@ -835,13 +901,19 @@ class TestAllMetricsType:
 # TC-17  GeneratorConfig — frozen dataclass
 # ===========================================================================
 
+
 class TestGeneratorConfigType:
     """GeneratorConfig must be a frozen dataclass (immutable)."""
 
     def test_is_generatorconfig(self) -> None:
         cfg = GeneratorConfig(
-            n_atoms=6, charge=0, mult=1, mode="chain",
-            elements="6,7,8", n_samples=5, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         assert isinstance(cfg, GeneratorConfig)
 
@@ -850,8 +922,13 @@ class TestGeneratorConfigType:
         import dataclasses
 
         cfg = GeneratorConfig(
-            n_atoms=6, charge=0, mult=1, mode="chain",
-            elements="6,7,8", n_samples=5, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             cfg.n_atoms = 99  # type: ignore[misc]

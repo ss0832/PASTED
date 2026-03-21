@@ -98,9 +98,7 @@ def parse_xyz(text: str) -> list[tuple[list[str], list[Vec3], int, int, dict[str
         try:
             n_atoms = int(lines[i].strip())
         except ValueError as exc:
-            raise ValueError(
-                f"Expected atom count on line {i + 1}, got {lines[i]!r}"
-            ) from exc
+            raise ValueError(f"Expected atom count on line {i + 1}, got {lines[i]!r}") from exc
         i += 1
 
         if i >= len(lines):
@@ -137,9 +135,7 @@ def parse_xyz(text: str) -> list[tuple[list[str], list[Vec3], int, int, dict[str
         positions: list[tuple[float, float, float]] = []
         for _ in range(n_atoms):
             if i >= len(lines):
-                raise ValueError(
-                    f"Unexpected end of file: expected {n_atoms} coordinate lines."
-                )
+                raise ValueError(f"Unexpected end of file: expected {n_atoms} coordinate lines.")
             parts = lines[i].split()
             i += 1
             if len(parts) < 4:

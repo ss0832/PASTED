@@ -58,27 +58,49 @@ from pasted._optimizer import OptimizationResult
 # helpers
 # ---------------------------------------------------------------------------
 
-def _gas(n: int = 6, elements: str | list[str] = "6,7,8", n_samples: int = 20, seed: int = 0,
-         **kw: object) -> GenerationResult:
+
+def _gas(
+    n: int = 6,
+    elements: str | list[str] = "6,7,8",
+    n_samples: int = 20,
+    seed: int = 0,
+    **kw: object,
+) -> GenerationResult:
     """Shorthand: gas-mode generate with sensible defaults."""
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("always")
         return generate(
-            n_atoms=n, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements=elements, n_samples=n_samples, seed=seed,
+            n_atoms=n,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements=elements,
+            n_samples=n_samples,
+            seed=seed,
             **kw,  # type: ignore[arg-type]
         )
 
 
-def _opt(n: int = 6, elements: str = "6,7,8", max_steps: int = 50, seed: int = 0,
-         n_restarts: int = 1, **kw: object) -> OptimizationResult:
+def _opt(
+    n: int = 6,
+    elements: str = "6,7,8",
+    max_steps: int = 50,
+    seed: int = 0,
+    n_restarts: int = 1,
+    **kw: object,
+) -> OptimizationResult:
     """Shorthand: annealing optimizer with sensible defaults."""
     return StructureOptimizer(
-        n_atoms=n, charge=0, mult=1, elements=elements,
+        n_atoms=n,
+        charge=0,
+        mult=1,
+        elements=elements,
         objective={"H_total": 1.0},
-        method="annealing", max_steps=max_steps,
-        n_restarts=n_restarts, seed=seed,
+        method="annealing",
+        max_steps=max_steps,
+        n_restarts=n_restarts,
+        seed=seed,
         **kw,  # type: ignore[arg-type]
     ).run()
 
@@ -96,9 +118,14 @@ class TestApiBoundaryValues:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=0, charge=0, mult=1,
-                mode="gas", region="sphere:5",
-                elements="6", n_samples=5, seed=0,
+                n_atoms=0,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:5",
+                elements="6",
+                n_samples=5,
+                seed=0,
             )
         assert isinstance(result, GenerationResult)
         assert len(result) == 0
@@ -109,8 +136,11 @@ class TestApiBoundaryValues:
             warnings.simplefilter("always")
             try:
                 gen = StructureGenerator(
-                    n_atoms=-1, charge=0, mult=1,
-                    mode="chain", elements="6",
+                    n_atoms=-1,
+                    charge=0,
+                    mult=1,
+                    mode="chain",
+                    elements="6",
                 )
                 result = gen.generate()
                 assert len(result) == 0
@@ -128,19 +158,29 @@ class TestApiBoundaryValues:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=4, charge=0, mult=0,
-                mode="gas", region="sphere:5",
+                n_atoms=4,
+                charge=0,
+                mult=0,
+                mode="gas",
+                region="sphere:5",
                 elements="6",  # C only: Z=6 (even) -> n_electrons=24 (even) -> parity mismatch
-                n_samples=10, seed=0,
+                n_samples=10,
+                seed=0,
             )
         assert len(result) == 0
 
     def test_n_restarts_zero_raises(self) -> None:
         """n_restarts=0 means no restarts can be attempted, so RuntimeError must be raised."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method="annealing", max_steps=10, n_restarts=0, seed=0,
+            method="annealing",
+            max_steps=10,
+            n_restarts=0,
+            seed=0,
         )
         with pytest.raises(RuntimeError):
             opt.run()
@@ -148,10 +188,16 @@ class TestApiBoundaryValues:
     def test_t_start_less_than_t_end_does_not_crash(self) -> None:
         """T_start < T_end (inverted cooling schedule) must not crash; result values are not guaranteed."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method="annealing", max_steps=20,
-            T_start=0.001, T_end=10.0, seed=0,
+            method="annealing",
+            max_steps=20,
+            T_start=0.001,
+            T_end=10.0,
+            seed=0,
         )
         result = opt.run()
         assert result.best is not None
@@ -159,9 +205,14 @@ class TestApiBoundaryValues:
     def test_max_steps_zero_does_not_hang(self) -> None:
         """max_steps=0 must complete immediately and return a valid best structure."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method="annealing", max_steps=0, seed=0,
+            method="annealing",
+            max_steps=0,
+            seed=0,
         )
         result = opt.run()
         # initial score is set at step 0; best must not be None
@@ -176,14 +227,17 @@ class TestApiBoundaryValues:
 class TestHTotalLinearComposition:
     """Verify H_total = w_atom * H_atom + w_spatial * H_spatial for arbitrary weights."""
 
-    @pytest.mark.parametrize(("w_atom", "w_spatial"), [
-        (0.5, 0.5),
-        (0.3, 0.7),
-        (0.0, 1.0),
-        (1.0, 0.0),
-        (2.0, 3.0),   # weights that do not sum to 1.0 are still a valid linear combination
-        (0.0, 0.0),   # both zero -> H_total = 0
-    ])
+    @pytest.mark.parametrize(
+        ("w_atom", "w_spatial"),
+        [
+            (0.5, 0.5),
+            (0.3, 0.7),
+            (0.0, 1.0),
+            (1.0, 0.0),
+            (2.0, 3.0),  # weights that do not sum to 1.0 are still a valid linear combination
+            (0.0, 0.0),  # both zero -> H_total = 0
+        ],
+    )
     def test_h_total_equals_weighted_sum(self, w_atom: float, w_spatial: float) -> None:
         result = _gas(n_samples=5, seed=42, w_atom=w_atom, w_spatial=w_spatial)
         for s in result:
@@ -256,8 +310,10 @@ class TestOptimizationResultInterface:
 
     def test_best_raises_runtime_error_when_empty(self) -> None:
         empty = OptimizationResult(
-            all_structures=[], objective_scores=[],
-            n_restarts_attempted=0, method="annealing",
+            all_structures=[],
+            objective_scores=[],
+            n_restarts_attempted=0,
+            method="annealing",
         )
         with pytest.raises(RuntimeError):
             _ = empty.best
@@ -290,8 +346,10 @@ class TestOptimizationResultInterface:
         """An OptimizationResult with no structures must evaluate as falsy."""
         # Simulate the scenario where all restarts produce no results
         empty = OptimizationResult(
-            all_structures=[], objective_scores=[],
-            n_restarts_attempted=0, method="annealing",
+            all_structures=[],
+            objective_scores=[],
+            n_restarts_attempted=0,
+            method="annealing",
         )
         assert not empty
 
@@ -315,14 +373,20 @@ class TestEvalContextConsistency:
             return m.get("H_total", 0.0)
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=tracker, method="annealing", max_steps=50, seed=42,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=tracker,
+            method="annealing",
+            max_steps=50,
+            seed=42,
         ).run()
 
         assert best_f_seq, "No calls to objective"
         for i in range(len(best_f_seq) - 1):
             assert best_f_seq[i] <= best_f_seq[i + 1] or math.isnan(best_f_seq[i]), (
-                f"best_f decreased at step {i}: {best_f_seq[i]} -> {best_f_seq[i+1]}"
+                f"best_f decreased at step {i}: {best_f_seq[i]} -> {best_f_seq[i + 1]}"
             )
 
     def test_progress_in_01_range(self) -> None:
@@ -336,8 +400,14 @@ class TestEvalContextConsistency:
             return m.get("H_total", 0.0)
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=tracker, method="annealing", max_steps=30, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=tracker,
+            method="annealing",
+            max_steps=30,
+            seed=0,
         ).run()
 
         for p in progresses:
@@ -356,13 +426,19 @@ class TestEvalContextConsistency:
             return m.get("H_total", 0.0)
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=tracker, method="parallel_tempering",
-            n_replicas=n_replicas, max_steps=30, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=tracker,
+            method="parallel_tempering",
+            n_replicas=n_replicas,
+            max_steps=30,
+            seed=0,
         ).run()
 
         assert seen == set(range(n_replicas)), (
-            f"Expected replica_idx 0..{n_replicas-1}, got {sorted(seen)}"
+            f"Expected replica_idx 0..{n_replicas - 1}, got {sorted(seen)}"
         )
 
     def test_annealing_replica_fields_are_none(self) -> None:
@@ -377,8 +453,14 @@ class TestEvalContextConsistency:
             return 0.0
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=tracker, method="annealing", max_steps=5, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=tracker,
+            method="annealing",
+            max_steps=5,
+            seed=0,
         ).run()
 
         assert all(v is None for v in seen_replica), (
@@ -397,9 +479,14 @@ class TestEvalContextConsistency:
             return m.get("H_total", 0.0)
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=tracker, method="annealing",
-            max_steps=max_steps, seed=7,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=tracker,
+            method="annealing",
+            max_steps=max_steps,
+            seed=7,
         ).run()
 
         assert all(isinstance(s, int) for s in steps)
@@ -419,14 +506,15 @@ class TestElementConstraintsEdgeCases:
     def test_element_fractions_partial_spec_defaults_to_one(self) -> None:
         """When only C=10 is specified, N and O default to weight 1.0 and C dominates."""
         result = _gas(
-            n=30, elements="6,7,8", n_samples=50, seed=0,
+            n=30,
+            elements="6,7,8",
+            n_samples=50,
+            seed=0,
             element_fractions={"C": 10.0},
         )
         assert len(result) > 0
         c_total = sum(s.atoms.count("C") for s in result)
-        non_c_total = sum(
-            s.atoms.count("N") + s.atoms.count("O") for s in result
-        )
+        non_c_total = sum(s.atoms.count("N") + s.atoms.count("O") for s in result)
         # C should overwhelmingly dominate
         assert c_total > non_c_total, (
             f"C={c_total} should dominate non-C={non_c_total} with fraction=10"
@@ -436,22 +524,30 @@ class TestElementConstraintsEdgeCases:
         """Sum of all max_counts < n_atoms must raise RuntimeError during generation."""
         with pytest.raises(RuntimeError, match="cannot be satisfied"):
             generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_max_counts={"C": 2, "N": 2, "O": 2},  # max total 6 < 10
-                n_samples=5, seed=0,
+                n_samples=5,
+                seed=0,
             )
 
     def test_min_equals_max_single_element_composition_fixed(self) -> None:
         """Setting element_min_counts == element_max_counts pins the composition exactly."""
         result = generate(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
             elements="6,7,8",
             element_min_counts={"C": 2, "N": 2, "O": 2},
             element_max_counts={"C": 2, "N": 2, "O": 2},
-            n_samples=20, seed=42,
+            n_samples=20,
+            seed=42,
         )
         for s in result:
             cnt = Counter(s.atoms)
@@ -462,7 +558,10 @@ class TestElementConstraintsEdgeCases:
     def test_element_fractions_extreme_skew_still_generates(self) -> None:
         """An extreme 1000:0.001:0.001 fraction skew must not prevent generation."""
         result = _gas(
-            n=20, elements="6,7,8", n_samples=20, seed=99,
+            n=20,
+            elements="6,7,8",
+            n_samples=20,
+            seed=99,
             element_fractions={"C": 1000.0, "N": 0.001, "O": 0.001},
         )
         assert len(result) > 0
@@ -521,18 +620,28 @@ class TestBoxRegionBounds:
         """Symmetric box:L places atoms in [-L/2, L/2]^3 before relax.
         After relax atoms may drift outside; this test only verifies no crash occurs."""
         result = generate(
-            n_atoms=5, charge=0, mult=1,
-            mode="gas", region="box:10",
-            elements="6", n_samples=10, seed=0,
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="box:10",
+            elements="6",
+            n_samples=10,
+            seed=0,
         )
         assert isinstance(result, GenerationResult)
 
     def test_asymmetric_box_generates_without_crash(self) -> None:
         """box:LX,LY,LZ (asymmetric three-axis spec) must not raise ValueError."""
         result = generate(
-            n_atoms=5, charge=0, mult=1,
-            mode="gas", region="box:10,5,3",
-            elements="6,7,8", n_samples=5, seed=0,
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="box:10,5,3",
+            elements="6,7,8",
+            n_samples=5,
+            seed=0,
         )
         assert isinstance(result, GenerationResult)
 
@@ -543,9 +652,14 @@ class TestBoxRegionBounds:
         If this behavior changes, update this test to make the spec change explicit.
         """
         result = generate(
-            n_atoms=30, charge=0, mult=1,
-            mode="gas", region="box:10,3,2",
-            elements="6", n_samples=10, seed=0,
+            n_atoms=30,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="box:10,3,2",
+            elements="6",
+            n_samples=10,
+            seed=0,
         )
         if not result:
             pytest.skip("No structures generated for this seed")
@@ -572,11 +686,13 @@ class TestXyzIoRobustness:
 
     def test_parse_xyz_empty_string_returns_empty_list(self) -> None:
         from pasted import parse_xyz
+
         assert parse_xyz("") == []
 
     def test_parse_xyz_crlf_line_endings(self) -> None:
         """XYZ files with Windows-style CR+LF line endings must parse correctly."""
         from pasted import format_xyz, parse_xyz
+
         atoms = ["C", "N"]
         positions: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)]
         xyz = format_xyz(atoms, positions, 0, 1, {}, "test")
@@ -611,14 +727,15 @@ class TestXyzIoRobustness:
     def test_write_xyz_append_false_overwrites(self, tmp_path: object) -> None:
         """append=False must overwrite the existing file, not append to it."""
         import pathlib
+
         path = pathlib.Path(str(tmp_path)) / "out.xyz"  # type: ignore[operator]
         result = _gas(n=6, n_samples=10, seed=3)
         if len(result) < 2:
             pytest.skip("Need >= 2 structures")
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         result[0].write_xyz(str(path), append=False)  # type: ignore[union-attr]
         size_after_first = path.stat().st_size
-  # type: ignore[union-attr]
+        # type: ignore[union-attr]
         result[1].write_xyz(str(path), append=False)  # type: ignore[union-attr]
         size_after_overwrite = path.stat().st_size
 
@@ -653,31 +770,49 @@ class TestObjectiveFunctionEdgeCases:
     def test_empty_dict_objective_score_is_zero(self) -> None:
         """An empty dict objective evaluates to 0.0 for every structure."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={},
-            method="annealing", max_steps=30, n_restarts=1, seed=0,
+            method="annealing",
+            max_steps=30,
+            n_restarts=1,
+            seed=0,
         ).run()
         assert result.objective_scores[0] == pytest.approx(0.0)
 
     def test_constant_objective_all_scores_equal(self) -> None:
         """A constant objective must produce identical scores across all restarts."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=lambda m: 42.0,
-            method="annealing", max_steps=30, n_restarts=3, seed=0,
+            method="annealing",
+            max_steps=30,
+            n_restarts=3,
+            seed=0,
         ).run()
         assert all(s == pytest.approx(42.0) for s in result.objective_scores)
 
     def test_objective_mutating_metrics_dict_does_not_corrupt_best(self) -> None:
         """Injecting foreign keys into the metrics dict must not corrupt best.metrics."""
+
         def polluter(m: dict[str, float]) -> float:
             m["__evil__"] = float("nan")
             return m.get("H_total", 0.0)
 
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=polluter,
-            method="annealing", max_steps=50, seed=5,
+            method="annealing",
+            max_steps=50,
+            seed=5,
         ).run()
 
         assert "H_total" in result.best.metrics
@@ -687,18 +822,28 @@ class TestObjectiveFunctionEdgeCases:
     def test_zero_constant_objective_does_not_crash(self) -> None:
         """A zero-constant objective keeps acceptance probability at 1; must not crash."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=lambda m: 0.0,
-            method="basin_hopping", max_steps=30, seed=0,
+            method="basin_hopping",
+            max_steps=30,
+            seed=0,
         ).run()
         assert result.best is not None
 
     def test_objective_returning_nan_completes_without_crash(self) -> None:
         """An objective that always returns NaN must complete without raising."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=lambda m: float("nan"),
-            method="annealing", max_steps=30, seed=0,
+            method="annealing",
+            max_steps=30,
+            seed=0,
         ).run()
         assert result is not None  # guaranteed to complete without crashing
 
@@ -713,11 +858,17 @@ class TestChainBiasEffect:
 
     def test_high_chain_bias_increases_mean_shape_aniso(self) -> None:
         """Mean shape_aniso at bias=0.9 must exceed mean shape_aniso at bias=0.0."""
+
         def mean_aniso(bias: float) -> float:
             r = generate(
-                n_atoms=20, charge=0, mult=1,
-                mode="chain", elements="6,7,8",
-                chain_bias=bias, n_samples=40, seed=0,
+                n_atoms=20,
+                charge=0,
+                mult=1,
+                mode="chain",
+                elements="6,7,8",
+                chain_bias=bias,
+                n_samples=40,
+                seed=0,
             )
             if not r:
                 return 0.0
@@ -740,9 +891,14 @@ class TestGeneratorMultipleCallsDeterminism:
 
     def test_generate_twice_same_seed_same_count(self) -> None:
         gen = StructureGenerator(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=20, seed=31,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,7,8",
+            n_samples=20,
+            seed=31,
         )
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
@@ -755,9 +911,14 @@ class TestGeneratorMultipleCallsDeterminism:
 
     def test_generate_twice_same_positions(self) -> None:
         gen = StructureGenerator(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=15, seed=7,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=15,
+            seed=7,
         )
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
@@ -786,20 +947,32 @@ class TestStructureCompEdgeCases:
         assert s.comp == ""
 
     def test_comp_single_element_no_count_suffix(self) -> None:
-        s = Structure(atoms=["C"], positions=[(0.0, 0.0, 0.0)],
-                      charge=0, mult=1, metrics={}, mode="test")
+        s = Structure(
+            atoms=["C"], positions=[(0.0, 0.0, 0.0)], charge=0, mult=1, metrics={}, mode="test"
+        )
         assert s.comp == "C"
 
     def test_comp_single_element_multiple_atoms(self) -> None:
-        s = Structure(atoms=["N", "N", "N"], positions=[(float(i), 0.0, 0.0) for i in range(3)],
-                      charge=0, mult=1, metrics={}, mode="test")
+        s = Structure(
+            atoms=["N", "N", "N"],
+            positions=[(float(i), 0.0, 0.0) for i in range(3)],
+            charge=0,
+            mult=1,
+            metrics={},
+            mode="test",
+        )
         assert s.comp == "N3"
 
     def test_comp_alphabetical_order(self) -> None:
         """comp uses ascending alphabetical order, not Hill order (C first, H second)."""
-        s = Structure(atoms=["Na", "C", "H", "H"],
-                      positions=[(float(i), 0.0, 0.0) for i in range(4)],
-                      charge=0, mult=1, metrics={}, mode="test")
+        s = Structure(
+            atoms=["Na", "C", "H", "H"],
+            positions=[(float(i), 0.0, 0.0) for i in range(4)],
+            charge=0,
+            mult=1,
+            metrics={},
+            mode="test",
+        )
         # Counter: C:1, H:2, Na:1 -> sorted alphabetically -> C, H, Na -> 'CH2Na'
         assert s.comp == "CH2Na"
 
@@ -810,10 +983,7 @@ class TestStructureCompEdgeCases:
             pytest.skip("No structures")
         s = result[0]  # type: ignore[union-attr]
         counts = Counter(s.atoms)  # type: ignore[union-attr]
-        expected = "".join(
-            f"{sym}{n}" if n > 1 else sym
-            for sym, n in sorted(counts.items())
-        )  # type: ignore[union-attr]
+        expected = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))  # type: ignore[union-attr]
         assert s.comp == expected  # type: ignore[union-attr]
 
 
@@ -850,11 +1020,12 @@ class TestStructureXyzOutput:
         s = result[0]  # type: ignore[union-attr]
         lines = s.to_xyz().splitlines()  # type: ignore[union-attr]
         n_atoms = int(lines[0])
-        coord_lines = lines[2:2 + n_atoms]
+        coord_lines = lines[2 : 2 + n_atoms]
         assert len(coord_lines) == n_atoms
 
     def test_write_xyz_append_true_doubles_file(self, tmp_path: object) -> None:
         import pathlib
+
         path = pathlib.Path(str(tmp_path)) / "out.xyz"  # type: ignore[operator]
         result = _gas(n=6, n_samples=10, seed=4)
         if len(result) < 2:
@@ -940,17 +1111,28 @@ class TestComputeAllMetricsBoundary:
 
     def test_overlapping_positions_does_not_crash(self) -> None:
         """Two atoms at the exact same coordinates must not cause a crash."""
-        m = compute_all_metrics(["C", "N"], [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)], 20, 0.5, 0.5, 2.0, 1.0)
+        m = compute_all_metrics(
+            ["C", "N"], [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)], 20, 0.5, 0.5, 2.0, 1.0
+        )
         assert isinstance(m, dict)
         assert "H_total" in m
 
     def test_all_13_metrics_present(self) -> None:
         """compute_all_metrics must return all 13 metrics listed in quickstart.md."""
         expected_keys = {
-            "H_atom", "H_spatial", "H_total", "RDF_dev",
-            "shape_aniso", "Q4", "Q6", "Q8",
-            "graph_lcc", "graph_cc", "ring_fraction",
-            "charge_frustration", "moran_I_chi",
+            "H_atom",
+            "H_spatial",
+            "H_total",
+            "RDF_dev",
+            "shape_aniso",
+            "Q4",
+            "Q6",
+            "Q8",
+            "graph_lcc",
+            "graph_cc",
+            "ring_fraction",
+            "charge_frustration",
+            "moran_I_chi",
         }
         atoms = ["C", "N", "O", "C", "N"]
         positions = [(float(i), 0.0, 0.0) for i in range(5)]
@@ -971,21 +1153,29 @@ class TestImpossibleConstraintPropagation:
         """Sum of max_counts < n_atoms must propagate a RuntimeError out of generate()."""
         with pytest.raises(RuntimeError):
             generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_max_counts={"C": 2, "N": 2, "O": 2},
-                n_samples=1, seed=0,
+                n_samples=1,
+                seed=0,
             )
 
     def test_impossible_max_counts_with_stream(self) -> None:
         """The same RuntimeError must propagate through stream() as well."""
         gen = StructureGenerator(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
             elements="6,7,8",
             element_max_counts={"C": 2, "N": 2, "O": 2},
-            n_samples=1, seed=0,
+            n_samples=1,
+            seed=0,
         )
         with pytest.raises(RuntimeError):
             list(gen.stream())
@@ -1007,19 +1197,27 @@ class TestSymbolStringElementsSpec:
         """elements='C,N,O' must raise ValueError under the current spec."""
         with pytest.raises(ValueError):
             generate(
-                n_atoms=5, charge=0, mult=1,
-                mode="gas", region="sphere:5",
+                n_atoms=5,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:5",
                 elements="C,N,O",  # symbols: invalid; use '6,7,8' or ['C','N','O']
-                n_samples=3, seed=0,
+                n_samples=3,
+                seed=0,
             )
 
     def test_symbol_list_in_elements_kwarg_works(self) -> None:
         """elements=['C','N','O'] in list form must work correctly."""
         result = generate(
-            n_atoms=5, charge=0, mult=1,
-            mode="gas", region="sphere:5",
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:5",
             elements=["C", "N", "O"],
-            n_samples=5, seed=0,
+            n_samples=5,
+            seed=0,
         )
         assert isinstance(result, GenerationResult)
 
@@ -1034,25 +1232,37 @@ class TestBitIdenticalReproducibility:
 
     def test_generate_bit_identical_positions(self) -> None:
         kwargs = dict(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=25, seed=12345,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,7,8",
+            n_samples=25,
+            seed=12345,
         )  # type: ignore[arg-type]
         r1 = generate(**kwargs)  # type: ignore[arg-type]
         r2 = generate(**kwargs)  # type: ignore[arg-type]
         assert len(r1) == len(r2)
         for i, (s1, s2) in enumerate(zip(r1, r2, strict=True)):
             np.testing.assert_allclose(
-                np.array(s1.positions), np.array(s2.positions),
+                np.array(s1.positions),
+                np.array(s2.positions),
                 err_msg=f"positions differ at structure {i}",
             )
 
     def test_optimizer_bit_identical_scores(self) -> None:
         def run() -> OptimizationResult:
             return StructureOptimizer(
-                n_atoms=8, charge=0, mult=1, elements="6,7,8",
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                elements="6,7,8",
                 objective={"H_total": 1.0, "Q6": -0.5},
-                method="annealing", max_steps=80, n_restarts=2, seed=9999,
+                method="annealing",
+                max_steps=80,
+                n_restarts=2,
+                seed=9999,
             ).run()
 
         r1, r2 = run(), run()
@@ -1072,21 +1282,33 @@ class TestParallelTemperingDegenerateCases:
     def test_pt_n_replicas_1_runs_like_single_chain(self) -> None:
         """n_replicas=1 runs as a single chain with no swaps attempted."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
             method="parallel_tempering",
-            n_replicas=1, max_steps=50, n_restarts=1, seed=0,
+            n_replicas=1,
+            max_steps=50,
+            n_restarts=1,
+            seed=0,
         ).run()
         assert result.best is not None
 
     def test_pt_n_replicas_2_completes_with_swaps(self) -> None:
         """n_replicas=2 (the smallest non-trivial swap pair) must complete successfully."""
         result = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
             method="parallel_tempering",
-            n_replicas=2, pt_swap_interval=5, max_steps=50,
-            n_restarts=1, seed=1,
+            n_replicas=2,
+            pt_swap_interval=5,
+            max_steps=50,
+            n_restarts=1,
+            seed=1,
         ).run()
         assert result.best is not None
 
@@ -1101,8 +1323,14 @@ class TestParallelTemperingDegenerateCases:
             return 0.0
 
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1, elements="6,7,8",
-            objective=collector, method="annealing", max_steps=10, seed=0,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
+            objective=collector,
+            method="annealing",
+            max_steps=10,
+            seed=0,
         ).run()
 
         assert all(v is None for v in seen)

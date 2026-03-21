@@ -39,6 +39,7 @@ except ImportError:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _rss_mb() -> float:
     """Return current RSS in MiB, or 0.0 if psutil is unavailable."""
     return _PROC.memory_info().rss / 1024**2 if PSUTIL_AVAILABLE else 0.0
@@ -54,6 +55,7 @@ def _peak_heap_kb() -> float:
 # A. Validation — invalid arguments
 # ---------------------------------------------------------------------------
 
+
 class TestValidation:
     """Construction-time validation: bad arguments must raise ValueError."""
 
@@ -63,8 +65,12 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="region"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", elements="6,7,8", n_samples=10,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                elements="6,7,8",
+                n_samples=10,
             )
 
     def test_maxent_mode_requires_region(self):
@@ -73,8 +79,12 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="region"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="maxent", elements="6,7,8", n_samples=10,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="maxent",
+                elements="6,7,8",
+                n_samples=10,
             )
 
     def test_invalid_mode_raises(self):
@@ -83,8 +93,12 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="mode"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="crystal", elements="6,7,8", n_samples=10,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="crystal",
+                elements="6,7,8",
+                n_samples=10,
             )
 
     def test_n_samples_zero_requires_n_success(self):
@@ -93,9 +107,13 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="n_success"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=0,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=0,
             )
 
     def test_n_success_zero_raises(self):
@@ -104,9 +122,14 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="n_success"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=50, n_success=0,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=50,
+                n_success=0,
             )
 
     def test_element_fractions_unknown_symbol(self):
@@ -115,8 +138,11 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="element_fractions"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_fractions={"C": 1.0, "Unobtanium": 2.0},
                 n_samples=20,
@@ -128,8 +154,11 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="zero"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_fractions={"C": 0.0, "N": 0.0, "O": 0.0},
                 n_samples=20,
@@ -141,8 +170,11 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="non-negative"):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_fractions={"C": -1.0, "N": 2.0},
                 n_samples=20,
@@ -154,8 +186,11 @@ class TestValidation:
 
         with pytest.raises(ValueError, match="n_atoms"):
             StructureGenerator(
-                n_atoms=5, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=5,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_min_counts={"C": 4, "N": 3},  # 7 > 5
                 n_samples=20,
@@ -167,8 +202,11 @@ class TestValidation:
 
         with pytest.raises(ValueError):
             StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 element_min_counts={"C": 5},
                 element_max_counts={"C": 2},
@@ -215,6 +253,7 @@ class TestValidation:
 # B. Numeric bounds
 # ---------------------------------------------------------------------------
 
+
 class TestNumericBounds:
     """Edge cases around atom count, charge, multiplicity, and region geometry."""
 
@@ -225,10 +264,14 @@ class TestNumericBounds:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             generate(
-                n_atoms=1, charge=0, mult=2,  # doublet: 1 electron, valid spin
-                mode="gas", region="sphere:5",
+                n_atoms=1,
+                charge=0,
+                mult=2,  # doublet: 1 electron, valid spin
+                mode="gas",
+                region="sphere:5",
                 elements="1",  # hydrogen only; Z=1 (odd) satisfies mult=2
-                n_samples=10, seed=0,
+                n_samples=10,
+                seed=0,
             )
         # No assertion on count — parity may reject some; the point is no crash.
 
@@ -237,9 +280,14 @@ class TestNumericBounds:
         from pasted import generate
 
         result = generate(
-            n_atoms=2, charge=0, mult=1,
-            mode="gas", region="sphere:5",
-            elements="6", n_samples=20, seed=42,
+            n_atoms=2,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:5",
+            elements="6",
+            n_samples=20,
+            seed=42,
         )
         assert len(result) == 20  # C2 singlet: 12 electrons (even), 0 unpaired — always valid
 
@@ -251,9 +299,14 @@ class TestNumericBounds:
             warnings.simplefilter("always")
             # H4: total_Z=4, charge=+3 → n_electrons=1 → mult=2 ok
             result = generate(
-                n_atoms=4, charge=3, mult=2,
-                mode="gas", region="sphere:6",
-                elements="1", n_samples=20, seed=1,
+                n_atoms=4,
+                charge=3,
+                mult=2,
+                mode="gas",
+                region="sphere:6",
+                elements="1",
+                n_samples=20,
+                seed=1,
             )
         assert len(result) == 20
 
@@ -265,9 +318,14 @@ class TestNumericBounds:
             warnings.simplefilter("always")
             # H2: total_Z=2, charge=+5 → n_electrons=-3 → all rejected
             result = generate(
-                n_atoms=2, charge=5, mult=1,
-                mode="gas", region="sphere:5",
-                elements="1", n_samples=10, seed=0,
+                n_atoms=2,
+                charge=5,
+                mult=1,
+                mode="gas",
+                region="sphere:5",
+                elements="1",
+                n_samples=10,
+                seed=0,
             )
         assert len(result) == 0
 
@@ -278,9 +336,14 @@ class TestNumericBounds:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:0.1",
-                elements="6,7,8", n_samples=30, seed=7,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:0.1",
+                elements="6,7,8",
+                n_samples=30,
+                seed=7,
             )
         # Count may be zero or nonzero; crash is the only failure mode here.
 
@@ -289,9 +352,14 @@ class TestNumericBounds:
         from pasted import generate
 
         generate(
-            n_atoms=5, charge=0, mult=1,
-            mode="gas", region="box:1000",
-            elements="6,7,8", n_samples=10, seed=0,
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="box:1000",
+            elements="6,7,8",
+            n_samples=10,
+            seed=0,
         )
         # Sparse placement in a huge box should still yield valid structures.
 
@@ -304,9 +372,14 @@ class TestNumericBounds:
             # C2: total_Z=12 (even), charge=0 → n_electrons=12 (even)
             # mult=2 requires n_unpaired=1 (odd) → parity mismatch → all rejected
             result = generate(
-                n_atoms=2, charge=0, mult=2,
-                mode="gas", region="sphere:5",
-                elements="6", n_samples=10, seed=0,
+                n_atoms=2,
+                charge=0,
+                mult=2,
+                mode="gas",
+                region="sphere:5",
+                elements="6",
+                n_samples=10,
+                seed=0,
             )
         assert len(result) == 0
 
@@ -314,6 +387,7 @@ class TestNumericBounds:
 # ---------------------------------------------------------------------------
 # C. Filter bounds
 # ---------------------------------------------------------------------------
+
 
 class TestFilterBounds:
     """Edge cases for metric filter parsing and application."""
@@ -323,9 +397,14 @@ class TestFilterBounds:
         from pasted import generate
 
         kwargs = dict(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=30, seed=42,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=30,
+            seed=42,
         )
         result_open = generate(**kwargs, filters=["H_total:-:-"])  # type: ignore[arg-type]
         result_none = generate(**kwargs)  # type: ignore[arg-type]
@@ -339,9 +418,14 @@ class TestFilterBounds:
         from pasted import generate
 
         result_all = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=50, seed=99,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=50,
+            seed=99,
         )
         if not result_all:
             pytest.skip("No structures generated with this seed — cannot form exact filter")
@@ -349,12 +433,18 @@ class TestFilterBounds:
         from typing import cast
 
         from pasted import Structure as _StructureF
+
         val = cast(_StructureF, result_all[0]).metrics["H_total"]
         # Floating-point equality: at least the first structure's value matches itself.
         result_exact = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=50, seed=99,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=50,
+            seed=99,
             filters=[f"H_total:{val}:{val}"],
         )
         assert len(result_exact) <= len(result_all)
@@ -366,9 +456,14 @@ class TestFilterBounds:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             result = generate(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
-                elements="6,7,8", n_samples=30, seed=1,
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8",
+                n_samples=30,
+                seed=1,
                 filters=["H_total:999:-", "Q6:-:-0.001"],  # Q6 is always non-negative
             )
         assert len(result) == 0
@@ -377,6 +472,7 @@ class TestFilterBounds:
 # ---------------------------------------------------------------------------
 # D. XYZ I/O errors
 # ---------------------------------------------------------------------------
+
 
 class TestXYZIO:
     """Robustness of Structure.from_xyz and parse_xyz against malformed input."""
@@ -412,6 +508,7 @@ class TestXYZIO:
         import numpy.linalg
 
         from pasted import Structure
+
         bad_xyz = "2\ncomment\nC 0.0 NaN INFINITY\nN 1.0 0.0 0.0\n"
         try:
             Structure.from_xyz(bad_xyz)
@@ -428,14 +525,20 @@ class TestXYZIO:
         from pasted import Structure, generate
 
         structs = generate(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=30, seed=42,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,7,8",
+            n_samples=30,
+            seed=42,
         )
         assert structs, "Need at least one structure to form an XYZ string"
         from typing import cast as _cast2
 
         from pasted import Structure as _Structure2
+
         xyz_str = _cast2(_Structure2, structs[0]).to_xyz()
         with pytest.raises(ValueError, match="out of range"):
             Structure.from_xyz(xyz_str, frame=999)
@@ -445,9 +548,14 @@ class TestXYZIO:
         from pasted import Structure, generate
 
         structs = generate(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=10, seed=5,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,7,8",
+            n_samples=10,
+            seed=5,
         )
         assert len(structs) > 1, "Need at least two structures for a multiframe test"
 
@@ -478,6 +586,7 @@ class TestXYZIO:
 # E. Hostile objective functions
 # ---------------------------------------------------------------------------
 
+
 class TestHostileObjectives:
     """StructureOptimizer must handle pathological objective return values gracefully."""
 
@@ -492,9 +601,14 @@ class TestHostileObjectives:
             return float("nan")
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=nan_obj,
-            method="annealing", max_steps=100, seed=42,
+            method="annealing",
+            max_steps=100,
+            seed=42,
         )
         opt.run()
         assert call_count["n"] > 0
@@ -505,9 +619,14 @@ class TestHostileObjectives:
         from pasted import StructureOptimizer
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=lambda m: float("inf"),
-            method="annealing", max_steps=100, seed=42,
+            method="annealing",
+            max_steps=100,
+            seed=42,
         )
         result = opt.run()
         assert result.objective_scores, "Expected at least one restart score"
@@ -520,9 +639,14 @@ class TestHostileObjectives:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             opt = StructureOptimizer(
-                n_atoms=8, charge=0, mult=1, elements="6,7,8",
+                n_atoms=8,
+                charge=0,
+                mult=1,
+                elements="6,7,8",
                 objective=lambda m: float("-inf"),
-                method="annealing", max_steps=100, seed=42,
+                method="annealing",
+                max_steps=100,
+                seed=42,
             )
             result = opt.run()
         assert result.objective_scores, "Expected at least one restart score"
@@ -546,9 +670,14 @@ class TestHostileObjectives:
             return m["H_total"]
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=boom_obj,
-            method="annealing", max_steps=50, seed=42,
+            method="annealing",
+            max_steps=50,
+            seed=42,
         )
         # Either completes (exception suppressed internally) or raises — both are documented.
         try:
@@ -569,13 +698,20 @@ class TestHostileObjectives:
             return m.get("H_total", 0.0)
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=mutating_obj,
-            method="annealing", max_steps=150, seed=5,
+            method="annealing",
+            max_steps=150,
+            seed=5,
         )
         result = opt.run()
 
-        assert "H_total" in result.best.metrics, "H_total disappeared from best.metrics after dict mutation"
+        assert "H_total" in result.best.metrics, (
+            "H_total disappeared from best.metrics after dict mutation"
+        )
         val = result.best.metrics["H_total"]
         assert val == val, "H_total is NaN after dict mutation"  # NaN != NaN
         assert mutations["n"] > 0
@@ -588,9 +724,14 @@ class TestHostileObjectives:
             return 1.0
 
         opt = StructureOptimizer(
-            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective=no_args,  # type: ignore[arg-type]
-            method="annealing", max_steps=50, seed=42,
+            method="annealing",
+            max_steps=50,
+            seed=42,
         )
         with pytest.raises(TypeError):
             opt.run()
@@ -599,6 +740,7 @@ class TestHostileObjectives:
 # ---------------------------------------------------------------------------
 # F. Thread safety
 # ---------------------------------------------------------------------------
+
 
 class TestThreadSafety:
     """Concurrent calls must not race, corrupt shared state, or deadlock."""
@@ -613,9 +755,14 @@ class TestThreadSafety:
         def worker(tid: int) -> None:
             try:
                 r = generate(
-                    n_atoms=10, charge=0, mult=1,
-                    mode="gas", region="sphere:8",
-                    elements="6,7,8", n_samples=30, seed=42,
+                    n_atoms=10,
+                    charge=0,
+                    mult=1,
+                    mode="gas",
+                    region="sphere:8",
+                    elements="6,7,8",
+                    n_samples=30,
+                    seed=42,
                 )
                 counts[tid] = len(r)
             except Exception as exc:
@@ -642,9 +789,14 @@ class TestThreadSafety:
         def worker(seed: int) -> None:
             try:
                 opt = StructureOptimizer(
-                    n_atoms=8, charge=0, mult=1, elements="6,7,8",
+                    n_atoms=8,
+                    charge=0,
+                    mult=1,
+                    elements="6,7,8",
                     objective={"H_total": 1.0},
-                    method="annealing", max_steps=200, seed=seed,
+                    method="annealing",
+                    max_steps=200,
+                    seed=seed,
                 )
                 opt.run()
             except Exception as exc:
@@ -663,6 +815,7 @@ class TestThreadSafety:
 # G. Memory
 # ---------------------------------------------------------------------------
 
+
 class TestMemory:
     """Peak heap and RSS growth must stay within reasonable bounds."""
 
@@ -675,9 +828,14 @@ class TestMemory:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             generate(
-                n_atoms=100, charge=0, mult=1,
-                mode="gas", region="sphere:20",
-                elements="6,7,8", n_samples=10, seed=0,
+                n_atoms=100,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:20",
+                elements="6,7,8",
+                n_samples=10,
+                seed=0,
             )
         peak_mb = _peak_heap_kb() / 1024
         tracemalloc.stop()
@@ -693,20 +851,29 @@ class TestMemory:
         rss_before = _rss_mb()
 
         opt = StructureOptimizer(
-            n_atoms=10, charge=0, mult=1, elements="6,7,8",
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            elements="6,7,8",
             objective={"H_total": 1.0},
-            method="annealing", max_steps=300, n_restarts=10, seed=0,
+            method="annealing",
+            max_steps=300,
+            n_restarts=10,
+            seed=0,
         )
         opt.run()
         gc.collect()
 
         rss_delta = _rss_mb() - rss_before
-        assert rss_delta < 20.0, f"Possible memory leak: RSS grew by {rss_delta:.2f} MiB over 10 restarts"
+        assert rss_delta < 20.0, (
+            f"Possible memory leak: RSS grew by {rss_delta:.2f} MiB over 10 restarts"
+        )
 
 
 # ---------------------------------------------------------------------------
 # H. Counterintuitive valid cases
 # ---------------------------------------------------------------------------
+
 
 class TestCounterIntuitiveValidCases:
     """Cases that look unusual but must succeed per the documented contract."""
@@ -716,9 +883,14 @@ class TestCounterIntuitiveValidCases:
         from pasted import generate
 
         result = generate(
-            n_atoms=6, charge=0, mult=1,
-            mode="gas", region="sphere:7",
-            elements="6", n_samples=20, seed=42,
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6",
+            n_samples=20,
+            seed=42,
         )
         assert len(result) > 0, "C-only even-Z pool should always satisfy parity for singlet"
         for s in result:
@@ -731,14 +903,23 @@ class TestCounterIntuitiveValidCases:
         from pasted import generate
 
         r_no_region = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=20, seed=42,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=20,
+            seed=42,
         )
         r_with_region = generate(
-            n_atoms=10, charge=0, mult=1,
-            mode="chain", region="sphere:99999",
-            elements="6,7,8", n_samples=20, seed=42,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
+            region="sphere:99999",
+            elements="6,7,8",
+            n_samples=20,
+            seed=42,
         )
         assert len(r_no_region) == len(r_with_region), (
             "chain mode must silently discard region; same seed must yield same count"
@@ -749,9 +930,14 @@ class TestCounterIntuitiveValidCases:
         from pasted import GeneratorConfig, generate
 
         kwargs = dict(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=30, seed=77,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=30,
+            seed=77,
         )
         r_kwargs = generate(**kwargs)  # type: ignore[arg-type]
         r_config = generate(GeneratorConfig(**kwargs))  # type: ignore[arg-type]
@@ -765,11 +951,15 @@ class TestCounterIntuitiveValidCases:
         from pasted import generate
 
         result = generate(
-            n_atoms=20, charge=0, mult=1,
-            mode="gas", region="sphere:10",
+            n_atoms=20,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:10",
             elements="6,7,8",
             element_fractions={"C": 1000.0, "N": 0.001, "O": 0.001},
-            n_samples=30, seed=0,
+            n_samples=30,
+            seed=0,
         )
         assert len(result) > 0
 
@@ -780,11 +970,14 @@ class TestCounterIntuitiveValidCases:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             gen = StructureGenerator(
-                n_atoms=10, charge=0, mult=1,
-                mode="gas", region="sphere:8",
+                n_atoms=10,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
                 elements="6,7,8",
                 n_success=100,  # want 100
-                n_samples=5,    # budget is only 5 attempts
+                n_samples=5,  # budget is only 5 attempts
                 seed=42,
             )
             result = gen.generate()
@@ -799,21 +992,31 @@ class TestCounterIntuitiveValidCases:
         from pasted import StructureOptimizer, generate
 
         _init_result = generate(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=30, seed=0,
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
+            elements="6,7,8",
+            n_samples=30,
+            seed=0,
         )
         from typing import cast as _cast
 
         from pasted import Structure as _Structure
+
         initial = _cast(_Structure, _init_result[0])  # C/N/O structure
 
         opt = StructureOptimizer(
-            n_atoms=len(initial.atoms), charge=initial.charge, mult=initial.mult,
+            n_atoms=len(initial.atoms),
+            charge=initial.charge,
+            mult=initial.mult,
             elements=["Fe", "Ni", "Co"],  # entirely different pool
             objective={"H_total": 1.0},
             allow_displacements=False,
-            method="annealing", max_steps=200, seed=0,
+            method="annealing",
+            max_steps=200,
+            seed=0,
         )
         result = opt.run(initial=initial)  # type: ignore[arg-type]
 
@@ -826,9 +1029,14 @@ class TestCounterIntuitiveValidCases:
         from pasted import generate
 
         kwargs = dict(
-            n_atoms=10, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6,7,8", n_samples=30, seed=123,
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6,7,8",
+            n_samples=30,
+            seed=123,
         )
         r1 = generate(**kwargs)  # type: ignore[arg-type]
         r2 = generate(**kwargs)  # type: ignore[arg-type]
@@ -840,5 +1048,3 @@ class TestCounterIntuitiveValidCases:
                 np.array(s2.positions),
                 err_msg=f"Positions differ between two calls with seed=123 at structure index {i}",
             )
-
-

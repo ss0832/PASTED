@@ -220,12 +220,12 @@ def _steinhardt_per_atom_sparse(
     rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
     cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
 
-    diff_nb = pts[rows] - pts[cols]                             # (n_bonds, 3)
+    diff_nb = pts[rows] - pts[cols]  # (n_bonds, 3)
     r_nb = np.linalg.norm(diff_nb, axis=1)
     safe_r_nb = np.where(r_nb > 0, r_nb, 1.0)
-    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]               # (n_bonds, 3)
-    theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))   # (n_bonds,)
-    phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])         # (n_bonds,)
+    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]  # (n_bonds, 3)
+    theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))  # (n_bonds,)
+    phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])  # (n_bonds,)
 
     deg = np.bincount(rows, minlength=n).astype(float)
     safe_deg = np.where(deg > 0, deg, 1.0)
@@ -233,7 +233,7 @@ def _steinhardt_per_atom_sparse(
     for lv in l_values:
         qlm_sq = np.zeros(n, dtype=float)
         for m in range(-lv, lv + 1):
-            ylm_nb = _sph_harm(lv, m, phi_nb, theta_nb)             # (n_bonds,) complex
+            ylm_nb = _sph_harm(lv, m, phi_nb, theta_nb)  # (n_bonds,) complex
             re_sum = np.bincount(rows, weights=ylm_nb.real, minlength=n)
             im_sum = np.bincount(rows, weights=ylm_nb.imag, minlength=n)
             avg_sq = (re_sum / safe_deg) ** 2 + (im_sum / safe_deg) ** 2
@@ -277,9 +277,7 @@ def compute_steinhardt_per_atom(
     Atoms with no neighbors within *cutoff* are assigned Q_l = 0.
     """
     if _HAS_STEINHARDT:
-        raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(
-            pts, cutoff, l_values
-        )
+        raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(pts, cutoff, l_values)
         return raw
     return _steinhardt_per_atom_sparse(pts, l_values, cutoff)
 
@@ -728,11 +726,11 @@ def compute_angular_entropy(
     rows = np.concatenate([pairs[:, 0], pairs[:, 1]])
     cols = np.concatenate([pairs[:, 1], pairs[:, 0]])
 
-    diff = pts[rows] - pts[cols]                                    # (n_bonds, 3)
+    diff = pts[rows] - pts[cols]  # (n_bonds, 3)
     r = np.linalg.norm(diff, axis=1)
     safe_r = np.where(r > 0, r, 1.0)
-    d_hat = diff / safe_r[:, np.newaxis]                            # (n_bonds, 3)
-    theta = np.arccos(np.clip(d_hat[:, 2], -1.0, 1.0))             # (n_bonds,)
+    d_hat = diff / safe_r[:, np.newaxis]  # (n_bonds, 3)
+    theta = np.arccos(np.clip(d_hat[:, 2], -1.0, 1.0))  # (n_bonds,)
 
     entropies: list[float] = []
     for i in range(n):
