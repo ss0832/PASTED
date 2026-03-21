@@ -104,3 +104,11 @@ therefore be used as ``--filter`` targets on the CLI and in the
    :class:`~pasted._generator.StructureGenerator`,
    :class:`~pasted._optimizer.StructureOptimizer`, or
    :func:`~pasted._metrics.compute_all_metrics`.
+
+   When calling :func:`~pasted._metrics.compute_all_metrics` directly,
+   ``n_bins``, ``w_atom``, ``w_spatial``, and ``cutoff`` all have
+   sensible defaults (``20``, ``0.5``, ``0.5``, ``None``), so the
+   minimal explicit-cutoff form is::
+
+       from pasted._metrics import compute_all_metrics
+       metrics = compute_all_metrics(atoms, positions, cutoff=4.5)
