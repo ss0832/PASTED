@@ -291,6 +291,16 @@ class TestStructure:
         assert "Structure" in r
         assert "H_total" in r
 
+    def test_n_property(self) -> None:
+        # Regression test: repr(s) showed 'n=N' but s.n raised AttributeError.
+        import re
+        s = self._make_structure()
+        assert s.n == len(s.atoms)
+        assert s.n == len(s)
+        m = re.search(r"n=(\d+)", repr(s))
+        assert m is not None
+        assert int(m.group(1)) == s.n
+
 
 # ---------------------------------------------------------------------------
 # generate() functional API
