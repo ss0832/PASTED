@@ -304,6 +304,15 @@ pasted --n-atoms 8 --charge 0 --mult 1 \
        -o shell_fe.xyz
 ```
 
+> **Atom count in shell mode:** the number of atoms written to the output file
+> may be larger than `--n-atoms` for two reasons.  First, when `--center-z Z`
+> is set the center atom is prepended to the coordinate block, adding one atom
+> regardless of `n_atoms`.  Second, `add_hydrogen` is enabled by default and
+> appends hydrogen atoms to satisfy open valences.  The `n_atoms` parameter
+> controls only the number of *shell* atoms placed around the center.  Use
+> `--no-add-hydrogen` to suppress hydrogen addition, or inspect
+> `Structure.center_sym` to identify the center atom in the output.
+
 ### Maximum-entropy mode (`maxent`)
 
 `maxent` places atoms so that their angular distribution around each center is
@@ -666,35 +675,158 @@ continues to work unchanged.  All instance attributes
 
 ## Affine transforms in StructureGenerator
 
-Set `affine_strength > 0` to apply a random affine transformation
-(stretch/compress one axis + shear one axis pair) to each generated
-structure **before** `relax_positions`.  This creates more anisotropic
-initial geometries while still guaranteeing clash-free output after relax.
+Setting `affine_strength > 0` applies a random affine transformation —
+stretch/compress along one axis, shear one axis pair, and optionally a
+small per-atom jitter — to each generated structure **before**
+`relax_positions`.  The center of mass is pinned throughout, so the
+structure stays centered.  The transform creates more anisotropic initial
+geometries while still guaranteeing clash-free output after relaxation.
+
+Three sub-operations can be controlled independently via
+`affine_stretch`, `affine_shear`, and `affine_jitter`.  When any of
+these is `None` (the default), it falls back to `affine_strength`.
+Setting one of them to `0.0` disables that operation entirely regardless
+of `affine_strength`.
+
+### Basic usage
 
 ```python
 from pasted import generate
 
+# Global control: all three operations use the same strength
 result = generate(
     n_atoms=20, charge=0, mult=1,
     mode="gas", region="sphere:10",
     elements="6,7,8", n_samples=50, seed=42,
-    affine_strength=0.2,   # ±20 % stretch + ±10 % shear before relax
+    affine_strength=0.2,   # ±20 % stretch, ±10 % shear, jitter ∝ 0.2
 )
 ```
 
-| `affine_strength` | Effect |
+### Per-operation control
+
+```python
+from pasted import generate
+
+# Strong axial elongation only — no shear, no per-atom noise
+result_stretch = generate(
+    n_atoms=20, charge=0, mult=1,
+    mode="chain", elements="6,7,8",
+    n_samples=50, seed=0,
+    affine_strength=0.2,
+    affine_stretch=0.4,   # large stretch/compress (±40 %)
+    affine_shear=0.0,     # shear disabled
+    affine_jitter=0.0,    # per-atom jitter disabled
+)
+
+# Pure shear distortion — no axial scaling
+result_shear = generate(
+    n_atoms=20, charge=0, mult=1,
+    mode="gas", region="sphere:10",
+    elements="6,7,8", n_samples=50, seed=0,
+    affine_strength=0.2,
+    affine_stretch=0.0,   # stretch disabled
+    affine_shear=0.3,     # shear only
+    affine_jitter=0.0,
+)
+
+# Per-atom jitter only — break symmetry without global distortion
+result_jitter = generate(
+    n_atoms=20, charge=0, mult=1,
+    mode="gas", region="sphere:10",
+    elements="6,7,8", n_samples=50, seed=0,
+    affine_strength=0.1,
+    affine_stretch=0.0,
+    affine_shear=0.0,
+    affine_jitter=0.3,    # fine-grain per-atom noise only
+)
+```
+
+### Parameter reference
+
+| Parameter | Controls | Range | Default |
+|---|---|---|---|
+| `affine_strength` | Global fallback for all three operations | 0.0–0.4 | `0.0` (disabled) |
+| `affine_stretch` | Scale factor along one random axis: `Uniform(1−s, 1+s)` | 0.0–0.4 | `None` (→ `affine_strength`) |
+| `affine_shear` | Off-diagonal matrix element: `Uniform(-s/2, s/2)` | 0.0–0.4 | `None` (→ `affine_strength`) |
+| `affine_jitter` | Per-atom translation noise ∝ `move_step × s` | 0.0–0.4 | `None` (→ `affine_strength`) |
+
+> **Note on `affine_jitter` in StructureGenerator:** when used inside
+> `generate()` or `StructureGenerator`, the internal `move_step` is `0.0`,
+> so `affine_jitter` has no visible effect — the jitter term is gated on
+> `move_step > 0`.  `affine_jitter` is therefore only meaningful in
+> `StructureOptimizer` (where `move_step` is set per MC step).
+
+Practical `affine_strength` guide:
+
+| Value | Effect |
 |---|---|
 | `0.0` (default) | disabled — backward-compatible, no transform |
 | `0.05`–`0.1` | subtle anisotropy, negligible overhead |
-| `0.2`–`0.4` | strong anisotropy; useful for chain/shell modes |
+| `0.2`–`0.3` | noticeable elongation or shear |
+| `0.4` | strong distortion; may require larger `region` to avoid clashes |
 
 Works across **all placement modes** (`gas`, `chain`, `shell`, `maxent`).
-CLI: `--affine-strength S`.
+CLI flags: `--affine-strength S`, `--affine-stretch S`, `--affine-shear S`,
+`--affine-jitter S`.
 
-> **Relationship to `StructureOptimizer`:** both use the same `_affine_move`
-> function from `pasted._placement`.  In the Generator the transform is applied
-> once per structure before relax; in the Optimizer it is applied per MC step
-> when `allow_affine_moves=True`.
+```bash
+# CLI: axial elongation only, no shear
+pasted --n-atoms 20 --charge 0 --mult 1 \
+       --mode chain --elements 6,7,8 --n-samples 50 --seed 0 \
+       --affine-strength 0.2 --affine-stretch 0.4 \
+       --affine-shear 0.0 --affine-jitter 0.0
+```
+
+### Affine moves in StructureOptimizer
+
+`StructureOptimizer` supports the same four parameters through
+`allow_affine_moves=True`.  When enabled, half of all displacement moves
+are replaced by affine moves, allowing the optimizer to explore
+elongated, compressed, or sheared configurations that fragment moves
+cannot reach efficiently.
+
+```python
+from pasted import StructureOptimizer
+
+# Strong axial stretch — useful for maximizing shape_aniso
+opt = StructureOptimizer(
+    n_atoms=20, charge=0, mult=1,
+    elements="6,7,8",
+    objective={"shape_aniso": 2.0, "H_total": 1.0},
+    allow_affine_moves=True,
+    affine_strength=0.2,
+    affine_stretch=0.4,   # dominant stretch moves
+    affine_shear=0.0,     # no shear
+    affine_jitter=0.0,    # no per-atom noise
+    method="annealing",
+    max_steps=2000, n_restarts=2, seed=0,
+)
+result = opt.run()
+print(f"shape_aniso = {result.best.metrics['shape_aniso']:.4f}")
+
+# Combined stretch + shear for complex anisotropy
+opt2 = StructureOptimizer(
+    n_atoms=20, charge=0, mult=1,
+    elements="6,7,8",
+    objective={"shape_aniso": 2.0, "H_total": 1.0},
+    allow_affine_moves=True,
+    affine_strength=0.2,
+    affine_stretch=0.25,
+    affine_shear=0.15,
+    affine_jitter=0.0,    # disable noise for pure geometric distortion
+    method="annealing",
+    max_steps=2000, n_restarts=2, seed=0,
+)
+result2 = opt2.run()
+print(f"shape_aniso = {result2.best.metrics['shape_aniso']:.4f}")
+```
+
+> **Relationship to `StructureGenerator`:** both classes use the same
+> `_affine_move` function from `pasted._placement`.  In `StructureGenerator`
+> the transform is applied once per structure before `relax_positions`; in
+> `StructureOptimizer` it is applied at each accepted MC step when
+> `allow_affine_moves=True`.  The `affine_jitter` parameter only has a
+> visible effect in the Optimizer (where `move_step > 0`).
 
 ---
 
@@ -858,4 +990,218 @@ np.testing.assert_allclose(
 > cannot both be set — at least one move type must be enabled.  Attempting
 > to do so raises a `ValueError`.
 
+---
 
+## Optimizer case studies
+
+### Case study 1 — Reproducing a target disorder profile
+
+This example shows how to drive `StructureOptimizer` toward a reference
+structure defined by a known set of disorder metrics.  The target is a
+dense 40-atom C/N sphere with high Moran's I spatial autocorrelation
+(`moran_I_chi ≈ 0.94`), a fully connected graph (`graph_lcc = 1.0`), and
+a high ring fraction (`ring_fraction = 0.875`).  The `cutoff` parameter is
+set to match the value used when the reference metrics were computed.
+
+```python
+from pasted import StructureOptimizer
+
+# Target metrics (from moran1_dense_sphere.xyz, computed at cutoff=5.0 Å):
+#   moran_I_chi   = 0.9446   graph_lcc     = 1.0000
+#   ring_fraction = 0.8750   charge_frustration = 0.0058
+#   H_spatial     = 3.4420   Q6            = 0.3335
+
+opt = StructureOptimizer(
+    n_atoms=40,
+    charge=0,
+    mult=1,
+    elements=["C", "N"],
+    objective={
+        "moran_I_chi":        3.0,   # primary target: high spatial EN autocorrelation
+        "ring_fraction":      2.0,   # dense ring connectivity
+        "graph_lcc":          2.0,   # fully connected graph
+        "H_spatial":          1.0,   # spatial disorder
+        "charge_frustration": -5.0,  # suppress (target ≈ 0)
+    },
+    cutoff=5.0,                      # match the reference metric cutoff
+    method="parallel_tempering",
+    n_replicas=4,
+    pt_swap_interval=10,
+    max_steps=3000,
+    n_restarts=3,
+    T_start=1.0,
+    T_end=0.01,
+    seed=42,
+)
+
+result = opt.run()
+best = result.best
+print(result.summary())
+print(f"moran_I_chi   = {best.metrics['moran_I_chi']:.4f}  (target 0.9446)")
+print(f"ring_fraction = {best.metrics['ring_fraction']:.4f}  (target 0.8750)")
+print(f"graph_lcc     = {best.metrics['graph_lcc']:.4f}  (target 1.0000)")
+best.write_xyz("similar_to_target.xyz")
+```
+
+**Tips for target-matching runs:**
+
+- Always pass `cutoff=` explicitly so that PASTED uses the same distance
+  threshold as was used to compute the reference metrics.
+- Use `n_restarts ≥ 3` with `method="parallel_tempering"` — the landscape
+  is rugged and hot replicas help escape local optima.
+- Negative weights (`charge_frustration: -5.0`) suppress metrics that
+  should stay near zero; large magnitude is important to counteract the
+  positive objectives.
+
+---
+
+### Case study 2 — Geometry search with an ASE calculator
+
+`EvalContext` lets you call any ASE-compatible calculator inside the
+objective function, connecting PASTED's stochastic search to the entire
+ASE ecosystem (xTB, MACE, NequIP, GPAW, …).  This example uses the
+built-in EMT potential to search for a low-energy methane-like (CH₄)
+geometry.
+
+> **External dependency:** `ase` — Atomic Simulation Environment.
+> Install: `pip install ase`
+>
+> **Note:** the EMT calculator supports only Al, Cu, Ag, Au, Ni, Pd, Pt,
+> H, C, N, O.  Replace with any ASE-compatible calculator as needed.
+
+```python
+from ase import Atoms
+from ase.calculators.emt import EMT
+from ase.optimize import BFGS
+
+from pasted import EvalContext, StructureGenerator, StructureOptimizer
+
+# ── Step 1: generate C₁H₄ initial geometries with PASTED ────────────────
+initial_structs = StructureGenerator(
+    n_atoms=5,
+    charge=0,
+    mult=1,
+    mode="gas",
+    region="sphere:3",
+    elements=["C", "H"],
+    element_min_counts={"C": 1},
+    element_max_counts={"C": 1},
+    n_samples=100,
+    seed=0,
+).generate()
+
+initial = initial_structs[0]   # pick the first C₁H₄ structure
+
+# ── Step 2: basin-hopping with ASE/EMT objective ─────────────────────────
+def ase_emt_objective(m: dict, ctx: EvalContext) -> float:
+    """Maximize stability — lower EMT potential energy is better."""
+    structure = Atoms(
+        symbols=list(ctx.atoms),
+        positions=list(ctx.positions),
+    )
+    structure.calc = EMT()
+    try:
+        return -structure.get_potential_energy()   # negate: maximize = minimize energy
+    except Exception:
+        return float("-inf")
+
+opt = StructureOptimizer(
+    n_atoms=len(initial),
+    charge=initial.charge,
+    mult=initial.mult,
+    elements=list(set(initial.atoms)),
+    objective=ase_emt_objective,
+    allow_composition_moves=False,   # fix C₁H₄ stoichiometry
+    method="basin_hopping",
+    max_steps=500,
+    n_restarts=3,
+    seed=7,
+)
+result = opt.run(initial=initial)
+best = result.best
+print(result.summary())
+
+# ── Step 3: final geometry relaxation with ASE BFGS ──────────────────────
+ase_mol = Atoms(
+    symbols=list(best.atoms),
+    positions=list(best.positions),
+)
+ase_mol.calc = EMT()
+bfgs = BFGS(ase_mol, logfile=None)
+bfgs.run(fmax=0.01)
+
+print(f"EMT energy after BFGS: {ase_mol.get_potential_energy():.4f} eV")
+for sym, pos in zip(ase_mol.get_chemical_symbols(), ase_mol.positions):
+    print(f"  {sym:2s}  {pos[0]:8.4f}  {pos[1]:8.4f}  {pos[2]:8.4f}")
+```
+
+**Workflow summary:**
+
+1. `StructureGenerator` samples random clash-free starting geometries
+   with the required stoichiometry.
+2. `StructureOptimizer` explores configuration space using PASTED's MC
+   moves, calling the ASE calculator at each accepted step.
+3. The best PASTED geometry is passed to ASE `BFGS` for a final
+   gradient-based refinement.
+
+This three-stage pipeline (sample → stochastic search → local minimize)
+is a general pattern for any external potential.
+
+---
+
+### Case study 3 — Two-phase curriculum objective
+
+`EvalContext.progress` returns the fractional progress of the current
+restart (range `[0.0, 1.0)`), enabling objectives that change behavior
+over the course of a run.  This is useful for annealing-style curricula
+where early exploration and late refinement require different signals.
+
+```python
+from pasted import EvalContext, StructureOptimizer
+
+def curriculum_objective(m: dict, ctx: EvalContext) -> float:
+    """
+    Two-phase curriculum driven by optimizer progress:
+
+    Phase 1 (first 50% of steps):
+        Maximize spatial disorder only — broad exploration of
+        configuration space without penalizing ordered regions.
+
+    Phase 2 (last 50% of steps):
+        Continue maximizing spatial disorder AND actively suppress
+        crystalline order (Q6).  Switching late avoids trapping
+        the search in disordered-but-ordered local minima early on.
+    """
+    if ctx.progress < 0.5:
+        return m["H_spatial"] * 2.0
+    else:
+        return m["H_spatial"] * 2.0 - m["Q6"] * 3.0
+
+opt = StructureOptimizer(
+    n_atoms=20,
+    charge=0,
+    mult=1,
+    elements="6,7,8,15,16",          # C, N, O, P, S
+    objective=curriculum_objective,
+    method="annealing",
+    max_steps=2000,
+    n_restarts=4,
+    seed=99,
+)
+
+result = opt.run()
+best = result.best
+print(result.summary())
+print(f"H_spatial = {best.metrics['H_spatial']:.4f}")
+print(f"Q6        = {best.metrics['Q6']:.4f}")
+```
+
+**When to use curriculum objectives:**
+
+- When the search landscape has a conflict between early exploration and
+  late refinement (e.g., maximizing disorder while also minimizing a
+  specific metric).
+- When you want to prevent the optimizer from committing too early to a
+  particular region of metric space.
+- Use `ctx.step` for step-based schedules and `ctx.temperature` to tie
+  the curriculum to the annealing schedule directly.
