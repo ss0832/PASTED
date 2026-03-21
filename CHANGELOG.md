@@ -8,7 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.3.0] — 2026-03-21
 
 ### Documentation
-
+```
+This is a **feature-complete release** of the 0.3 series.
+No further feature additions are planned; future releases in this series
+will contain bug fixes and documentation improvements only.
+```
 This release contains documentation-only changes relative to v0.2.11.
 No API, behavior, or binary changes are included.
 
