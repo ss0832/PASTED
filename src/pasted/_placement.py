@@ -70,159 +70,6 @@ def _sample_box(lx: float, ly: float, lz: float, rng: random.Random) -> Vec3:
     )
 
 
-def _poisson_disk_sphere(
-    n: int,
-    radius: float,
-    min_dist: float,
-    rng: random.Random,
-    k: int = 30,
-) -> list[Vec3]:
-    """Poisson-disk-like sampling inside a sphere using stratified jitter.
-
-    Divides the bounding cube into grid cells of side ``min_dist / sqrt(3)``
-    (so no two cells in a 3×3×3 neighborhood can both contain an atom closer
-    than *min_dist*), randomly selects *n* cells inside the sphere, and places
-    one atom per cell at a uniformly-random position within the cell.
-
-    This is O(n) and guarantees that atoms in *different* cells are at least
-    ``min_dist / sqrt(3)`` apart.  Atoms in the *same* cell (impossible by
-    construction) would be closer, but we only place one per cell.
-
-    Parameters
-    ----------
-    n:
-        Number of atoms.
-    radius:
-        Sphere radius (Å).
-    min_dist:
-        Target minimum inter-atom distance (Å).  Used to set cell size.
-    rng:
-        Seeded :class:`random.Random` — controls which cells are chosen and
-        the jitter within each cell.
-    k:
-        Unused (kept for API compatibility with a full Poisson-disk
-        implementation).
-
-    Returns
-    -------
-    list[Vec3]
-        Exactly *n* points.  Falls back to uniform random placement when the
-        sphere contains fewer grid cells than *n*.
-    """
-    np_rng = np.random.default_rng(rng.randint(0, 2**31))
-    cell = min_dist / math.sqrt(3)
-
-    # Number of cells along each axis (bounding cube)
-    n_cells = max(1, int(math.floor(2.0 * radius / cell)))
-    origin  = -n_cells * cell / 2.0   # cube origin
-
-    # Generate all cell centers inside the sphere
-    total = n_cells ** 3
-    ijk   = np.stack(np.unravel_index(np.arange(total), (n_cells, n_cells, n_cells)), axis=1)
-    centers = origin + (ijk + 0.5) * cell          # (total, 3)
-    in_sphere = (centers ** 2).sum(axis=1) <= radius ** 2
-    valid_ijk = ijk[in_sphere]
-    n_valid   = len(valid_ijk)
-
-    if n_valid >= n:
-        # Choose n cells without replacement and jitter within each
-        chosen  = np_rng.choice(n_valid, size=n, replace=False)
-        chosen_ijk = valid_ijk[chosen]
-        jitter  = np_rng.uniform(0.0, cell, (n, 3))
-        pts_arr = origin + chosen_ijk * cell + jitter  # (n, 3)
-        # Clip to sphere (jitter may push slightly outside)
-        r_pts = np.linalg.norm(pts_arr, axis=1)
-        outside = r_pts > radius
-        if outside.any():
-            scale = radius / r_pts[outside]
-            pts_arr[outside] *= scale[:, None]
-        return [(float(p[0]), float(p[1]), float(p[2])) for p in pts_arr]
-    else:
-        # Fallback: use all valid cells (with replacement for extras)
-        chosen  = np_rng.choice(n_valid, size=n, replace=True)
-        chosen_ijk = valid_ijk[chosen]
-        jitter  = np_rng.uniform(0.0, cell, (n, 3))
-        pts_arr = origin + chosen_ijk * cell + jitter
-        r_pts = np.linalg.norm(pts_arr, axis=1)
-        outside = r_pts > radius
-        if outside.any():
-            scale = radius / r_pts[outside]
-            pts_arr[outside] *= scale[:, None]
-        return [(float(p[0]), float(p[1]), float(p[2])) for p in pts_arr]
-
-
-def _poisson_disk_box(
-    n: int,
-    lx: float,
-    ly: float,
-    lz: float,
-    min_dist: float,
-    rng: random.Random,
-    k: int = 30,
-) -> list[Vec3]:
-    """Bridson's Poisson-disk sampling inside an axis-aligned box.
-
-    Mirrors :func:`_poisson_disk_sphere` for box regions.
-    Falls back to uniform random when the region is too dense.
-    """
-    cell = min_dist / math.sqrt(3)
-    inv_cell = 1.0 / cell
-    hx, hy, hz = lx / 2, ly / 2, lz / 2
-
-    def _grid_idx(x: float, y: float, z: float) -> tuple[int, int, int]:
-        return (int((x + hx) * inv_cell), int((y + hy) * inv_cell),
-                int((z + hz) * inv_cell))
-
-    grid: dict[tuple[int, int, int], Vec3] = {}
-    points: list[Vec3] = []
-    active: list[Vec3] = []
-
-    def _try_add(p: Vec3) -> bool:
-        gx, gy, gz = _grid_idx(*p)
-        for dx in range(-2, 3):
-            for dy in range(-2, 3):
-                for dz in range(-2, 3):
-                    nb = grid.get((gx+dx, gy+dy, gz+dz))
-                    if nb is None:
-                        continue
-                    ddx, ddy, ddz = p[0]-nb[0], p[1]-nb[1], p[2]-nb[2]
-                    if ddx*ddx + ddy*ddy + ddz*ddz < min_dist * min_dist:
-                        return False
-        grid[(gx, gy, gz)] = p
-        points.append(p)
-        active.append(p)
-        return True
-
-    _try_add(_sample_box(lx, ly, lz, rng))
-    md2 = min_dist * min_dist
-
-    while active and len(points) < n:
-        idx = rng.randrange(len(active))
-        base = active[idx]
-        placed = False
-        for _ in range(k):
-            while True:
-                dx = rng.uniform(-2*min_dist, 2*min_dist)
-                dy = rng.uniform(-2*min_dist, 2*min_dist)
-                dz = rng.uniform(-2*min_dist, 2*min_dist)
-                d2 = dx*dx + dy*dy + dz*dz
-                if md2 <= d2 <= 4 * md2:
-                    break
-            cand: Vec3 = (base[0]+dx, base[1]+dy, base[2]+dz)
-            if abs(cand[0]) > hx or abs(cand[1]) > hy or abs(cand[2]) > hz:
-                continue
-            if _try_add(cand):
-                placed = True
-                break
-        if not placed:
-            active.pop(idx)
-
-    while len(points) < n:
-        points.append(_sample_box(lx, ly, lz, rng))
-
-    return points[:n]
-
-
 # ---------------------------------------------------------------------------
 # Affine transformation (shared with StructureOptimizer)
 # ---------------------------------------------------------------------------
@@ -233,17 +80,26 @@ def _affine_move(
     move_step: float,
     affine_strength: float,
     rng: random.Random,
+    *,
+    affine_stretch: float | None = None,
+    affine_shear: float | None = None,
+    affine_jitter: float | None = None,
 ) -> list[Vec3]:
     """Apply a random affine transformation to all atom positions.
 
-    The transformation is a composition of:
+    The transformation is a composition of three independently controllable
+    operations:
 
     * **Stretch / compress** along one random axis — scale factor drawn from
-      ``Uniform(1 − s, 1 + s)`` where ``s = affine_strength``.
+      ``Uniform(1 − s, 1 + s)`` where ``s = affine_stretch`` (falls back to
+      ``affine_strength`` when *affine_stretch* is ``None``).
     * **Shear** — a small off-diagonal component drawn from
-      ``Uniform(-s/2, s/2)`` along a randomly chosen axis pair.
+      ``Uniform(-s/2, s/2)`` along a randomly chosen axis pair, where
+      ``s = affine_shear`` (falls back to ``affine_strength``).
     * **Global translation jitter** — each coordinate nudged by
-      ``Uniform(-move_step/4, move_step/4)`` to break symmetry.
+      ``Uniform(-move_step/4, move_step/4)`` to break symmetry, scaled
+      additionally by ``affine_jitter / affine_strength`` when *affine_jitter*
+      is given explicitly.
       Pass ``move_step=0.0`` to skip the jitter (recommended for
       :class:`StructureGenerator` use where the transform is applied once
       before relaxation).
@@ -259,23 +115,42 @@ def _affine_move(
         Maximum per-atom translation jitter added after the affine transform.
         Pass ``0.0`` for a pure affine transform with no per-atom noise.
     affine_strength:
-        Dimensionless strength ∈ (0, 1).  Typical values: 0.05–0.3.
-        At 0.1 the structure is stretched/compressed by up to ±10 %.
+        Global dimensionless strength ∈ (0, 1) used as the default for all
+        three operations when the individual parameters are not given.
+        Typical values: 0.05–0.3.  At 0.1 the structure is
+        stretched/compressed by up to ±10 %.
     rng:
         Seeded random-number generator.
+    affine_stretch:
+        Strength of the stretch/compress operation ∈ (0, 1).  When ``None``
+        (default) the value of *affine_strength* is used.  Set to ``0.0`` to
+        disable stretching entirely.
+    affine_shear:
+        Strength of the shear operation ∈ (0, 1).  When ``None`` (default)
+        the value of *affine_strength* is used.  Set to ``0.0`` to disable
+        shearing entirely.
+    affine_jitter:
+        Per-atom jitter scale ∈ (0, 1) relative to *move_step*.  When
+        ``None`` (default) the value of *affine_strength* is used (same
+        behavior as before v0.2.10).  Set to ``0.0`` to disable jitter
+        entirely even when *move_step* > 0.
 
     Returns
     -------
     list[Vec3]
         Transformed positions (same length as input).
     """
+    s_stretch = affine_strength if affine_stretch is None else affine_stretch
+    s_shear   = affine_strength if affine_shear   is None else affine_shear
+    s_jitter  = affine_strength if affine_jitter  is None else affine_jitter
+
     pts = np.array(positions, dtype=float)   # (n, 3)
     com = pts.mean(axis=0)
     pts -= com                               # work around center of mass
 
     # ── Stretch / compress along a random axis ────────────────────────────
     axis = rng.randrange(3)                  # 0=x, 1=y, 2=z
-    scale = 1.0 + rng.uniform(-affine_strength, affine_strength)
+    scale = 1.0 + rng.uniform(-s_stretch, s_stretch)
     A = np.eye(3)
     A[axis, axis] = scale
 
@@ -283,15 +158,15 @@ def _affine_move(
     axes = [0, 1, 2]
     axes.pop(axis)
     a1, a2 = axes
-    shear = rng.uniform(-affine_strength * 0.5, affine_strength * 0.5)
+    shear = rng.uniform(-s_shear * 0.5, s_shear * 0.5)
     A[a1, a2] += shear                       # shear in one direction
 
     # Apply affine transform
     pts = pts @ A.T                          # (n, 3)
 
     # ── Small per-atom jitter (optional fine-grain noise) ─────────────────
-    if move_step > 0.0:
-        jitter_scale = move_step * 0.25
+    if move_step > 0.0 and s_jitter > 0.0:
+        jitter_scale = move_step * 0.25 * (s_jitter / affine_strength if affine_strength > 0.0 else 1.0)
         pts += np.array([
             [rng.uniform(-jitter_scale, jitter_scale) for _ in range(3)]
             for _ in range(len(positions))
@@ -431,10 +306,8 @@ def place_gas(
     """Place all atoms uniformly at random inside *region*.
 
     No clash checking is performed — call :func:`relax_positions` afterwards.
-    The C++ Bridson Poisson-disk functions (``_poisson_disk_sphere_cpp``,
-    ``_poisson_disk_box_cpp``) are available via ``pasted._ext`` for callers
-    that want minimum-separation placement; ``place_gas`` itself uses uniform
-    random for performance predictability across all density regimes.
+    Uniform random placement is used for performance predictability across
+    all density regimes.
 
     Parameters
     ----------

@@ -5,6 +5,103 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.10] — 2026-03-21
+
+### Added
+
+* **Per-operation affine transform strength (`affine_stretch`, `affine_shear`,
+  `affine_jitter`).**
+
+  Prior to v0.2.10, the single `affine_strength` scalar controlled all three
+  affine operations — stretch/compress, shear, and per-atom jitter — with
+  fixed relative weights (shear = 0.5 × stretch, jitter ∝ move_step).  There
+  was no way to enable, say, stretch only or shear only without also activating
+  the other operations.
+
+  Three new optional parameters are added to `GeneratorConfig`,
+  `StructureGenerator`, `generate()`, `StructureOptimizer`, and
+  `_affine_move()`:
+
+  | Parameter | Scope | Default | Effect |
+  |---|---|---|---|
+  | `affine_stretch` | Generator + Optimizer | `None` | Strength of the stretch/compress step; falls back to `affine_strength` when `None`. |
+  | `affine_shear` | Generator + Optimizer | `None` | Strength of the shear step; falls back to `affine_strength` when `None`. |
+  | `affine_jitter` | Generator + Optimizer | `None` | Per-atom jitter scale relative to `move_step`; falls back to `affine_strength` when `None`. |
+
+  When all three are `None` (the default), `_affine_move` behaves identically
+  to v0.2.9 — full backward compatibility is preserved.  Setting any parameter
+  to `0.0` disables that specific operation while leaving the others unchanged:
+
+  ```python
+  # Stretch-only: disable shear and jitter
+  gen = StructureGenerator(
+      n_atoms=20, charge=0, mult=1, mode="gas", region="sphere:8",
+      affine_strength=0.2, affine_shear=0.0, affine_jitter=0.0,
+  )
+
+  # Fine-grained control in StructureOptimizer
+  opt = StructureOptimizer(
+      structures, objective="H_total",
+      allow_affine_moves=True,
+      affine_strength=0.1,
+      affine_stretch=0.3,   # stronger stretch than global default
+      affine_shear=0.05,    # gentler shear
+      affine_jitter=0.0,    # no per-atom noise
+  )
+  ```
+
+  CLI equivalents: `--affine-stretch`, `--affine-shear`, `--affine-jitter`
+  (each accepts a float; omitting uses `--affine-strength`).
+
+### Documentation
+
+* **`docs/architecture.md`**: removed all references to the
+  `HAS_POISSON` flag and the Bridson Poisson-disk sampling functions
+  (`_poisson_disk_sphere_cpp`, `_poisson_disk_box_cpp`) that were documented
+  as part of `_relax_core` — these functions exist in the Python fallback
+  (`_placement.py`) but were never fully exposed and are not part of the
+  stable public API.  The `_relax_core` section heading is updated
+  accordingly.
+
+* **`docs/architecture.md`**: updated the *Affine transform in
+  StructureGenerator* section and the *Move types* table to describe the new
+  per-operation parameters and include usage examples.
+
+### Removed
+
+* **Poisson-disk sampling helpers removed from `_placement.py` and
+  `pasted._ext`.**
+
+  `_poisson_disk_sphere()` and `_poisson_disk_box()` in `_placement.py`
+  were never called by any internal code path (``place_gas`` always uses
+  uniform random placement).  They were retained in v0.2.2 as optional
+  utilities, but their presence was misleading — the stratified-jitter sphere
+  implementation did not strictly satisfy the Bridson minimum-separation
+  guarantee.
+
+  The following are removed in v0.2.10:
+
+  - `pasted._placement._poisson_disk_sphere` (Python, ~80 lines)
+  - `pasted._placement._poisson_disk_box` (Python, ~70 lines)
+  - `pasted._ext.HAS_POISSON` flag
+  - `pasted._ext._poisson_disk_sphere_cpp` (C++ wrapper, unused fallback `None`)
+  - `pasted._ext._poisson_disk_box_cpp` (C++ wrapper, unused fallback `None`)
+
+  These names were never part of the public API documented in ``__init__.py``
+  or the quickstart guide's stable surface.  Any code that imported them
+  directly should switch to uniform random placement via ``place_gas()`` or
+  implement a Poisson-disk sampler independently.
+
+* **`docs/quickstart.md`**: removed ``HAS_POISSON`` from the extension-flag
+  code example and the flag-description table.
+
+* **`src/pasted/_ext/__init__.py`**: removed ``HAS_POISSON``,
+  ``_poisson_disk_sphere_cpp``, and ``_poisson_disk_box_cpp`` from the module
+  docstring, import block, and ``__all__``.  The ``_relax_core`` import block
+  now only imports ``relax_positions``.
+
+---
+
 ## [0.2.9] — 2026-03-20
 
 ### Fixed

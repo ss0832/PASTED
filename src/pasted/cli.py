@@ -236,13 +236,48 @@ examples
         dest="affine_strength",
         metavar="S",
         help=(
-            "Apply a random affine transform (stretch/compress one axis + shear) "
-            "to each generated structure before relax_positions. "
-            "0.0 = disabled (default, backward-compatible). "
-            "Typical values: 0.05–0.3. "
-            "At 0.1 the structure is stretched/compressed by up to ±10%%. "
-            "Works across all placement modes (gas, chain, shell, maxent). "
-            "Equivalent to StructureOptimizer's affine_strength parameter."
+            "Global affine transform strength: stretch/compress + shear applied "
+            "to each structure before relax_positions. "
+            "0.0 = disabled (default). Typical values: 0.05–0.3. "
+            "Use --affine-stretch / --affine-shear / --affine-jitter for "
+            "per-operation control (each falls back to this value when unset)."
+        ),
+    )
+    pg.add_argument(
+        "--affine-stretch",
+        type=float,
+        default=None,
+        dest="affine_stretch",
+        metavar="S",
+        help=(
+            "Strength of the stretch/compress operation only (overrides "
+            "--affine-strength for this operation). "
+            "0.0 = disable stretching. Default: use --affine-strength."
+        ),
+    )
+    pg.add_argument(
+        "--affine-shear",
+        type=float,
+        default=None,
+        dest="affine_shear",
+        metavar="S",
+        help=(
+            "Strength of the shear operation only (overrides "
+            "--affine-strength for this operation). "
+            "0.0 = disable shearing. Default: use --affine-strength."
+        ),
+    )
+    pg.add_argument(
+        "--affine-jitter",
+        type=float,
+        default=None,
+        dest="affine_jitter",
+        metavar="S",
+        help=(
+            "Per-atom jitter scale relative to move step (overrides "
+            "--affine-strength for this operation). "
+            "0.0 = disable jitter. Default: use --affine-strength. "
+            "Has no visible effect in the generator (move_step is always 0.0)."
         ),
     )
 
@@ -549,6 +584,9 @@ def _run_sample_mode(
             cov_scale=args.cov_scale,
             relax_cycles=args.relax_cycles,
             affine_strength=args.affine_strength,
+            affine_stretch=args.affine_stretch,
+            affine_shear=args.affine_shear,
+            affine_jitter=args.affine_jitter,
             add_hydrogen=not args.no_add_hydrogen,
             n_samples=args.n_samples,
             n_success=args.n_success,

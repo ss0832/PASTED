@@ -426,9 +426,26 @@ class StructureOptimizer:
         configurations that fragment moves cannot reach efficiently.
         Default: ``False`` (backward-compatible).
     affine_strength:
-        Dimensionless scale of the affine transform (default: 0.1).
+        Global dimensionless scale of the affine transform (default: 0.1).
         At 0.1 the structure is stretched / compressed by up to ±10 % along
         a random axis and sheared by up to ±5 %.  Practical range: 0.02–0.4.
+        Has no effect when *allow_affine_moves* is ``False``.  Use
+        *affine_stretch*, *affine_shear*, and *affine_jitter* to override
+        individual operation strengths independently.
+    affine_stretch:
+        Strength of the stretch/compress operation only ∈ (0, 1).  When
+        ``None`` (default) *affine_strength* is used.  Set to ``0.0`` to
+        disable stretching while keeping shear and jitter active.
+        Has no effect when *allow_affine_moves* is ``False``.
+    affine_shear:
+        Strength of the shear operation only ∈ (0, 1).  When ``None``
+        (default) *affine_strength* is used.  Set to ``0.0`` to disable
+        shearing while keeping stretch and jitter active.
+        Has no effect when *allow_affine_moves* is ``False``.
+    affine_jitter:
+        Per-atom jitter scale ∈ (0, 1) relative to *move_step*.  When
+        ``None`` (default) *affine_strength* is used.  Set to ``0.0`` to
+        disable per-atom jitter in affine moves.
         Has no effect when *allow_affine_moves* is ``False``.
     frag_threshold:
         Local Q6 threshold for fragment selection (default: 0.3).
@@ -506,6 +523,9 @@ class StructureOptimizer:
         allow_displacements: bool = True,
         allow_affine_moves: bool = False,
         affine_strength: float = 0.1,
+        affine_stretch: float | None = None,
+        affine_shear: float | None = None,
+        affine_jitter: float | None = None,
         lcc_threshold: float = 0.0,
         cov_scale: float = 1.0,
         relax_cycles: int = 1500,
@@ -545,6 +565,9 @@ class StructureOptimizer:
         self.allow_displacements = allow_displacements
         self.allow_affine_moves = allow_affine_moves
         self.affine_strength = affine_strength
+        self.affine_stretch = affine_stretch
+        self.affine_shear = affine_shear
+        self.affine_jitter = affine_jitter
         self.lcc_threshold = lcc_threshold
         self.cov_scale = cov_scale
         self.relax_cycles = relax_cycles
@@ -814,7 +837,10 @@ class StructureOptimizer:
                 if _do_displacement:
                     if self.allow_affine_moves and rng.random() < 0.5:
                         new_positions = _affine_move(
-                            positions, self.move_step, self.affine_strength, rng
+                            positions, self.move_step, self.affine_strength, rng,
+                            affine_stretch=self.affine_stretch,
+                            affine_shear=self.affine_shear,
+                            affine_jitter=self.affine_jitter,
                         )
                     else:
                         new_positions = _fragment_move(
@@ -1018,7 +1044,10 @@ class StructureOptimizer:
             if _do_displacement:
                 if self.allow_affine_moves and rng.random() < 0.5:
                     new_positions = _affine_move(
-                        positions, self.move_step, self.affine_strength, rng
+                        positions, self.move_step, self.affine_strength, rng,
+                        affine_stretch=self.affine_stretch,
+                        affine_shear=self.affine_shear,
+                        affine_jitter=self.affine_jitter,
                     )
                 else:
                     new_positions = _fragment_move(

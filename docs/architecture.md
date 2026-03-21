@@ -42,10 +42,9 @@ src/pasted/
 ├── _placement.py        Placement algorithms + relax_positions + _affine_move
 ├── cli.py               argparse CLI entry point
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_POISSON / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH
     │                    flags; None fallbacks
-    ├── _relax.cpp       C++17: relax_positions with Verlet-list reuse (N≥64);
-    │                    Bridson Poisson-disk sampling (poisson_disk_sphere / poisson_disk_box)
+    ├── _relax.cpp       C++17: relax_positions with Verlet-list reuse (N≥64)
     ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
     ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
     └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration,
@@ -159,7 +158,7 @@ return 0.0 for every PASTED output.
 The `_ext` sub-package contains four independently compiled pybind11
 modules.  Each can be absent without affecting the others.
 
-### `_relax_core` — `relax_positions` and Poisson-disk sampling
+### `_relax_core` — `relax_positions`
 
 Resolves distance violations by L-BFGS minimization of the harmonic
 steric-clash penalty energy:
@@ -178,29 +177,6 @@ external dependencies.
 Convergence criterion: E < 1 × 10⁻⁶.  Typical iteration count: 50–300
 for dense 5000-atom structures.
 
-**Bridson Poisson-disk sampling** (added in v0.2.2):
-
-Two additional functions are exported from the same module and accessible via
-`pasted._ext` when `HAS_POISSON` is `True`:
-
-- **`_poisson_disk_sphere_cpp(n, radius, min_dist, seed=-1, k=30)`** — places
-  *n* atoms inside a sphere of *radius* Å with a guaranteed `min_dist`
-  separation between any two atoms (Bridson algorithm, flat-array grid).
-  Falls back to uniform random for any slots that could not be placed.
-- **`_poisson_disk_box_cpp(n, lx, ly, lz, min_dist, seed=-1, k=30)`** — same
-  for an axis-aligned box.
-
-`place_gas()` uses uniform random placement for performance predictability
-across all density regimes.  Call these functions directly when a
-minimum-separation guarantee is needed:
-
-```python
-from pasted._ext import HAS_POISSON, _poisson_disk_sphere_cpp
-
-if HAS_POISSON:
-    pts = _poisson_disk_sphere_cpp(n=100, radius=10.0, min_dist=1.5, seed=42)
-    # pts is an (n, 3) float64 ndarray
-```
 
 ### `_graph_core` — graph / ring / charge / Moran / RDF metrics
 
@@ -408,7 +384,7 @@ gen = StructureGenerator(n_atoms=20, charge=0, mult=1, mode="gas",
 `StructureGenerator.__getattr__` proxies attribute access to `_cfg`, so
 `gen.n_atoms`, `gen.seed`, etc. continue to work in existing code.
 
-## Affine transform in StructureGenerator (v0.2.2)
+## Affine transform in StructureGenerator (v0.2.2 / v0.2.10)
 
 When `affine_strength > 0.0`, each structure goes through an extra step
 between placement and relax:
@@ -416,7 +392,8 @@ between placement and relax:
 ```
 place_gas / place_chain / place_shell / place_maxent
           ↓
-_affine_move(positions, move_step=0.0, affine_strength, rng)
+_affine_move(positions, move_step=0.0, affine_strength, rng,
+             affine_stretch=..., affine_shear=..., affine_jitter=...)
           ↓
 relax_positions
 ```
@@ -426,6 +403,38 @@ relax_positions
 `allow_affine_moves=True`, passing `move_step=self.move_step`).  The
 Generator always passes `move_step=0.0` (pure geometric transform, no
 per-atom jitter) because a jitter before relax would simply be undone.
+
+### Per-operation strength (v0.2.10)
+
+Three optional parameters let callers adjust each affine operation
+independently without changing the global `affine_strength` baseline:
+
+| Parameter | Operation | Default |
+|---|---|---|
+| `affine_stretch` | Scale along one random axis by `Uniform(1−s, 1+s)` | `affine_strength` |
+| `affine_shear` | Off-diagonal shear by `Uniform(−s/2, s/2)` | `affine_strength` |
+| `affine_jitter` | Per-atom translation noise proportional to `move_step` | `affine_strength` |
+
+When a parameter is `None` (the default), the value of `affine_strength` is
+used — preserving full backward compatibility.  Set to `0.0` to disable a
+specific operation while keeping the others active:
+
+```python
+# Shear only — no stretch, no jitter
+gen = StructureGenerator(
+    n_atoms=20, charge=0, mult=1, mode="gas", region="sphere:8",
+    affine_strength=0.2, affine_stretch=0.0, affine_jitter=0.0,
+)
+
+# Stretch only — no shear, no jitter
+gen = StructureGenerator(
+    n_atoms=20, charge=0, mult=1, mode="gas", region="sphere:8",
+    affine_strength=0.2, affine_shear=0.0, affine_jitter=0.0,
+)
+```
+
+The same parameters are accepted by `StructureOptimizer` when
+`allow_affine_moves=True`.
 
 ---
 
@@ -439,7 +448,7 @@ per-restart structures sorted by objective value (highest first).
 | Move | Probability | Description |
 |---|---|---|
 | Fragment coordinate | 50 % (or 25 % when affine moves enabled) | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
-| Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; center of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch). |
+| Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; center of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch); each operation can be overridden individually via `affine_stretch`, `affine_shear`, `affine_jitter`. |
 | Composition | 50 % | Parity-preserving element swap or replacement (see below) |
 
 **Parity-preserving composition move** — two paths:

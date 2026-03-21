@@ -11,8 +11,6 @@ disabling all acceleration.
 Public names
 ------------
 HAS_RELAX       : bool  -- True when _relax_core is available
-HAS_POISSON     : bool  -- True when C++ Poisson-disk placement is available
-                           (same extension as HAS_RELAX; both True together)
 HAS_MAXENT      : bool  -- True when _maxent_core angular gradient is available
 HAS_MAXENT_LOOP : bool  -- True when _maxent_core full C++ L-BFGS loop is available
                            (implies HAS_MAXENT; enables the fast place_maxent_cpp path)
@@ -21,14 +19,6 @@ HAS_GRAPH       : bool  -- True when _graph_core is available
 
 relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
     Available when HAS_RELAX is True.
-
-_poisson_disk_sphere_cpp(n, radius, min_dist, seed=-1, k=30)
-    Available when HAS_POISSON is True.
-    Bridson Poisson-disk sampling inside a sphere. Returns (n, 3) float64.
-
-_poisson_disk_box_cpp(n, lx, ly, lz, min_dist, seed=-1, k=30)
-    Available when HAS_POISSON is True.
-    Bridson Poisson-disk sampling inside a box. Returns (n, 3) float64.
 
 angular_repulsion_gradient(pts, cutoff)
     Available when HAS_MAXENT is True.
@@ -61,8 +51,16 @@ Changes in v0.2.3
 Removed ``HAS_OPENMP`` and ``set_num_threads``.  Benchmarking showed that the
 OpenMP thread-pool overhead in ``compute_all_metrics`` outweighed the
 parallelism benefit for all practically relevant structure sizes (n < 30 000),
-causing a 1.4–2.5× regression versus v0.1.17.  All C++ extensions now run
+causing a 1.4--2.5x regression versus v0.1.17.  All C++ extensions now run
 single-threaded; the ``libgomp`` dependency is dropped.
+
+Changes in v0.2.10
+------------------
+Removed ``HAS_POISSON``, ``_poisson_disk_sphere_cpp``, and
+``_poisson_disk_box_cpp``.  The Python-only Poisson-disk helpers
+(``_poisson_disk_sphere``, ``_poisson_disk_box``) were similarly removed from
+``_placement.py``.  These functions were never called by any internal path
+and were not part of the stable public API.
 """
 
 from __future__ import annotations
@@ -70,31 +68,16 @@ from __future__ import annotations
 from typing import Any
 
 # ---------------------------------------------------------------------------
-# _relax_core  -- repulsion-relaxation inner loop + Poisson-disk placement
+# _relax_core  -- repulsion-relaxation inner loop
 # ---------------------------------------------------------------------------
 try:
-    from ._relax_core import (
-        poisson_disk_box as _poisson_disk_box_cpp,
-    )
-    from ._relax_core import (
-        poisson_disk_sphere as _poisson_disk_sphere_cpp,
-    )
     from ._relax_core import (  # type: ignore[import-untyped]
         relax_positions,
     )
-    HAS_RELAX: bool   = True
-    HAS_POISSON: bool = True
+    HAS_RELAX: bool = True
 except ImportError:
-    try:
-        from ._relax_core import relax_positions  # type: ignore[import-untyped]
-        HAS_RELAX   = True
-        HAS_POISSON = False
-    except ImportError:
-        relax_positions: Any = None  # type: ignore[no-redef]
-        HAS_RELAX   = False
-        HAS_POISSON = False
-    _poisson_disk_sphere_cpp: Any = None  # type: ignore[no-redef]
-    _poisson_disk_box_cpp:    Any = None  # type: ignore[no-redef]
+    relax_positions: Any = None  # type: ignore[no-redef]
+    HAS_RELAX = False
 
 # ---------------------------------------------------------------------------
 # _maxent_core  -- angular repulsion gradient + full loop (maxent only)
@@ -140,14 +123,11 @@ except ImportError:
 
 __all__ = [
     "HAS_RELAX",
-    "HAS_POISSON",
     "HAS_MAXENT",
     "HAS_MAXENT_LOOP",
     "HAS_STEINHARDT",
     "HAS_GRAPH",
     "relax_positions",
-    "_poisson_disk_sphere_cpp",
-    "_poisson_disk_box_cpp",
     "angular_repulsion_gradient",
     "place_maxent_cpp",
     "steinhardt_per_atom",

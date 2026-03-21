@@ -15,15 +15,14 @@ If none is available the package still installs and runs on pure Python/NumPy.
 Verify that the C++ extensions compiled successfully:
 
 ```python
-from pasted._ext import HAS_RELAX, HAS_POISSON, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH
-print(HAS_RELAX, HAS_POISSON, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH)
-# True True True True True True  (all extensions compiled)
+from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH
+print(HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH)
+# True True True True True  (all extensions compiled)
 ```
 
 | Flag | What it enables |
 |---|---|
 | `HAS_RELAX` | C++ L-BFGS steric-clash relaxation (~20–50× vs Python) |
-| `HAS_POISSON` | C++ Bridson Poisson-disk sampling functions (`_poisson_disk_sphere_cpp`, `_poisson_disk_box_cpp`). Same extension as `HAS_RELAX`; both are `True` together. `place_gas()` uses uniform random — call these functions directly when minimum-separation placement is needed. |
 | `HAS_MAXENT` | C++ angular-repulsion gradient for `maxent` mode |
 | `HAS_MAXENT_LOOP` | Full C++ L-BFGS loop for `place_maxent` (~10–22× vs `HAS_MAXENT_LOOP=False`) |
 | `HAS_STEINHARDT` | C++ sparse Steinhardt Q_l (~2000× vs dense Python) |

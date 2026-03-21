@@ -405,3 +405,120 @@ class TestAddHydrogen:
         assert atoms == original
 
 
+
+# ---------------------------------------------------------------------------
+# _affine_move — per-operation strength (v0.2.10)
+# ---------------------------------------------------------------------------
+
+
+class TestAffineMove:
+    """Tests for _affine_move with individual affine_stretch/shear/jitter."""
+
+    def _make_positions(self, n: int = 10) -> list:
+        rng = random.Random(0)
+        return [
+            (rng.uniform(-5, 5), rng.uniform(-5, 5), rng.uniform(-5, 5))
+            for _ in range(n)
+        ]
+
+    def _import(self):
+        from pasted._placement import _affine_move
+        return _affine_move
+
+    def test_backward_compat_none_params(self) -> None:
+        """affine_stretch/shear/jitter=None must give identical output to v0.2.9."""
+        _affine_move = self._import()
+        pos = self._make_positions()
+        rng1 = random.Random(42)
+        rng2 = random.Random(42)
+        out1 = _affine_move(pos, 0.0, 0.2, rng1)
+        out2 = _affine_move(pos, 0.0, 0.2, rng2,
+                            affine_stretch=None, affine_shear=None, affine_jitter=None)
+        for p1, p2 in zip(out1, out2, strict=True):
+            assert p1 == pytest.approx(p2, abs=1e-12)
+
+    def test_stretch_zero_no_scale_change(self) -> None:
+        """affine_stretch=0.0 → A[axis,axis] == 1.0; structure is not stretched."""
+        _affine_move = self._import()
+        # With stretch=0, no axis should be scaled. Run many seeds to confirm
+        # that the axis scale is always 1.0.
+        import numpy as np
+        for seed in range(20):
+            pos = self._make_positions(8)
+            rng = random.Random(seed)
+            out = _affine_move(pos, 0.0, 0.3, rng,
+                               affine_stretch=0.0, affine_shear=0.0)
+            # With both stretch and shear=0 and move_step=0, CoM-centered
+            # output must equal CoM-centered input (identity transform).
+            pts_in  = np.array(pos)
+            pts_out = np.array(out)
+            com_in  = pts_in.mean(axis=0)
+            com_out = pts_out.mean(axis=0)
+            np.testing.assert_allclose(
+                pts_in - com_in, pts_out - com_out, atol=1e-10,
+                err_msg=f"seed={seed}: identity transform not satisfied"
+            )
+
+    def test_shear_zero_no_off_diagonal(self) -> None:
+        """affine_shear=0.0 means only diagonal scaling is applied."""
+        _affine_move = self._import()
+        import numpy as np
+        # Run with shear=0 and stretch=0 → identity; result equals input up to CoM shift
+        for seed in range(20):
+            pos = self._make_positions(8)
+            rng = random.Random(seed)
+            out = _affine_move(pos, 0.0, 0.3, rng,
+                               affine_stretch=0.0, affine_shear=0.0)
+            pts_in  = np.array(pos) - np.array(pos).mean(axis=0)
+            pts_out = np.array(out) - np.array(out).mean(axis=0)
+            np.testing.assert_allclose(pts_in, pts_out, atol=1e-10)
+
+    def test_jitter_zero_no_noise_when_move_step_positive(self) -> None:
+        """affine_jitter=0.0 must suppress per-atom noise even when move_step>0."""
+        _affine_move = self._import()
+        import numpy as np
+        # With stretch=0 and shear=0, only jitter would change positions.
+        # With jitter=0 as well the output should equal the input (up to CoM).
+        for seed in range(20):
+            pos = self._make_positions(8)
+            rng = random.Random(seed)
+            out = _affine_move(pos, 0.5, 0.3, rng,
+                               affine_stretch=0.0, affine_shear=0.0, affine_jitter=0.0)
+            pts_in  = np.array(pos) - np.array(pos).mean(axis=0)
+            pts_out = np.array(out) - np.array(out).mean(axis=0)
+            np.testing.assert_allclose(pts_in, pts_out, atol=1e-10)
+
+    def test_individual_strength_overrides(self) -> None:
+        """affine_stretch != affine_strength must produce a different result."""
+        _affine_move = self._import()
+        pos = self._make_positions()
+        out_default = _affine_move(pos, 0.0, 0.2, random.Random(7))
+        out_override = _affine_move(pos, 0.0, 0.2, random.Random(7),
+                                    affine_stretch=0.5)
+        # At least one coordinate should differ when stretch strength changes
+        any_different = any(
+            abs(a[i] - b[i]) > 1e-12
+            for a, b in zip(out_default, out_override)
+            for i in range(3)
+        )
+        assert any_different, "affine_stretch override had no effect"
+
+    def test_output_length_preserved(self) -> None:
+        """Output must always have the same number of atoms as input."""
+        _affine_move = self._import()
+        for n in (1, 5, 20):
+            pos = self._make_positions(n)
+            out = _affine_move(pos, 0.0, 0.2, random.Random(0),
+                               affine_stretch=0.1, affine_shear=0.05, affine_jitter=0.0)
+            assert len(out) == n
+
+    def test_com_preserved(self) -> None:
+        """Center of mass must be restored to its original position after transform."""
+        _affine_move = self._import()
+        import numpy as np
+        pos = self._make_positions(15)
+        com_before = np.array(pos).mean(axis=0)
+        out = _affine_move(pos, 0.0, 0.3, random.Random(99),
+                           affine_stretch=0.3, affine_shear=0.15)
+        com_after = np.array(out).mean(axis=0)
+        np.testing.assert_allclose(com_before, com_after, atol=1e-10)

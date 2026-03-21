@@ -497,8 +497,8 @@ class StructureGenerator:
         Automatically append H atoms when H is in the pool but the sampled
         composition contains none (default: ``True``).
     affine_strength:
-        Dimensionless scale of the affine transformation applied to every
-        generated structure **before** :func:`relax_positions` (default:
+        Global dimensionless scale of the affine transformation applied to
+        every generated structure **before** :func:`relax_positions` (default:
         ``0.0`` = disabled).  When > 0 a random stretch/compress + shear is
         applied once per structure, creating more anisotropic initial
         geometries before the repulsion-relaxation step.  Practical range:
@@ -507,6 +507,23 @@ class StructureGenerator:
         identically across all placement modes (``gas``, ``chain``,
         ``shell``, ``maxent``).  ``0.0`` preserves the behavior of all
         versions prior to v0.2.3.
+
+        Use *affine_stretch*, *affine_shear*, and *affine_jitter* to override
+        individual operation strengths independently.
+    affine_stretch:
+        Strength of the stretch/compress operation only ∈ (0, 1).  When
+        ``None`` (default) *affine_strength* is used.  Set to ``0.0`` to
+        disable stretching while keeping shear and jitter active.
+    affine_shear:
+        Strength of the shear operation only ∈ (0, 1).  When ``None``
+        (default) *affine_strength* is used.  Set to ``0.0`` to disable
+        shearing while keeping stretch and jitter active.
+    affine_jitter:
+        Per-atom jitter scale ∈ (0, 1) relative to the move step.  When
+        ``None`` (default) *affine_strength* is used.  For
+        :class:`StructureGenerator` the move step is always ``0.0``, so
+        jitter is never applied during generation regardless of this value;
+        the parameter exists for symmetry with :class:`StructureOptimizer`.
     n_samples:
         Maximum number of placement attempts (default: 1).
         Use ``0`` to allow unlimited attempts (only valid when *n_success*
@@ -1020,7 +1037,10 @@ class StructureGenerator:
             # ── Optional affine transform (applied once, before relax) ────
             if self._cfg.affine_strength > 0.0:
                 positions = _affine_move(
-                    positions, 0.0, self._cfg.affine_strength, rng
+                    positions, 0.0, self._cfg.affine_strength, rng,
+                    affine_stretch=self._cfg.affine_stretch,
+                    affine_shear=self._cfg.affine_shear,
+                    affine_jitter=self._cfg.affine_jitter,
                 )
 
             positions, converged = relax_positions(

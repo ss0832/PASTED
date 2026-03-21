@@ -102,7 +102,16 @@ class GeneratorConfig:
     # ── Physics / relaxation ─────────────────────────────────────────────
     cov_scale: float = 1.0
     relax_cycles: int = 1500
+    #: Global affine transform strength. ``0.0`` disables (default).
+    #: Individual operations can be overridden via *affine_stretch*,
+    #: *affine_shear*, and *affine_jitter*.
     affine_strength: float = 0.0
+    #: Stretch/compress strength; falls back to *affine_strength* when ``None``.
+    affine_stretch: float | None = None
+    #: Shear strength; falls back to *affine_strength* when ``None``.
+    affine_shear: float | None = None
+    #: Per-atom jitter scale; falls back to *affine_strength* when ``None``.
+    affine_jitter: float | None = None
 
     # ── Maxent-mode parameters ────────────────────────────────────────────
     maxent_steps: int = 300

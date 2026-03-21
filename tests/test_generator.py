@@ -894,7 +894,7 @@ class TestAffineStrength:
 
     def _gen(self, affine_strength: float, mode: str = "gas", **kw):
         defaults = dict(n_atoms=10, charge=0, mult=1, mode=mode,
-                        region="sphere:7", elements="6,7,8",
+                        region="sphere:7", elements="6,8",
                         n_samples=5, seed=42, affine_strength=affine_strength)
         if mode != "gas":
             defaults.pop("region", None)
@@ -907,11 +907,11 @@ class TestAffineStrength:
         """affine_strength=0.0 must behave identically to no-affine (backward compat)."""
         r_no = StructureGenerator(
             n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=5, seed=99,
+            elements="6,8", n_samples=5, seed=99,
         ).generate()
         r_zero = StructureGenerator(
             n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=5, seed=99, affine_strength=0.0,
+            elements="6,8", n_samples=5, seed=99, affine_strength=0.0,
         ).generate()
         assert r_no.n_passed == r_zero.n_passed
 
@@ -921,7 +921,7 @@ class TestAffineStrength:
         def get_pos(strength):
             gen = StructureGenerator(
                 n_atoms=10, charge=0, mult=1, mode="gas", region="sphere:7",
-                elements="6,7,8", n_samples=1, seed=7, affine_strength=strength,
+                elements="6,8", n_samples=1, seed=7, affine_strength=strength,
             )
             r = gen.generate()
             if not r:
@@ -937,7 +937,7 @@ class TestAffineStrength:
     def test_affine_applies_to_chain_mode(self) -> None:
         gen = StructureGenerator(
             n_atoms=10, charge=0, mult=1, mode="chain",
-            elements="6,7,8", n_samples=3, seed=5, affine_strength=0.15,
+            elements="6,8", n_samples=3, seed=5, affine_strength=0.15,
         )
         r = gen.generate()
         assert r.n_passed >= 0  # just checks it runs without error
@@ -945,7 +945,7 @@ class TestAffineStrength:
     def test_affine_applies_to_shell_mode(self) -> None:
         gen = StructureGenerator(
             n_atoms=8, charge=0, mult=1, mode="shell",
-            elements="6,7,8,26", n_samples=3, seed=5, affine_strength=0.1,
+            elements="6,8,26", n_samples=3, seed=5, affine_strength=0.1,
         )
         r = gen.generate()
         assert r.n_passed >= 0
@@ -953,7 +953,7 @@ class TestAffineStrength:
     def test_affine_strength_stored_in_config(self) -> None:
         gen = StructureGenerator(
             n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:6",
-            elements="6,7,8", n_samples=1, seed=0, affine_strength=0.2,
+            elements="6,8", n_samples=1, seed=0, affine_strength=0.2,
         )
         assert gen.affine_strength == 0.2
 
@@ -962,7 +962,7 @@ class TestAffineStrength:
         import numpy as np
         gen = StructureGenerator(
             n_atoms=12, charge=0, mult=1, mode="gas", region="sphere:7",
-            elements="6,7,8", n_samples=3, seed=42, affine_strength=0.3,
+            elements="6,8", n_samples=3, seed=42, affine_strength=0.3,
         )
         for s in gen.stream():
             pts = np.array(s.positions)
