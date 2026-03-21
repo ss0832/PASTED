@@ -429,7 +429,7 @@ class TestStructureAttributeTypes:
     def test_positions_inner_elements_are_float64(self) -> None:
         for p in self.s.positions:
             for v in p:
-                assert isinstance(v, (float, np.floating)), (
+                assert isinstance(v, float | np.floating), (
                     f"Expected float, got {type(v).__name__}"
                 )
 
@@ -558,7 +558,7 @@ class TestEvalContextFieldTypes:
     def test_positions_inner_elements_are_float64(self) -> None:
         for p in self.ctx.positions:
             for v in p:
-                assert isinstance(v, (float, np.floating)), (
+                assert isinstance(v, (float | np.floating)), (
                     f"Expected float64, got {type(v).__name__}"
                 )
 
