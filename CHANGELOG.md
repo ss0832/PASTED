@@ -6,7 +6,7 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.3.3] — 2026-03-21
+## [0.3.3] — 2026-03-22
 
 ### Bug Fixes
 
