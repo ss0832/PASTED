@@ -566,10 +566,10 @@ def _compute_graph_ring_charge(
 def compute_all_metrics(
     atoms: list[str],
     positions: list[Vec3],
-    n_bins: int,
-    w_atom: float,
-    w_spatial: float,
-    cutoff: float,
+    n_bins: int = 20,
+    w_atom: float = 0.5,
+    w_spatial: float = 0.5,
+    cutoff: float | None = None,
     cov_scale: float = 1.0,
 ) -> dict[str, float]:
     """Compute all disorder metrics for a single structure.
@@ -605,7 +605,8 @@ def compute_all_metrics(
     w_spatial:
         Weight of ``H_spatial`` in ``H_total``.
     cutoff:
-        Distance cutoff (Å) for all local metrics.
+        Distance cutoff (Å) for all local metrics.  When None (the default),
+        auto-computed as 1.5 × median(r_i + r_j) over covalent radii.
     cov_scale:
         Retained for API compatibility; no longer used internally.
         Defaults to ``1.0``.
@@ -617,6 +618,16 @@ def compute_all_metrics(
     pts = np.array(positions, dtype=float)  # (n, 3)
     radii = np.array([_cov_radius_ang(a) for a in atoms])
     en_vals = np.array([_pauling_en(a) for a in atoms])
+
+    if cutoff is None:
+        # Auto-compute: 1.5 x median(r_i + r_j) over all pairs (same formula
+        # used by StructureGenerator._resolve_cutoff and Structure.from_xyz).
+        pair_sums = sorted(
+            radii[i] + radii[j]
+            for i in range(len(radii))
+            for j in range(i, len(radii))
+        )
+        cutoff = cov_scale * 1.5 * pair_sums[len(pair_sums) // 2]
 
     ha = compute_h_atom(atoms)
 
