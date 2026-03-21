@@ -6,6 +6,7 @@ API reference
 
    generator
    optimizer
+   config
    placement
    metrics
    atoms
