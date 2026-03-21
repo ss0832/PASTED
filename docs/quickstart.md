@@ -677,9 +677,11 @@ Passing an element pool that can *never* satisfy the parity constraint raises
 
 ```python
 # Raises ValueError: all-nitrogen pool cannot satisfy charge=0, mult=1
-# (7 electrons per atom → odd total for any n_atoms, but mult=1 requires even)
+# N has Z=7 (odd). With an all-odd-Z pool, sum(Z) parity == n_atoms % 2.
+# mult=1 requires an even number of electrons, i.e. sum(Z) must be even,
+# so n_atoms must be even — but here n_atoms=7 (odd) makes it impossible.
 StructureOptimizer(
-    n_atoms=8, charge=0, mult=1,
+    n_atoms=7, charge=0, mult=1,
     elements="7",          # nitrogen only — all-odd-Z pool
     objective={"H_total": 1.0},
 )
