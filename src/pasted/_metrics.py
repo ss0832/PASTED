@@ -171,7 +171,7 @@ def compute_rdf_deviation(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
 def compute_shape_anisotropy(pts: np.ndarray) -> float:
     """Relative shape anisotropy from the gyration tensor.
 
-    Range: 0 (spherical) to 1 (rod-like).
+    Range: [0, 1] (0=spherical, 1=rod-like).
     Returns NaN for a single atom.
     """
     if len(pts) < 2:
@@ -312,7 +312,7 @@ def compute_steinhardt(
 
 
 def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
-    """Largest connected-component fraction and mean clustering coefficient.
+    """Largest connected-component fraction and mean local clustering coefficient [0, 1].
 
     Pure-Python fallback used when ``HAS_GRAPH`` is ``False``.  The C++ path
     in ``graph_metrics_cpp`` is preferred and is invoked automatically by

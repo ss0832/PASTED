@@ -161,6 +161,11 @@ class Structure:
     def __len__(self) -> int:
         return len(self.atoms)
 
+    @property
+    def n(self) -> int:
+        """Number of atoms in the structure."""
+        return len(self.atoms)
+
     # ------------------------------------------------------------------ #
     # XYZ import                                                           #
     # ------------------------------------------------------------------ #
