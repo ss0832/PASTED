@@ -46,6 +46,7 @@ Use negative weights to penalise a metric.
 
 from __future__ import annotations
 
+import inspect
 import math
 import random
 import sys
@@ -71,10 +72,172 @@ from ._metrics import compute_all_metrics, compute_steinhardt_per_atom
 from ._placement import Vec3, _affine_move, place_gas, relax_positions
 
 # ---------------------------------------------------------------------------
+# EvalContext dataclass
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class EvalContext:
+    """Full evaluation context passed as the second argument to a 2-parameter
+    objective callable.
+
+    ``EvalContext`` consolidates every piece of information available at the
+    moment the objective function is called: the current structure (atoms,
+    positions, charge/mult), all pre-computed disorder metrics, and the live
+    optimizer state (step number, temperature, best score seen so far, etc.).
+    This design allows user-supplied objective functions to call external
+    quantum-chemistry or machine-learning potential tools without depending on
+    PASTED internals, and to implement adaptive or state-aware objectives.
+
+    Attributes — Structure
+    ----------------------
+    atoms:
+        Element symbols for the current candidate structure, one per atom
+        (e.g. ``("C", "H", "O", ...)``).
+    positions:
+        Cartesian coordinates in Å, one ``(x, y, z)`` tuple per atom.
+    charge:
+        Total system charge.
+    mult:
+        Spin multiplicity 2S+1.
+    n_atoms:
+        Number of atoms (``len(atoms)``).
+    metrics:
+        Computed disorder metrics dict — same reference as the ``m`` argument
+        in the objective callable.  Treat as read-only.
+
+    Attributes — Optimizer Runtime State
+    -------------------------------------
+    step:
+        Current MC step index, 0-based.  Ranges from 0 to ``max_steps - 1``.
+        Useful for progress-dependent or curriculum objectives.
+    max_steps:
+        Total number of MC steps per restart.
+    temperature:
+        Current temperature at this step.  For ``"annealing"`` this decreases
+        exponentially; for ``"basin_hopping"`` it is fixed at ``T_start``; for
+        ``"parallel_tempering"`` it is this replica's fixed temperature.
+    f_current:
+        Objective value of the most recently *accepted* state.  Use this to
+        compute improvement margins or relative scores.
+    best_f:
+        Best objective value seen across all steps so far in this restart.
+    restart_idx:
+        0-based index of the current restart.
+    n_restarts:
+        Total number of restarts configured.
+    per_atom_q6:
+        Per-atom Steinhardt Q6 values from the *previous accepted* step
+        (shape ``[n_atoms]``, dtype ``float64``).  Already computed by the
+        optimizer loop; available at zero additional cost.
+        Treat the array as read-only — it is a reference, not a copy.
+
+    Attributes — Parallel Tempering (``None`` for other methods)
+    -------------------------------------------------------------
+    replica_idx:
+        0-based index of the current replica (0 = coldest, ``n_replicas - 1``
+        = hottest).  ``None`` when ``method != "parallel_tempering"``.
+    replica_temperature:
+        This replica's fixed temperature.  ``None`` when
+        ``method != "parallel_tempering"``.
+    n_replicas:
+        Total number of replicas.  ``None`` when
+        ``method != "parallel_tempering"``.
+
+    Attributes — Optimizer Configuration
+    -------------------------------------
+    element_pool:
+        Tuple of element symbols available for composition moves.
+    cutoff:
+        Distance cutoff in Å used for Steinhardt and graph metrics.
+    method:
+        Optimization method: ``"annealing"``, ``"basin_hopping"``, or
+        ``"parallel_tempering"``.
+    T_start:
+        Starting temperature.
+    T_end:
+        Ending temperature (for ``"annealing"``).
+    seed:
+        Random seed, or ``None`` if unseeded.
+    """
+
+    # ── Structure ─────────────────────────────────────────────────────────
+    atoms:     tuple[str, ...]
+    positions: tuple[tuple[float, float, float], ...]
+    charge:    int
+    mult:      int
+    n_atoms:   int
+    metrics:   dict[str, float]
+
+    # ── Optimizer runtime state ────────────────────────────────────────────
+    step:         int
+    max_steps:    int
+    temperature:  float
+    f_current:    float
+    best_f:       float
+    restart_idx:  int
+    n_restarts:   int
+    per_atom_q6:  np.ndarray   # shape [n_atoms], dtype float64; treat as read-only
+
+    # ── Parallel Tempering (None for non-PT methods) ───────────────────────
+    replica_idx:         int   | None
+    replica_temperature: float | None
+    n_replicas:          int   | None
+
+    # ── Optimizer configuration ────────────────────────────────────────────
+    element_pool: tuple[str, ...]
+    cutoff:       float
+    method:       str
+    T_start:      float
+    T_end:        float
+    seed:         int | None
+
+    # ── Convenience methods ────────────────────────────────────────────────
+
+    def to_xyz(self, comment: str = "") -> str:
+        """Return a well-formed XYZ-format string for the current structure.
+
+        The string is suitable for writing directly to a ``.xyz`` file and
+        passing to external tools such as xTB, ORCA, or any ASE calculator.
+
+        Parameters
+        ----------
+        comment:
+            Optional comment placed on the second line of the XYZ block.
+            When empty, a default comment containing charge and multiplicity
+            is generated automatically.
+
+        Returns
+        -------
+        str
+            Multi-line XYZ string (no trailing newline).
+        """
+        if not comment:
+            comment = f"charge={self.charge} mult={self.mult}"
+        lines = [str(self.n_atoms), comment]
+        for sym, (x, y, z) in zip(self.atoms, self.positions):
+            lines.append(f"{sym:4s}  {x:14.8f}  {y:14.8f}  {z:14.8f}")
+        return "\n".join(lines)
+
+    @property
+    def progress(self) -> float:
+        """Fractional progress of the current restart: ``step / max_steps``.
+
+        Returns a float in ``[0.0, 1.0)`` useful for curriculum-style
+        objectives that change behavior over the course of a run.
+        """
+        return self.step / max(self.max_steps, 1)
+
+
+# ---------------------------------------------------------------------------
 # Public type alias
 # ---------------------------------------------------------------------------
 
-ObjectiveType = dict[str, float] | Callable[[dict[str, float]], float]
+ObjectiveType = (
+    dict[str, float]
+    | Callable[[dict[str, float]], float]
+    | Callable[[dict[str, float], "EvalContext"], float]
+)
 
 # ---------------------------------------------------------------------------
 # OptimizationResult
@@ -230,11 +393,189 @@ def parse_objective_spec(specs: list[str]) -> dict[str, float]:
 def _eval_objective(
     metrics: dict[str, float],
     objective: ObjectiveType,
+    ctx: EvalContext | None = None,
 ) -> float:
-    """Evaluate the scalar objective from a metrics dict."""
-    if callable(objective):
-        return float(objective(metrics))
-    return float(sum(w * metrics.get(k, 0.0) for k, w in objective.items()))
+    """Evaluate the scalar objective from a metrics dict.
+
+    Dispatches based on the number of *required* positional parameters:
+
+    * **1 parameter** ``f(m)`` — legacy; ``m`` is the metrics dict.
+    * **2 parameters** ``f(m, ctx)`` — extended; ``ctx`` is an
+      :class:`EvalContext` carrying the full structure and optimizer state.
+
+    Parameters
+    ----------
+    metrics:
+        Computed disorder metrics.
+    objective:
+        Dict, 1-arg callable, or 2-arg callable.
+    ctx:
+        Pre-built :class:`EvalContext`.  Must be non-None when a 2-arg
+        callable is supplied; raises :class:`ValueError` otherwise.
+    """
+    if not callable(objective):
+        return float(sum(w * metrics.get(k, 0.0) for k, w in objective.items()))
+
+    try:
+        sig = inspect.signature(objective)
+        n_required = sum(
+            1 for p in sig.parameters.values()
+            if p.default is inspect.Parameter.empty
+            and p.kind not in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+        )
+    except (ValueError, TypeError):
+        n_required = 1  # fallback: legacy 1-arg
+
+    if n_required >= 2:
+        if ctx is None:
+            raise ValueError(
+                "A 2-argument objective callable was supplied but EvalContext "
+                "was not provided to _eval_objective.  This is an internal error."
+            )
+        return float(objective(metrics, ctx))  # type: ignore[call-arg]
+
+    return float(objective(metrics))  # type: ignore[call-arg]
+
+
+def _objective_needs_ctx(objective: ObjectiveType) -> bool:
+    """Return ``True`` iff *objective* requires a second :class:`EvalContext` argument.
+
+    The check is performed once at optimizer construction time (cached on the
+    instance) so that :func:`inspect.signature` is not called on every MC step.
+
+    Parameters
+    ----------
+    objective:
+        Dict, 1-arg callable, or 2-arg callable.
+
+    Returns
+    -------
+    bool
+        ``True`` when the callable has two or more required positional
+        parameters; ``False`` for dicts and 1-arg callables.
+    """
+    if not callable(objective):
+        return False
+    try:
+        sig = inspect.signature(objective)
+        n_required = sum(
+            1 for p in sig.parameters.values()
+            if p.default is inspect.Parameter.empty
+            and p.kind not in (
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            )
+        )
+        return n_required >= 2
+    except (ValueError, TypeError):
+        return False
+
+
+def _make_ctx(
+    atoms: list[str],
+    positions: list,
+    metrics: dict[str, float],
+    charge: int,
+    mult: int,
+    step: int,
+    max_steps: int,
+    temperature: float,
+    f_current: float,
+    best_f: float,
+    restart_idx: int,
+    n_restarts: int,
+    per_atom_q6: np.ndarray,
+    element_pool: list[str],
+    cutoff: float,
+    method: str,
+    T_start: float,
+    T_end: float,
+    seed: int | None,
+    replica_idx: int | None = None,
+    replica_temperature: float | None = None,
+    n_replicas: int | None = None,
+) -> EvalContext:
+    """Construct an :class:`EvalContext` from optimizer loop variables.
+
+    Parameters
+    ----------
+    atoms:
+        Current atom element list.
+    positions:
+        Current Cartesian coordinates (list of 3-tuples, Å).
+    metrics:
+        Pre-computed disorder metrics for the candidate structure.
+    charge:
+        System charge.
+    mult:
+        Spin multiplicity.
+    step:
+        Current MC step index (0-based).
+    max_steps:
+        Total MC steps per restart.
+    temperature:
+        Current temperature.
+    f_current:
+        Objective value of the last accepted state.
+    best_f:
+        Best objective value seen so far in this restart.
+    restart_idx:
+        0-based restart index.
+    n_restarts:
+        Total number of restarts.
+    per_atom_q6:
+        Per-atom Q6 array from the previous accepted step.
+    element_pool:
+        Element pool list.
+    cutoff:
+        Distance cutoff (Å).
+    method:
+        Optimization method name.
+    T_start:
+        Starting temperature.
+    T_end:
+        Ending temperature.
+    seed:
+        Random seed or ``None``.
+    replica_idx:
+        PT replica index, or ``None`` for non-PT methods.
+    replica_temperature:
+        PT replica temperature, or ``None`` for non-PT methods.
+    n_replicas:
+        Total PT replica count, or ``None`` for non-PT methods.
+
+    Returns
+    -------
+    EvalContext
+    """
+    return EvalContext(
+        atoms=tuple(atoms),
+        positions=tuple(tuple(p) for p in positions),
+        charge=charge,
+        mult=mult,
+        n_atoms=len(atoms),
+        metrics=metrics,
+        step=step,
+        max_steps=max_steps,
+        temperature=temperature,
+        f_current=f_current,
+        best_f=best_f,
+        restart_idx=restart_idx,
+        n_restarts=n_restarts,
+        per_atom_q6=per_atom_q6,
+        element_pool=tuple(element_pool),
+        cutoff=cutoff,
+        method=method,
+        T_start=T_start,
+        T_end=T_end,
+        seed=seed,
+        replica_idx=replica_idx,
+        replica_temperature=replica_temperature,
+        n_replicas=n_replicas,
+    )
 
 
 def _fragment_move(
@@ -373,10 +714,31 @@ class StructureOptimizer:
     mult:
         Spin multiplicity 2S+1.
     objective:
-        Weight dict ``{"METRIC": weight, ...}`` or any callable
-        ``(metrics: dict[str, float]) -> float``.
-        The optimizer **maximizes** the scalar value.
-        Use negative weights to penalise a metric.
+        Weight dict ``{"METRIC": weight, ...}`` or any callable.
+        The optimizer **maximizes** the returned scalar.
+
+        Two calling conventions are supported:
+
+        * **1-argument** ``f(m)`` — ``m`` is a ``dict[str, float]`` of
+          disorder metrics.  Fully backward-compatible.
+        * **2-argument** ``f(m, ctx)`` — ``m`` is the same metrics dict;
+          ``ctx`` is an :class:`EvalContext` that exposes:
+
+          - Structure: ``ctx.atoms``, ``ctx.positions``, ``ctx.charge``,
+            ``ctx.mult``, ``ctx.n_atoms``, ``ctx.to_xyz()``
+          - Optimizer state: ``ctx.step``, ``ctx.temperature``,
+            ``ctx.f_current``, ``ctx.best_f``, ``ctx.progress``,
+            ``ctx.per_atom_q6``, ``ctx.restart_idx``
+          - Configuration: ``ctx.element_pool``, ``ctx.cutoff``,
+            ``ctx.method``, ``ctx.T_start``, ``ctx.T_end``, ``ctx.seed``
+          - PT-only (``None`` for other methods): ``ctx.replica_idx``,
+            ``ctx.replica_temperature``, ``ctx.n_replicas``
+
+        Dispatch is based on the number of *required* positional parameters
+        via :func:`inspect.signature`.  A callable with a default for the
+        second argument (``lambda m, ctx=None:``) is treated as 1-argument.
+        :class:`EvalContext` construction is skipped entirely for 1-argument
+        and dict objectives — no overhead for existing code.
     elements:
         Element pool — spec string (``"6,7,8"``), list of symbols, or
         ``None`` for all Z = 1–106.  When a list is given, duplicate
@@ -579,6 +941,10 @@ class StructureOptimizer:
         self.pt_swap_interval = pt_swap_interval
         self.seed = seed
         self.verbose = verbose
+
+        # Arity cache — inspect.signature is called once here so that the hot
+        # MC loop can skip it on every step.
+        self._needs_ctx: bool = _objective_needs_ctx(self.objective)
 
         # Element pool
         # When *elements* is a list, callers sometimes pass repeated symbols
@@ -784,9 +1150,23 @@ class StructureOptimizer:
                 a, p, self.n_bins, self.w_atom, self.w_spatial,
                 self._cutoff, self.cov_scale,
             )
-            f = _eval_objective(m, self.objective)
             pts = np.array(p)
             q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)["Q6"]
+            ctx = (
+                _make_ctx(
+                    a, p, m, self.charge, self.mult,
+                    step=0, max_steps=self.max_steps,
+                    temperature=temps[k], f_current=0.0, best_f=0.0,
+                    restart_idx=restart_idx, n_restarts=self.n_restarts,
+                    per_atom_q6=q6,
+                    element_pool=self._element_pool, cutoff=self._cutoff,
+                    method=self.method, T_start=self.T_start, T_end=self.T_end,
+                    seed=self.seed,
+                    replica_idx=k, replica_temperature=temps[k], n_replicas=n_rep,
+                )
+                if self._needs_ctx else None
+            )
+            f = _eval_objective(m, self.objective, ctx=ctx)
 
             states_atoms.append(a)
             states_positions.append(p)
@@ -883,7 +1263,22 @@ class StructureOptimizer:
                     new_atoms, new_positions, self.n_bins,
                     self.w_atom, self.w_spatial, self._cutoff, self.cov_scale,
                 )
-                f_new = _eval_objective(new_metrics, self.objective)
+                ctx = (
+                    _make_ctx(
+                        new_atoms, new_positions, new_metrics,
+                        self.charge, self.mult,
+                        step=step, max_steps=self.max_steps,
+                        temperature=T_k, f_current=f_k, best_f=best_f,
+                        restart_idx=restart_idx, n_restarts=self.n_restarts,
+                        per_atom_q6=states_q6[k],
+                        element_pool=self._element_pool, cutoff=self._cutoff,
+                        method=self.method, T_start=self.T_start, T_end=self.T_end,
+                        seed=self.seed,
+                        replica_idx=k, replica_temperature=temps[k], n_replicas=n_rep,
+                    )
+                    if self._needs_ctx else None
+                )
+                f_new = _eval_objective(new_metrics, self.objective, ctx=ctx)
 
                 if new_metrics.get("graph_lcc", 0.0) < self.lcc_threshold:
                     continue
@@ -1001,7 +1396,7 @@ class StructureOptimizer:
     # Single restart                                                       #
     # ------------------------------------------------------------------ #
 
-    def _run_one(self, initial: Structure, restart_idx: int) -> Structure:
+    def _run_one(self, initial: Structure, restart_idx: int) -> tuple[float, Structure]:
         rng = random.Random(
             None if self.seed is None else self.seed + restart_idx * 97
         )
@@ -1019,10 +1414,23 @@ class StructureOptimizer:
             atoms, positions, self.n_bins, self.w_atom, self.w_spatial, self._cutoff,
             self.cov_scale,
         )
-        f_current = _eval_objective(metrics, self.objective)
         per_atom_q6: np.ndarray = compute_steinhardt_per_atom(pts, [6], self._cutoff)[
             "Q6"
         ]
+        ctx0 = (
+            _make_ctx(
+                atoms, positions, metrics, self.charge, self.mult,
+                step=0, max_steps=self.max_steps,
+                temperature=self._temperature(0), f_current=0.0, best_f=0.0,
+                restart_idx=restart_idx, n_restarts=self.n_restarts,
+                per_atom_q6=per_atom_q6,
+                element_pool=self._element_pool, cutoff=self._cutoff,
+                method=self.method, T_start=self.T_start, T_end=self.T_end,
+                seed=self.seed,
+            )
+            if self._needs_ctx else None
+        )
+        f_current = _eval_objective(metrics, self.objective, ctx=ctx0)
 
         best_atoms = list(atoms)
         best_positions = list(positions)
@@ -1095,7 +1503,21 @@ class StructureOptimizer:
                 self._cutoff,
                 self.cov_scale,
             )
-            f_new = _eval_objective(new_metrics, self.objective)
+            ctx = (
+                _make_ctx(
+                    new_atoms, new_positions, new_metrics,
+                    self.charge, self.mult,
+                    step=step, max_steps=self.max_steps,
+                    temperature=T, f_current=f_current, best_f=best_f,
+                    restart_idx=restart_idx, n_restarts=self.n_restarts,
+                    per_atom_q6=per_atom_q6,
+                    element_pool=self._element_pool, cutoff=self._cutoff,
+                    method=self.method, T_start=self.T_start, T_end=self.T_end,
+                    seed=self.seed,
+                )
+                if self._needs_ctx else None
+            )
+            f_new = _eval_objective(new_metrics, self.objective, ctx=ctx)
 
             # ── Hard connectivity constraint ──────────────────────────────
             if new_metrics.get("graph_lcc", 0.0) < self.lcc_threshold:
@@ -1136,7 +1558,7 @@ class StructureOptimizer:
                     + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
                 )
 
-        return Structure(
+        return best_f, Structure(
             atoms=best_atoms,
             positions=best_positions,
             charge=self.charge,
@@ -1232,8 +1654,7 @@ class StructureOptimizer:
                 continue
 
             n_attempted += 1
-            result = self._run_one(init, r)
-            f = _eval_objective(result.metrics, self.objective)
+            f, result = self._run_one(init, r)
             self._log(f"[optimize] restart {r + 1}/{self.n_restarts} done: f={f:.4f}")
             all_results.append((f, result))
 

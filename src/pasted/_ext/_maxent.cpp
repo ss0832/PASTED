@@ -1,6 +1,6 @@
 /**
- * pasted._ext._maxent_core  (v0.2.1)
- * =====================================
+ * pasted._ext._maxent_core  (v0.2.11)
+ * ======================================
  * Two exported functions:
  *
  *   angular_repulsion_gradient(pts, cutoff)
@@ -21,24 +21,20 @@
  *           7. Centre-of-mass pinning
  *           8. Steric-clash relaxation (L-BFGS penalty, same as _relax_core)
  *
- * Memory management (v0.2.1)
- * --------------------------
- * The inner loop previously re-allocated three large structures every step:
+ * Memory management
+ * -----------------
+ * build_nb_inplace() clears inner vectors (keeps capacity) and refills on
+ * each step.  eval_angular() accepts tgrad_scratch and ux_s/uy_s/uz_s/id_s
+ * by reference; place_maxent_cpp_impl allocates them once before the loop.
+ * Serial path resizes ux_s/... lazily (only grows).
  *
- *   build_nb()    → vector<vector<int>>     (~1.5 MB at n=50 000)
- *   eval_angular  → tgrad vector<vector<double>> (~9 MB at n=50 000, 8 threads)
- *   eval_angular  → per-atom ux/uy/uz/id vectors (~12 MB at n=50 000)
+ * The OpenMP scaffold (tgrad_scratch as vector<vector<double>>, ea_nthreads
+ * detection, #pragma omp parallel for in eval_angular) has been removed:
+ * libgomp was never linked in the distributed wheels, so the #else serial
+ * branch was always the active path.  tgrad_scratch is now a flat
+ * vector<double> and grad[] is written directly without a merge pass.
  *
- * With maxent_steps=300 this produced ~5–13 GB of heap churn per structure.
- *
- * v0.2.1 fixes:
- *   1. build_nb_inplace(): clears inner vectors (keeps capacity) and refills.
- *   2. eval_angular() accepts tgrad_scratch and ux_s/uy_s/uz_s/id_s by
- *      reference; place_maxent_cpp_impl allocates them once before the loop.
- *      Serial path resizes ux_s/... lazily (only grows).  Parallel path
- *      keeps thread-private locals (stack-allocated per atom, safe).
- *
- * Dependencies: C++17 stdlib + pybind11.  OpenMP optional (-fopenmp, Linux).
+ * Dependencies: C++17 stdlib + pybind11.  No OpenMP.
  */
 
 #include <pybind11/pybind11.h>
@@ -51,10 +47,6 @@
 #include <random>
 #include <unordered_map>
 #include <vector>
-
-#ifdef _OPENMP
-#  include <omp.h>
-#endif
 
 namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
@@ -277,105 +269,28 @@ static std::vector<std::vector<int>> build_nb(const double* p, int n, double cut
 // U = Σ_i Σ_{j<k∈N(i)} 2/(1−cosθ_{jk}+ε)
 // Gradient matches v0.1.14 accumulate_gradient (both j,k orderings summed).
 // ===========================================================================
-// tgrad_scratch: nthreads persistent gradient buffers, zeroed on entry.
-// ux_s/uy_s/uz_s/id_s: persistent unit-vector scratch (serial path), resized lazily.
+// tgrad_scratch: persistent gradient buffer, zeroed on entry.
+// ux_s/uy_s/uz_s/id_s: persistent unit-vector scratch, resized lazily.
 static double eval_angular(const double* p, int n,
     const std::vector<std::vector<int>>& nb, double* grad,
-    std::vector<std::vector<double>>& tgrad_scratch,
+    std::vector<double>& tgrad_scratch,
     std::vector<double>& ux_s, std::vector<double>& uy_s,
     std::vector<double>& uz_s, std::vector<double>& id_s)
 {
     double U = 0.0;
+    // Zero the output gradient buffer (matches original behavior: each call
+    // produces a fresh gradient, not an accumulated sum across calls).
     if (grad) std::fill(grad, grad + 3*n, 0.0);
 
-#ifdef _OPENMP
-    const int nthreads = omp_get_max_threads();
-#else
-    const int nthreads = 1;
-#endif
     // Reuse persistent tgrad_scratch; adapt size if needed, then zero.
-    if (static_cast<int>(tgrad_scratch.size()) != nthreads ||
-        (!tgrad_scratch.empty() &&
-         static_cast<int>(tgrad_scratch[0].size()) != n * 3)) {
-        tgrad_scratch.assign(
-            static_cast<std::size_t>(nthreads),
-            std::vector<double>(static_cast<std::size_t>(n * 3), 0.0));
+    const std::size_t needed = static_cast<std::size_t>(n * 3);
+    if (tgrad_scratch.size() != needed) {
+        tgrad_scratch.assign(needed, 0.0);
     } else {
-        for (auto& tg : tgrad_scratch) std::fill(tg.begin(), tg.end(), 0.0);
+        std::fill(tgrad_scratch.begin(), tgrad_scratch.end(), 0.0);
     }
-    auto& tgrad = tgrad_scratch;
 
-#ifdef _OPENMP
-    // A guard: only use OpenMP when > 2 threads are available
-    if (nthreads > 2) {
-#pragma omp parallel for schedule(dynamic,16) reduction(+:U)
-        for (int i = 0; i < n; ++i) {
-            const int tid = omp_get_thread_num();
-            const auto& nbi = nb[static_cast<std::size_t>(i)];
-            std::size_t nc = nbi.size();
-            if (nc < 2) continue;
-
-            std::vector<double> ux(nc), uy(nc), uz(nc), id(nc);
-            for (std::size_t idx = 0; idx < nc; ++idx) {
-                int j = nbi[idx];
-                double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
-                double d = std::sqrt(dx*dx+dy*dy+dz*dz);
-                if (d > 0) { double inv = 1.0/d; ux[idx]=dx*inv; uy[idx]=dy*inv; uz[idx]=dz*inv; id[idx]=inv; }
-                else { ux[idx]=uy[idx]=uz[idx]=id[idx]=0; }
-            }
-
-            auto& tg = tgrad[static_cast<std::size_t>(tid)];
-            for (std::size_t ji = 0; ji < nc; ++ji) {
-                if (id[ji] <= 0) continue;
-                double idj = id[ji], ujx = ux[ji], ujy = uy[ji], ujz = uz[ji];
-                for (std::size_t ki = 0; ki < nc; ++ki) {
-                    double cv  = ujx*ux[ki]+ujy*uy[ki]+ujz*uz[ki];
-                    double den = 1.0 - cv + EPS;
-                    if (ki > ji) U += 2.0/den;
-                    if (grad) {
-                        double w = 1.0/(den*den);
-                        tg[i*3  ] += w*(ux[ki]-cv*ujx)*idj;
-                        tg[i*3+1] += w*(uy[ki]-cv*ujy)*idj;
-                        tg[i*3+2] += w*(uz[ki]-cv*ujz)*idj;
-                    }
-                }
-            }
-        }
-    } else {
-        // Serial path: reuse persistent ux_s/uy_s/uz_s/id_s scratch.
-        for (int i = 0; i < n; ++i) {
-            const auto& nbi = nb[static_cast<std::size_t>(i)];
-            const std::size_t nc = nbi.size();
-            if (nc < 2) continue;
-            if (ux_s.size() < nc) { ux_s.resize(nc); uy_s.resize(nc); uz_s.resize(nc); id_s.resize(nc); }
-            for (std::size_t idx = 0; idx < nc; ++idx) {
-                int j = nbi[idx];
-                double dx = p[i*3]-p[j*3], dy = p[i*3+1]-p[j*3+1], dz = p[i*3+2]-p[j*3+2];
-                double d = std::sqrt(dx*dx+dy*dy+dz*dz);
-                if (d > 0) { double inv = 1.0/d; ux_s[idx]=dx*inv; uy_s[idx]=dy*inv; uz_s[idx]=dz*inv; id_s[idx]=inv; }
-                else { ux_s[idx]=uy_s[idx]=uz_s[idx]=id_s[idx]=0; }
-            }
-            auto& tg = tgrad[0];
-            for (std::size_t ji = 0; ji < nc; ++ji) {
-                if (id_s[ji] <= 0) continue;
-                double idj = id_s[ji], ujx = ux_s[ji], ujy = uy_s[ji], ujz = uz_s[ji];
-                for (std::size_t ki = 0; ki < nc; ++ki) {
-                    double cv  = ujx*ux_s[ki]+ujy*uy_s[ki]+ujz*uz_s[ki];
-                    double den = 1.0 - cv + EPS;
-                    if (ki > ji) U += 2.0/den;
-                    if (grad) {
-                        double w = 1.0/(den*den);
-                        tg[i*3  ] += w*(ux_s[ki]-cv*ujx)*idj;
-                        tg[i*3+1] += w*(uy_s[ki]-cv*ujy)*idj;
-                        tg[i*3+2] += w*(uz_s[ki]-cv*ujz)*idj;
-                    }
-                }
-            }
-        }
-    }
-#else
     for (int i = 0; i < n; ++i) {
-        const int tid = 0;
         const auto& nbi = nb[static_cast<std::size_t>(i)];
         const std::size_t nc = nbi.size();
         if (nc < 2) continue;
@@ -387,7 +302,6 @@ static double eval_angular(const double* p, int n,
             if (d > 0) { double inv = 1.0/d; ux_s[idx]=dx*inv; uy_s[idx]=dy*inv; uz_s[idx]=dz*inv; id_s[idx]=inv; }
             else { ux_s[idx]=uy_s[idx]=uz_s[idx]=id_s[idx]=0; }
         }
-        auto& tg = tgrad[static_cast<std::size_t>(tid)];
         for (std::size_t ji = 0; ji < nc; ++ji) {
             if (id_s[ji] <= 0) continue;
             double idj = id_s[ji], ujx = ux_s[ji], ujy = uy_s[ji], ujz = uz_s[ji];
@@ -397,20 +311,18 @@ static double eval_angular(const double* p, int n,
                 if (ki > ji) U += 2.0/den;
                 if (grad) {
                     double w = 1.0/(den*den);
-                    tg[i*3  ] += w*(ux_s[ki]-cv*ujx)*idj;
-                    tg[i*3+1] += w*(uy_s[ki]-cv*ujy)*idj;
-                    tg[i*3+2] += w*(uz_s[ki]-cv*ujz)*idj;
+                    tgrad_scratch[i*3  ] += w*(ux_s[ki]-cv*ujx)*idj;
+                    tgrad_scratch[i*3+1] += w*(uy_s[ki]-cv*ujy)*idj;
+                    tgrad_scratch[i*3+2] += w*(uz_s[ki]-cv*ujz)*idj;
                 }
             }
         }
     }
-#endif
 
-    // Merge thread-local gradients
+    // Write accumulated gradient to output buffer (grad was zeroed above).
     if (grad) {
-        for (int t = 0; t < nthreads; ++t)
-            for (int k = 0; k < n*3; ++k)
-                grad[k] += tgrad[static_cast<std::size_t>(t)][k];
+        for (int k = 0; k < n*3; ++k)
+            grad[k] = tgrad_scratch[static_cast<std::size_t>(k)];
     }
     return U;
 }
@@ -453,14 +365,7 @@ F64Array place_maxent_cpp_impl(
     int bptr=0,bcnt=0;
     Vec g(dim),gn(dim),q(dim),rl(dim),dd(dim),xt(dim);
     // Persistent scratch for eval_angular — allocated once, reused every step.
-#ifdef _OPENMP
-    const int ea_nthreads = omp_get_max_threads();
-#else
-    const int ea_nthreads = 1;
-#endif
-    std::vector<std::vector<double>> tgrad_scratch(
-        static_cast<std::size_t>(ea_nthreads),
-        std::vector<double>(static_cast<std::size_t>(dim), 0.0));
+    std::vector<double> tgrad_scratch(static_cast<std::size_t>(dim), 0.0);
     std::vector<double> ux_s, uy_s, uz_s, id_s;
     // Persistent nb — cleared and rebuilt each step (avoids dealloc/realloc).
     std::vector<std::vector<int>> nb_scratch(static_cast<std::size_t>(n));
@@ -543,8 +448,7 @@ F64Array angular_repulsion_gradient_cpp(F64Array pts_in, double cutoff){
     std::fill(g,g+n*3,0.0);
     auto nb=build_nb(p,n,cutoff,n>=CELL_LIST_THRESHOLD);
     // Local scratch for single-call path (not in hot loop).
-    std::vector<std::vector<double>> tg_local(1,
-        std::vector<double>(static_cast<std::size_t>(n*3),0.0));
+    std::vector<double> tg_local(static_cast<std::size_t>(n*3), 0.0);
     std::vector<double> ux_l,uy_l,uz_l,id_l;
     eval_angular(p,n,nb,g,tg_local,ux_l,uy_l,uz_l,id_l);
     return grad_out;}

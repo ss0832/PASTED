@@ -1,6 +1,6 @@
 /**
- * pasted._ext._relax_core  (v0.2.1)
- * ===================================
+ * pasted._ext._relax_core  (v0.2.11)
+ * ====================================
  * L-BFGS minimisation of the harmonic steric-clash penalty energy:
  *
  *   E = sum_{i<j}  0.5 * max(0,  d_thr_ij - d_ij)^2
@@ -10,7 +10,7 @@
  *
  * Dependencies
  * ------------
- * C++17 standard library only.  OpenMP optional (Linux, -fopenmp).
+ * C++17 standard library only.  No OpenMP.
  *
  * Architecture
  * ------------
@@ -19,27 +19,17 @@
  *   PenaltyEvaluator      — computes E and analytical gradient in O(N·k)
  *   lbfgs_minimize()      — L-BFGS, history m=7, Armijo backtracking
  *
- * Memory management (v0.2.1)
- * --------------------------
- * PenaltyEvaluator holds two persistent scratch members:
+ * Memory management
+ * -----------------
+ * PenaltyEvaluator holds one persistent scratch member:
  *
- *   pairs_  (vector<pair<int,int>>)       — pair list; cleared (capacity kept)
- *                                           and rebuilt each evaluate() call.
- *   tgrad_  (vector<vector<double>>)      — per-thread gradient buffers
- *                                           (nthreads × 3N × 8 B); zeroed with
- *                                           std::fill on each call, never freed.
+ *   pairs_  (vector<pair<int,int>>)  — pair list; cleared (capacity kept)
+ *                                      and rebuilt each evaluate() call.
  *
- * This eliminates the multi-GB malloc/free churn that occurred at large N
- * (e.g. ~8 GB / structure at n=150 000, 8 threads, 300 L-BFGS iterations).
- *
- * OpenMP / A+B guard (v0.2.0+)
- * -----------------------------
- * The parallel pair loop fires only when BOTH:
- *   A) omp_get_max_threads() > 2   (avoid overhead on ≤2-core machines), AND
- *   B) pairs_.size() >= PAIR_PARALLEL_THRESHOLD (50 000)  (enough work to
- *      amortise thread-spawn and tgrad-merge cost).
- * On ≤2 threads the serial path writes directly into grad[], bypassing tgrad_
- * allocation overhead entirely.
+ * The per-thread tgrad_ scratch used in earlier versions has been removed:
+ * libgomp was never linked in the distributed wheels, so the #else serial
+ * branch was always the active path.  The pair loop now writes directly
+ * into grad[], eliminating the per-evaluate() zero-fill and merge pass.
  *
  * Python API
  * ----------
@@ -58,10 +48,6 @@
 #include <unordered_map>
 #include <vector>
 
-#ifdef _OPENMP
-#  include <omp.h>
-#endif
-
 namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 
@@ -69,7 +55,6 @@ using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
 // Compile-time constants
 // ---------------------------------------------------------------------------
 static constexpr int    CELL_LIST_THRESHOLD     = 64;
-static constexpr int    PAIR_PARALLEL_THRESHOLD = 50000; // A+B guard: min pairs to use OpenMP
 static constexpr int    LBFGS_M                 = 7;
 static constexpr double ENERGY_TOL          = 1e-12; // per-pair residual < sqrt(2e-12) ~ 1.4e-6 Ang
 static constexpr double ARMIJO_C1           = 1e-4;
@@ -235,7 +220,6 @@ class PenaltyEvaluator {
     FlatCellList  cl_;
     // Persistent scratch — allocated once, reused every evaluate() call.
     std::vector<std::pair<int,int>>  pairs_;
-    std::vector<std::vector<double>> tgrad_;
     // Verlet tracking
     int  eval_count_    = 0;   // number of evaluate() calls since last rebuild
     bool needs_rebuild_ = true;
@@ -257,13 +241,6 @@ public:
         cell_size_     = std::max(1e-6, cov_scale_ * 2.0 * max_r);
         const double skin = std::min(VERLET_SKIN_MAX, cell_size_ * VERLET_SKIN_FRAC);
         cell_size_ext_ = cell_size_ + skin;
-#ifdef _OPENMP
-        const int nthreads = omp_get_max_threads();
-#else
-        const int nthreads = 1;
-#endif
-        tgrad_.assign(static_cast<std::size_t>(nthreads),
-                      std::vector<double>(static_cast<std::size_t>(n_ * 3), 0.0));
         if (n_ >= CELL_LIST_THRESHOLD)
             pairs_.reserve(static_cast<std::size_t>(n_) * 8);
     }
@@ -282,24 +259,10 @@ public:
             }
         }
 
-        // ── Parallel reduction over pairs ──────────────────────────────────────
-        // tgrad_ is pre-allocated — just zero it.
-#ifdef _OPENMP
-        const int nthreads = omp_get_max_threads();
-#else
-        const int nthreads = 1;
-#endif
-        const int dim3 = n_ * 3;
-        // Adapt if set_num_threads() changed the thread count since construction.
-        if (static_cast<int>(tgrad_.size()) != nthreads)
-            tgrad_.assign(static_cast<std::size_t>(nthreads),
-                          std::vector<double>(static_cast<std::size_t>(dim3), 0.0));
-        for (auto& tg : tgrad_) std::fill(tg.begin(), tg.end(), 0.0);
-        auto& tgrad = tgrad_;
         double energy = 0.0;
 
         if (n_ < CELL_LIST_THRESHOLD) {
-            // Small N: O(N²) serial loop — overhead of thread spawning > gain.
+            // Small N: O(N²) serial loop.
             for (int i = 0; i < n_-1; ++i) {
                 for (int j = i+1; j < n_; ++j) {
                     const double dx  = xd[3*i  ] - xd[3*j  ];
@@ -319,62 +282,9 @@ public:
                 }
             }
         } else {
+            // Large N: iterate pre-built pair list, write directly to gd.
             const int npairs = static_cast<int>(pairs_.size());
-            // A+B guard: only use OpenMP when enough threads AND enough pairs
-            // exist to amortise thread-spawn / merge overhead.
-#ifdef _OPENMP
-            if (nthreads > 2 && npairs >= PAIR_PARALLEL_THRESHOLD) {
-#pragma omp parallel for schedule(static) reduction(+:energy)
-                for (int p = 0; p < npairs; ++p) {
-                    const int tid = omp_get_thread_num();
-                    const int i = pairs_[static_cast<std::size_t>(p)].first;
-                    const int j = pairs_[static_cast<std::size_t>(p)].second;
-                    const double dx  = xd[3*i  ] - xd[3*j  ];
-                    const double dy  = xd[3*i+1] - xd[3*j+1];
-                    const double dz  = xd[3*i+2] - xd[3*j+2];
-                    const double d2  = dx*dx + dy*dy + dz*dz;
-                    const double thr = cov_scale_ * (radii_[i] + radii_[j]);
-                    if (d2 >= thr * thr) continue;
-                    const double d       = std::sqrt(d2);
-                    const double overlap = thr - d;
-                    energy += 0.5 * overlap * overlap;
-                    if (d > 1e-10) {
-                        const double gf = -overlap / d;
-                        const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
-                        auto& tg = tgrad[static_cast<std::size_t>(tid)];
-                        tg[3*i  ] += gx;  tg[3*i+1] += gy;  tg[3*i+2] += gz;
-                        tg[3*j  ] -= gx;  tg[3*j+1] -= gy;  tg[3*j+2] -= gz;
-                    }
-                }
-                // Merge thread-local gradients into gd
-                for (int t = 0; t < nthreads; ++t)
-                    for (int k = 0; k < dim3; ++k)
-                        gd[k] += tgrad[static_cast<std::size_t>(t)][k];
-            } else {
-                // Serial fallback: write directly to gd — no tgrad overhead.
-                for (int p = 0; p < npairs; ++p) {
-                    const int i = pairs_[static_cast<std::size_t>(p)].first;
-                    const int j = pairs_[static_cast<std::size_t>(p)].second;
-                    const double dx  = xd[3*i  ] - xd[3*j  ];
-                    const double dy  = xd[3*i+1] - xd[3*j+1];
-                    const double dz  = xd[3*i+2] - xd[3*j+2];
-                    const double d2  = dx*dx + dy*dy + dz*dz;
-                    const double thr = cov_scale_ * (radii_[i] + radii_[j]);
-                    if (d2 >= thr * thr) continue;
-                    const double d       = std::sqrt(d2);
-                    const double overlap = thr - d;
-                    energy += 0.5 * overlap * overlap;
-                    if (d > 1e-10) {
-                        const double gf = -overlap / d;
-                        const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
-                        gd[3*i  ] += gx;  gd[3*i+1] += gy;  gd[3*i+2] += gz;
-                        gd[3*j  ] -= gx;  gd[3*j+1] -= gy;  gd[3*j+2] -= gz;
-                    }
-                }
-            }
-#else
             for (int p = 0; p < npairs; ++p) {
-                const int tid = 0;
                 const int i = pairs_[static_cast<std::size_t>(p)].first;
                 const int j = pairs_[static_cast<std::size_t>(p)].second;
                 const double dx  = xd[3*i  ] - xd[3*j  ];
@@ -389,21 +299,14 @@ public:
                 if (d > 1e-10) {
                     const double gf = -overlap / d;
                     const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
-                    auto& tg = tgrad[static_cast<std::size_t>(tid)];
-                    tg[3*i  ] += gx;  tg[3*i+1] += gy;  tg[3*i+2] += gz;
-                    tg[3*j  ] -= gx;  tg[3*j+1] -= gy;  tg[3*j+2] -= gz;
+                    gd[3*i  ] += gx;  gd[3*i+1] += gy;  gd[3*i+2] += gz;
+                    gd[3*j  ] -= gx;  gd[3*j+1] -= gy;  gd[3*j+2] -= gz;
                 }
             }
-            // Merge thread-local gradients into gd (nthreads=1)
-            for (int t = 0; t < nthreads; ++t)
-                for (int k = 0; k < dim3; ++k)
-                    gd[k] += tgrad[static_cast<std::size_t>(t)][k];
-#endif
         }
         return energy;
     }
 };
-
 // ===========================================================================
 // lbfgs_minimize
 // ===========================================================================

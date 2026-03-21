@@ -104,16 +104,17 @@ from ._metrics import (
     compute_ring_fraction,
     compute_steinhardt_per_atom,
 )
-from ._optimizer import OptimizationResult, StructureOptimizer, parse_objective_spec
+from ._optimizer import EvalContext, OptimizationResult, StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
 
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.2.10"
+    __version__ = "0.2.11"
 
 __all__ = [
     # High-level API
+    "EvalContext",
     "GenerationResult",
     "GeneratorConfig",
     "OptimizationResult",

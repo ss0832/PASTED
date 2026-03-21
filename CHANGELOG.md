@@ -5,6 +5,80 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.11] — 2026-03-21
+
+### Added
+
+- **`EvalContext` dataclass** — a frozen snapshot of the current candidate
+  structure *and* the live optimizer state, passed as the second argument
+  to 2-parameter objective callables.  Fields: `atoms`, `positions`,
+  `charge`, `mult`, `n_atoms`, `metrics`, `step`, `max_steps`,
+  `temperature`, `f_current`, `best_f`, `restart_idx`, `n_restarts`,
+  `per_atom_q6`, `element_pool`, `cutoff`, `method`, `T_start`, `T_end`,
+  `seed`, `replica_idx`, `replica_temperature`, `n_replicas`.
+
+- **`EvalContext.to_xyz()`** — serializes the current structure to XYZ
+  format for passing to external tools (xTB, ASE, ORCA, etc.).
+
+- **`EvalContext.progress` property** — fractional run progress
+  (`step / max_steps`), useful for curriculum-style objectives.
+
+- **2-argument objective callable support**: any callable with two required
+  positional parameters receives an `EvalContext` as its second argument.
+  Dispatch is via `inspect.signature`; 1-argument callables are unaffected.
+
+  ```python
+  # 1-arg (unchanged)
+  objective = lambda m: m["H_total"] - 2.0 * m["Q6"]
+
+  # 2-arg: full structure + optimizer state available
+  def my_objective(m, ctx):
+      pos = np.array(ctx.positions)
+      return float(m["H_total"]) - float(np.max(ctx.per_atom_q6))
+  ```
+
+- **`_objective_needs_ctx()` helper** — caches the arity check so
+  `inspect.signature` is called once per optimizer instance, not once per
+  MC step.
+
+- **`EvalContext` exported** from the top-level `pasted` namespace.
+
+### Changed
+
+- **`ObjectiveType`** extended to include
+  `Callable[[dict[str, float], EvalContext], float]`.
+
+- **`_eval_objective`** accepts an optional `ctx: EvalContext | None`
+  keyword argument; routes to the 2-arg or 1-arg path accordingly.
+
+- **`StructureOptimizer.objective` docstring** updated to document both
+  calling conventions.
+
+- **`docs/quickstart.md`**: added *Extended objective with EvalContext*
+  subsection with five usage examples (NumPy-only, adaptive curriculum,
+  per-atom Q6 penalty, xTB external process, ASE EMT potential).
+
+- **`docs/api/optimizer.rst`**: updated `ObjectiveType` and
+  `EvalContext` API reference.
+
+### Changed (C++ extensions)
+
+- **`_relax.cpp`**: removed all `#ifdef _OPENMP` / `#pragma omp` blocks,
+  `tgrad_` per-thread scratch member, and `PAIR_PARALLEL_THRESHOLD`
+  constant.  The serial pair loop now writes directly to `grad[]`,
+  eliminating the per-`evaluate()` zero-fill and merge pass.
+  `libgomp` was never linked in the distributed wheels; the `#else`
+  branch was always the active path.
+
+- **`_maxent.cpp`**: same OpenMP scaffold removal in `eval_angular()` and
+  `place_maxent_cpp_impl`.  `tgrad_scratch` simplified from
+  `vector<vector<double>>` to a flat `vector<double>`.
+
+- **`_graph_core.cpp`**, **`_steinhardt.cpp`**: no changes (no OpenMP
+  present since v0.2.9).
+
+---
+
 ## [0.2.10] — 2026-03-21
 
 ### Added

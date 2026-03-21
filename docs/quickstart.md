@@ -454,6 +454,174 @@ Available metrics: all keys in `pasted.ALL_METRICS` —
 
 ---
 
+### Extended objective with EvalContext: full structure and optimizer state
+
+For objectives that need atomic coordinates, charge/multiplicity, or
+optimizer runtime information, use the **2-argument calling convention**.
+Any callable with two required positional parameters receives an
+[`EvalContext`](api/optimizer.rst) as its second argument:
+
+```python
+from pasted import EvalContext, StructureOptimizer
+```
+
+The `EvalContext` exposes:
+
+| Field | Type | Description |
+|---|---|---|
+| `ctx.atoms` | `tuple[str, ...]` | Element symbols |
+| `ctx.positions` | `tuple[tuple[float,float,float], ...]` | Coordinates (Å) |
+| `ctx.charge` / `ctx.mult` | `int` | Charge and multiplicity |
+| `ctx.n_atoms` | `int` | Atom count |
+| `ctx.metrics` | `dict[str, float]` | Same as `m` |
+| `ctx.to_xyz()` | `str` | XYZ-format string |
+| `ctx.step` / `ctx.max_steps` | `int` | MC step index and total |
+| `ctx.progress` | `float` | `step / max_steps` ∈ [0, 1) |
+| `ctx.temperature` | `float` | Current temperature |
+| `ctx.f_current` / `ctx.best_f` | `float` | Current and best scores |
+| `ctx.per_atom_q6` | `np.ndarray` | Per-atom Q6, shape `[n_atoms]` |
+| `ctx.restart_idx` | `int` | Restart index (0-based) |
+| `ctx.element_pool` | `tuple[str, ...]` | Available elements |
+| `ctx.cutoff` | `float` | Distance cutoff (Å) |
+| `ctx.replica_idx` / `ctx.n_replicas` | `int \| None` | PT-only fields |
+
+**Example 1 — NumPy geometry objective (no external dependencies)**
+
+```python
+import numpy as np
+from pasted import StructureOptimizer
+
+# 1-arg form: unchanged from before
+opt1 = StructureOptimizer(
+    n_atoms=10, charge=0, mult=1, elements="6,7,8",
+    objective=lambda m: m["H_total"] - 2.0 * m["Q6"],
+)
+
+# 2-arg form: use ctx.positions for a purely geometric objective
+def rms_spread_objective(m, ctx):
+    """Maximize mean pairwise distance."""
+    pos = np.array(ctx.positions)
+    diffs = pos[:, None, :] - pos[None, :, :]
+    dists = np.sqrt((diffs ** 2).sum(axis=-1))
+    return float(dists[np.triu_indices(ctx.n_atoms, k=1)].mean())
+
+opt2 = StructureOptimizer(
+    n_atoms=10, charge=0, mult=1, elements="6,7,8",
+    objective=rms_spread_objective,
+    method="annealing", max_steps=2000, seed=42,
+)
+result = opt2.run()
+```
+
+**Example 2 — Adaptive curriculum objective**
+
+```python
+def curriculum_objective(m, ctx):
+    """Broad exploration early, strong Q6 penalty late."""
+    base = m["H_total"]
+    if ctx.progress < 0.5:
+        return base
+    else:
+        return base - 3.0 * m["Q6"]
+
+opt = StructureOptimizer(
+    n_atoms=15, charge=0, mult=1, elements="6,7,8,16",
+    objective=curriculum_objective,
+    method="annealing", max_steps=4000, seed=7,
+)
+```
+
+**Example 3 — Per-atom Q6 locality penalty**
+
+```python
+import numpy as np
+
+def local_disorder_objective(m, ctx):
+    """Reward Q6 variance; penalize the most locally ordered atom."""
+    q6_var = float(np.var(ctx.per_atom_q6))
+    q6_max = float(np.max(ctx.per_atom_q6))
+    return m["H_total"] + q6_var * 0.5 - q6_max * 1.0
+
+opt = StructureOptimizer(
+    n_atoms=20, charge=0, mult=1, elements="6,7,8,15,16",
+    objective=local_disorder_objective,
+    method="basin_hopping", max_steps=3000, seed=21,
+)
+```
+
+**Example 4 — xTB single-point energy as objective**
+
+> **External dependency:** `xtb` — GFN-xTB semiempirical tight-binding code (standalone binary).
+> Install: `conda install -c conda-forge xtb` (recommended) or `pip install xtb-python`
+> Reference: [xtb documentation](https://xtb-docs.readthedocs.io/) | [GitHub](https://github.com/grimme-lab/xtb) | DOI: `10.1021/acs.jctc.8b01176`
+
+```python
+import os, subprocess, tempfile
+
+def xtb_energy_objective(m, ctx):
+    """Minimize GFN2-xTB single-point energy (negated for maximization).
+
+    Uses ctx.to_xyz() to serialize the structure and ctx.charge / ctx.mult
+    for the --chrg / --uhf flags.  Requires the xtb binary on PATH.
+    """
+    with tempfile.NamedTemporaryFile(
+        suffix=".xyz", mode="w", delete=False
+    ) as fh:
+        fh.write(ctx.to_xyz())
+        fname = fh.name
+    try:
+        proc = subprocess.run(
+            ["xtb", fname, "--sp", "--gfn", "2",
+             "--chrg", str(ctx.charge),
+             "--uhf",  str(ctx.mult - 1)],
+            capture_output=True, text=True, timeout=60,
+        )
+        for line in proc.stdout.splitlines():
+            if "TOTAL ENERGY" in line:
+                return -float(line.split()[3])   # negate → maximize
+        return float("-inf")
+    finally:
+        os.unlink(fname)
+
+opt = StructureOptimizer(
+    n_atoms=8, charge=0, mult=1, elements="6,7,8",
+    objective=xtb_energy_objective,
+    method="basin_hopping", max_steps=100, seed=7,
+)
+```
+
+**Example 5 — ASE EMT potential as objective**
+
+> **External dependency:** `ase` — Atomic Simulation Environment.
+> Install: `pip install ase`
+> Reference: [ASE documentation](https://wiki.fysik.dtu.dk/ase/) | [PyPI](https://pypi.org/project/ase/) | DOI: `10.1088/1361-648X/aa680e`
+>
+> Note: The EMT calculator below supports only Al, Cu, Ag, Au, Ni, Pd, Pt, H, C, N, O.
+> Replace with any ASE-compatible calculator (GPAW, NequIP, MACE, etc.) as needed.
+
+```python
+from ase import Atoms
+from ase.calculators.emt import EMT
+
+def ase_emt_objective(m, ctx):
+    """Use ASE/EMT energy as objective (negated for maximization)."""
+    structure = Atoms(
+        symbols=list(ctx.atoms),
+        positions=list(ctx.positions),
+    )
+    structure.calc = EMT()
+    return -structure.get_potential_energy()   # negate → maximize
+
+opt = StructureOptimizer(
+    n_atoms=12, charge=0, mult=1,
+    elements="29,79",   # Cu, Au — both supported by EMT
+    objective=ase_emt_objective,
+    method="annealing", max_steps=500, seed=42,
+)
+```
+
+---
+
 ## GeneratorConfig — immutable configuration object
 
 `GeneratorConfig` is a `frozen=True` dataclass that encapsulates every

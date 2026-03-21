@@ -832,3 +832,275 @@ class TestAllowDisplacements:
         np.testing.assert_allclose(
             np.array(best_positions), np.array(initial_positions), atol=1e-9,
         )
+
+
+# ===========================================================================
+# TestEvalContext
+# ===========================================================================
+
+class TestEvalContext:
+    """Tests for EvalContext and 2-argument objective dispatch."""
+
+    def _make_opt(self, objective, method="annealing", n_atoms=6, seed=99, **kw):
+        return StructureOptimizer(
+            n_atoms=n_atoms, charge=0, mult=1,
+            elements="6,7,8",
+            objective=objective,
+            method=method,
+            max_steps=30, n_restarts=1, seed=seed,
+            **kw,
+        )
+
+    # ── EvalContext exported from top-level namespace ─────────────────────
+
+    def test_evalcontext_in_public_api(self) -> None:
+        import pasted
+        assert hasattr(pasted, "EvalContext")
+        from pasted import EvalContext  # noqa: F401
+
+    # ── _objective_needs_ctx correctly detects arity ──────────────────────
+
+    def test_needs_ctx_dict(self) -> None:
+        from pasted._optimizer import _objective_needs_ctx
+        assert _objective_needs_ctx({"H_total": 1.0}) is False
+
+    def test_needs_ctx_one_arg_lambda(self) -> None:
+        from pasted._optimizer import _objective_needs_ctx
+        assert _objective_needs_ctx(lambda m: m["H_total"]) is False
+
+    def test_needs_ctx_two_arg_lambda(self) -> None:
+        from pasted._optimizer import _objective_needs_ctx
+        assert _objective_needs_ctx(lambda m, ctx: m["H_total"]) is True
+
+    def test_needs_ctx_optional_second_arg(self) -> None:
+        from pasted._optimizer import _objective_needs_ctx
+        # second arg has default → treated as 1-arg
+        assert _objective_needs_ctx(lambda m, ctx=None: m["H_total"]) is False
+
+    def test_needs_ctx_two_arg_def(self) -> None:
+        from pasted._optimizer import _objective_needs_ctx
+        def f(m, ctx):
+            return m["H_total"]
+        assert _objective_needs_ctx(f) is True
+
+    # ── _needs_ctx cached on instance ─────────────────────────────────────
+
+    def test_instance_cache_one_arg(self) -> None:
+        opt = self._make_opt(lambda m: m["H_total"])
+        assert opt._needs_ctx is False
+
+    def test_instance_cache_two_arg(self) -> None:
+        opt = self._make_opt(lambda m, ctx: m["H_total"])
+        assert opt._needs_ctx is True
+
+    # ── 1-arg objective still works (backward compat) ─────────────────────
+
+    def test_one_arg_objective_runs(self) -> None:
+        opt = self._make_opt(lambda m: m["H_total"])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run()
+        assert result.best is not None
+
+    # ── 2-arg objective receives EvalContext ──────────────────────────────
+
+    def test_two_arg_objective_receives_ctx(self) -> None:
+        from pasted import EvalContext
+        received: list[EvalContext] = []
+
+        def f(m, ctx):
+            received.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        assert len(received) > 0
+        ctx = received[0]
+        assert isinstance(ctx, EvalContext)
+
+    # ── EvalContext fields are correct types ──────────────────────────────
+
+    def test_ctx_structure_fields(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, n_atoms=6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        ctx = seen[0]
+        assert isinstance(ctx.atoms, tuple)
+        assert all(isinstance(a, str) for a in ctx.atoms)
+        assert isinstance(ctx.positions, tuple)
+        assert ctx.n_atoms == 6
+        assert ctx.charge == 0
+        assert ctx.mult == 1
+        assert isinstance(ctx.metrics, dict)
+        assert "H_total" in ctx.metrics
+
+    def test_ctx_optimizer_state_fields(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, n_atoms=6, seed=7)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        ctx = seen[0]
+        assert isinstance(ctx.step, int)
+        assert isinstance(ctx.max_steps, int)
+        assert ctx.max_steps == 30
+        assert isinstance(ctx.temperature, float)
+        assert isinstance(ctx.f_current, float)
+        assert isinstance(ctx.best_f, float)
+        assert isinstance(ctx.restart_idx, int)
+        assert isinstance(ctx.n_restarts, int)
+        assert ctx.n_restarts == 1
+        assert ctx.per_atom_q6.shape == (6,)
+        assert 0.0 <= ctx.progress <= 1.0
+
+    def test_ctx_config_fields(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, n_atoms=6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        ctx = seen[0]
+        assert isinstance(ctx.element_pool, tuple)
+        assert isinstance(ctx.cutoff, float)
+        assert ctx.method == "annealing"
+        assert isinstance(ctx.T_start, float)
+        assert isinstance(ctx.T_end, float)
+
+    # ── PT-specific fields ─────────────────────────────────────────────────
+
+    def test_ctx_non_pt_replica_fields_are_none(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, method="annealing")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        ctx = seen[0]
+        assert ctx.replica_idx is None
+        assert ctx.replica_temperature is None
+        assert ctx.n_replicas is None
+
+    def test_ctx_pt_replica_fields_set(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, method="parallel_tempering", n_atoms=6,
+                              n_replicas=2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        pt_ctxs = [c for c in seen if c.replica_idx is not None]
+        assert len(pt_ctxs) > 0
+        ctx = pt_ctxs[0]
+        assert ctx.n_replicas == 2
+        assert ctx.replica_idx in (0, 1)
+        assert isinstance(ctx.replica_temperature, float)
+
+    # ── to_xyz() ──────────────────────────────────────────────────────────
+
+    def test_ctx_to_xyz(self) -> None:
+        from pasted import EvalContext
+        seen: list[EvalContext] = []
+
+        def f(m, ctx):
+            seen.append(ctx)
+            return m["H_total"]
+
+        opt = self._make_opt(f, n_atoms=6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        ctx = seen[0]
+        xyz = ctx.to_xyz()
+        lines = xyz.splitlines()
+        assert int(lines[0]) == ctx.n_atoms
+        assert "charge=" in lines[1]
+        assert len(lines) == ctx.n_atoms + 2
+
+    # ── progress property ──────────────────────────────────────────────────
+
+    def test_ctx_progress_range(self) -> None:
+        progresses: list[float] = []
+
+        def f(m, ctx):
+            progresses.append(ctx.progress)
+            return m["H_total"]
+
+        opt = self._make_opt(f, n_atoms=6)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            opt.run()
+
+        assert all(0.0 <= p < 1.0 for p in progresses)
+
+    # ── 2-arg objective improves over dict baseline ───────────────────────
+
+    def test_two_arg_objective_optimizes(self) -> None:
+        import numpy as np
+
+        def spread_obj(m, ctx):
+            pos = np.array(ctx.positions)
+            diffs = pos[:, None, :] - pos[None, :, :]
+            dists = np.sqrt((diffs ** 2).sum(axis=-1))
+            return float(dists[np.triu_indices(ctx.n_atoms, k=1)].mean())
+
+        opt = StructureOptimizer(
+            n_atoms=8, charge=0, mult=1, elements="6,7,8",
+            objective=spread_obj,
+            method="annealing", max_steps=200, n_restarts=1, seed=42,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run()
+        assert result.best is not None
+        assert result.objective_scores[0] > 0.0
+
+    # ── basin_hopping with 2-arg objective ────────────────────────────────
+
+    def test_two_arg_objective_basin_hopping(self) -> None:
+        def f(m, ctx):
+            return m["H_total"] - 0.5 * float(ctx.per_atom_q6.max())
+
+        opt = self._make_opt(f, method="basin_hopping")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run()
+        assert result.best is not None
