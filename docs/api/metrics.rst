@@ -44,9 +44,10 @@ therefore be used as ``--filter`` targets on the CLI and in the
        High = crystalline; low = amorphous.
      - ≥ 0
    * - ``shape_aniso``
-     - Ratio of largest to smallest principal moment of the inertia tensor.
-       1.0 = spherical; larger = elongated.
-     - ≥ 1.0
+     - Relative shape anisotropy κ² from the gyration tensor
+       (κ² = 1.5·Σλᵢ²/(Σλᵢ)² − 0.5).
+       0 = perfectly spherical; 1 = perfectly rod-like.
+     - [0, 1]
    * - ``Q4``, ``Q6``, ``Q8``
      - Steinhardt bond-orientational order parameters (*l* = 4, 6, 8).
        0 = amorphous; 1 = crystalline.
@@ -56,8 +57,10 @@ therefore be used as ``--filter`` targets on the CLI and in the
        covalent-bond graph.  1.0 = fully connected.
      - [0, 1]
    * - ``graph_cc``
-     - Absolute count of connected components.  1 = fully connected.
-     - ≥ 1
+     - Mean local clustering coefficient of the covalent-bond graph.
+       0 = no triangles among neighbors; 1 = all neighbor pairs are
+       mutually bonded.
+     - [0, 1]
    * - ``ring_fraction``
      - Fraction of atoms that participate in at least one ring.
      - [0, 1]
