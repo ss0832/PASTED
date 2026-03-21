@@ -35,7 +35,7 @@ in :attr:`Structure.metrics <pasted._generator.Structure.metrics>` and
    * - ``RDF_dev``
      - RMS deviation of the normalized RDF from a flat distribution
    * - ``shape_aniso``
-     - Ratio of largest to smallest principal moment of the inertia tensor (≥ 1.0)
+     - Relative shape anisotropy κ² from the gyration tensor: 0 = spherical, 1 = rod-like ([0, 1])
    * - ``Q4``
      - Steinhardt bond-orientational order parameter *l* = 4
    * - ``Q6``
@@ -45,7 +45,7 @@ in :attr:`Structure.metrics <pasted._generator.Structure.metrics>` and
    * - ``graph_lcc``
      - Fraction of atoms in the largest connected component of the covalent-bond graph
    * - ``graph_cc``
-     - Absolute number of connected components
+     - Mean local clustering coefficient of the covalent-bond graph: 0 = no triangles, 1 = fully triangulated ([0, 1])
    * - ``ring_fraction``
      - Fraction of atoms participating in at least one ring
    * - ``charge_frustration``
