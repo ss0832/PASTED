@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install "ruff==0.4"
+        run: pip install "ruff==0.15.7"
 
       - name: ruff check
         run: ruff check src/ tests/
@@ -136,3 +136,4 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         id: deployment
         uses: actions/deploy-pages@v4
+        
