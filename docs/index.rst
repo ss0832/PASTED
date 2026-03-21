@@ -25,5 +25,4 @@ feeds them to QC/ML engines to expose edge-case failures.
    :caption: Development
 
    architecture
-   memory_analysis
    changelog
