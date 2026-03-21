@@ -54,11 +54,52 @@ line-length = 99
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "UP",  # pyupgrade (modern Python syntax)
+    "B",   # flake8-bugbear (potential bugs and design issues)
+    "PT",  # flake8-pytest-style (pytest best practices)
+    "PIE", # flake8-pie (unnecessary code / noise removal)
+    "RUF", # Ruff-specific rules (unused noqa, mutable defaults, unpacked vars…)
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "PT011",  # pytest.raises(ValueError) match= — too noisy for broad value-error tests
+    # RUF001/002/003: pasted uses Unicode math notation (×, –, −) intentionally
+    # in docstrings, strings, and comments (e.g. "~20–50× faster").
+    # Replacing every × with 'x' would degrade scientific readability.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
 
 [tool.mypy]
 python_version = "3.10"
-warn_unused_ignores = false
-ignore_missing_imports = true
 mypy_path = ["src"]
+
+# --- source package: enforce strict typing ---
+# These settings apply to src/pasted/ where we own every line.
+check_untyped_defs   = true
+disallow_untyped_defs = true
+warn_unused_ignores  = true
+
+# --- C++ extensions: pybind11 .so files have no stubs, ignore them ---
+[[tool.mypy.overrides]]
+module = ["pasted._ext.*", "pasted._ext"]
+ignore_missing_imports = true
+ignore_errors = true
+
+# --- third-party libraries without stubs ---
+[[tool.mypy.overrides]]
+module = ["scipy.*", "numpy.*", "psutil.*"]
+ignore_missing_imports = true
+
+# --- tests: check bodies but don't require full annotations on helpers ---
+# (Fixtures and one-liner helpers would need annotations everywhere otherwise)
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+warn_unused_ignores   = false

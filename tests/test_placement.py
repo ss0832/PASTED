@@ -48,7 +48,7 @@ class TestPlaceGas:
     def test_sphere_count(self) -> None:
         atoms = ["C", "N", "O"]
         rng = random.Random(0)
-        atoms_out, pos = place_gas(atoms, "sphere:5", rng)
+        _atoms_out, pos = place_gas(atoms, "sphere:5", rng)
         assert len(pos) == 3
 
     def test_sphere_bounds(self) -> None:
@@ -154,7 +154,7 @@ class TestPlaceShell:
     def test_count(self) -> None:
         atoms = ["Fe", "C", "C", "N", "N", "O", "O", "O"]
         rng = random.Random(10)
-        atoms_out, pos = place_shell(atoms, "Fe", 4, 6, 1.8, 2.5, 1.2, 1.6, rng)
+        _atoms_out, pos = place_shell(atoms, "Fe", 4, 6, 1.8, 2.5, 1.2, 1.6, rng)
         assert len(pos) == len(atoms)
 
     def test_center_at_origin(self) -> None:
@@ -220,7 +220,8 @@ class TestRelaxPositions:
 
         r1, ok1 = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=7)
         r2, ok2 = relax_positions(atoms, pos, 1.0, max_cycles=500, seed=7)
-        assert ok1 and ok2
+        assert ok1
+        assert ok2
         for p1, p2 in zip(r1, r2, strict=True):
             assert p1 == pytest.approx(p2, abs=1e-12)
 
@@ -260,7 +261,8 @@ class TestRelaxPositions:
         cpp_result, cpp_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)  # type: ignore[arg-type]
 
         # Both must converge
-        assert py_conv and cpp_conv
+        assert py_conv
+        assert cpp_conv
 
         # Both must satisfy all pairwise minimum distances
         for result, label in [(py_result, "python"), (cpp_result, "cpp")]:
@@ -498,7 +500,7 @@ class TestAffineMove:
         # At least one coordinate should differ when stretch strength changes
         any_different = any(
             abs(a[i] - b[i]) > 1e-12
-            for a, b in zip(out_default, out_override)
+            for a, b in zip(out_default, out_override, strict=True)
             for i in range(3)
         )
         assert any_different, "affine_stretch override had no effect"

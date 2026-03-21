@@ -550,7 +550,7 @@ def _angular_repulsion_gradient(
     """
     # ── C++ fast path ────────────────────────────────────────────────────
     if HAS_MAXENT:
-        return _cpp_angular_gradient(pts, cutoff)  # type: ignore[no-any-return]
+        return _cpp_angular_gradient(pts, cutoff)
 
     # ── Pure-Python / NumPy fallback ─────────────────────────────────────
     n = len(pts)

@@ -327,8 +327,8 @@ class TestFilterBounds:
             mode="gas", region="sphere:8",
             elements="6,7,8", n_samples=30, seed=42,
         )
-        result_open = generate(**kwargs, filters=["H_total:-:-"])
-        result_none = generate(**kwargs)
+        result_open = generate(**kwargs, filters=["H_total:-:-"])  # type: ignore[arg-type]
+        result_none = generate(**kwargs)  # type: ignore[arg-type]
 
         assert len(result_open) == len(result_none), (
             f"Open filter changed count: {len(result_open)} vs {len(result_none)}"
@@ -346,7 +346,10 @@ class TestFilterBounds:
         if not result_all:
             pytest.skip("No structures generated with this seed — cannot form exact filter")
 
-        val = result_all[0].metrics["H_total"]
+        from typing import cast
+
+        from pasted import Structure as _StructureF
+        val = cast(_StructureF, result_all[0]).metrics["H_total"]
         # Floating-point equality: at least the first structure's value matches itself.
         result_exact = generate(
             n_atoms=10, charge=0, mult=1,
@@ -430,8 +433,10 @@ class TestXYZIO:
             elements="6,7,8", n_samples=30, seed=42,
         )
         assert structs, "Need at least one structure to form an XYZ string"
+        from typing import cast as _cast2
 
-        xyz_str = structs[0].to_xyz()
+        from pasted import Structure as _Structure2
+        xyz_str = _cast2(_Structure2, structs[0]).to_xyz()
         with pytest.raises(ValueError, match="out of range"):
             Structure.from_xyz(xyz_str, frame=999)
 
@@ -579,12 +584,12 @@ class TestHostileObjectives:
         """A zero-argument callable passed as objective must raise TypeError (not crash silently)."""
         from pasted import StructureOptimizer
 
-        def no_args():
+        def no_args() -> float:
             return 1.0
 
         opt = StructureOptimizer(
             n_atoms=8, charge=0, mult=1, elements="6,7,8",
-            objective=no_args,
+            objective=no_args,  # type: ignore[arg-type]
             method="annealing", max_steps=50, seed=42,
         )
         with pytest.raises(TypeError):
@@ -748,8 +753,8 @@ class TestCounterIntuitiveValidCases:
             mode="gas", region="sphere:8",
             elements="6,7,8", n_samples=30, seed=77,
         )
-        r_kwargs = generate(**kwargs)
-        r_config = generate(GeneratorConfig(**kwargs))
+        r_kwargs = generate(**kwargs)  # type: ignore[arg-type]
+        r_config = generate(GeneratorConfig(**kwargs))  # type: ignore[arg-type]
 
         assert len(r_kwargs) == len(r_config), (
             f"kwargs path returned {len(r_kwargs)} but config path returned {len(r_config)}"
@@ -793,20 +798,24 @@ class TestCounterIntuitiveValidCases:
         replaced before the MC loop begins; all output atoms must belong to the pool."""
         from pasted import StructureOptimizer, generate
 
-        initial = generate(
+        _init_result = generate(
             n_atoms=8, charge=0, mult=1,
             mode="gas", region="sphere:7",
             elements="6,7,8", n_samples=30, seed=0,
-        )[0]  # C/N/O structure
+        )
+        from typing import cast as _cast
+
+        from pasted import Structure as _Structure
+        initial = _cast(_Structure, _init_result[0])  # C/N/O structure
 
         opt = StructureOptimizer(
-            n_atoms=len(initial), charge=initial.charge, mult=initial.mult,
+            n_atoms=len(initial.atoms), charge=initial.charge, mult=initial.mult,
             elements=["Fe", "Ni", "Co"],  # entirely different pool
             objective={"H_total": 1.0},
             allow_displacements=False,
             method="annealing", max_steps=200, seed=0,
         )
-        result = opt.run(initial=initial)
+        result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         pool = {"Fe", "Ni", "Co"}
         foreign = set(result.best.atoms) - pool
@@ -821,11 +830,11 @@ class TestCounterIntuitiveValidCases:
             mode="gas", region="sphere:8",
             elements="6,7,8", n_samples=30, seed=123,
         )
-        r1 = generate(**kwargs)
-        r2 = generate(**kwargs)
+        r1 = generate(**kwargs)  # type: ignore[arg-type]
+        r2 = generate(**kwargs)  # type: ignore[arg-type]
 
         assert len(r1) == len(r2), "Same seed must yield the same number of structures"
-        for i, (s1, s2) in enumerate(zip(r1, r2)):
+        for i, (s1, s2) in enumerate(zip(r1, r2, strict=True)):
             np.testing.assert_allclose(
                 np.array(s1.positions),
                 np.array(s2.positions),

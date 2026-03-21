@@ -225,7 +225,7 @@ class EvalContext:
         if not comment:
             comment = f"charge={self.charge} mult={self.mult}"
         lines = [str(self.n_atoms), comment]
-        for sym, (x, y, z) in zip(self.atoms, self.positions):
+        for sym, (x, y, z) in zip(self.atoms, self.positions, strict=True):
             lines.append(f"{sym:4s}  {x:14.8f}  {y:14.8f}  {z:14.8f}")
         return "\n".join(lines)
 

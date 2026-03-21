@@ -48,7 +48,7 @@ import os
 import pickle
 import tempfile
 import warnings
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import pytest
@@ -673,7 +673,7 @@ class TestParseObjectiveSpecContract:
 class TestComputeAllMetricsDirect:
     """Direct calls to compute_all_metrics with unusual configurations."""
 
-    _DEFAULT_KW: dict[str, Any] = dict(
+    _DEFAULT_KW: ClassVar[dict[str, Any]] = dict(
         n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0
     )
 
@@ -1153,7 +1153,8 @@ class TestValidateChargeMult:
         """The second return value must always be a non-empty string."""
         _ok, msg = validate_charge_mult(["C"], 0, 1)
         _check_validate_charge_mult((_ok, msg))
-        assert isinstance(msg, str) and len(msg) > 0
+        assert isinstance(msg, str)
+        assert len(msg) > 0
 
     def test_positive_charge_modifies_electron_count(self) -> None:
         """C, charge=+1 removes one electron → 5 electrons (odd) → doublet ok."""

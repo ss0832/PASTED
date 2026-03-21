@@ -713,7 +713,7 @@ class TestSingleAtom:
     def test_steinhardt_single_all_q_zero(self) -> None:
         result = steinhardt_per_atom(self._PTS1, 5.0, [4, 6, 8])
         result = _assert_steinhardt_contract(result, len(self._PTS1))
-        for key, arr in result.items():
+        for _key, arr in result.items():
             assert arr.shape == (1,)
             assert float(arr[0]) == pytest.approx(0.0)
 
@@ -723,7 +723,7 @@ class TestSingleAtom:
         result = _assert_graph_contract(result)
         assert float(result["graph_lcc"]) == pytest.approx(1.0)
         assert float(result["ring_fraction"]) == pytest.approx(0.0)
-        for key, val in result.items():
+        for _key, val in result.items():
             assert math.isfinite(float(val))
 
     @needs_graph
@@ -969,7 +969,7 @@ class TestBoundaryScalarParameters:
         result = _assert_graph_contract(result)
         assert float(result["graph_lcc"]) == pytest.approx(1 / 3)
         assert float(result["ring_fraction"]) == pytest.approx(0.0)
-        for key, val in result.items():
+        for _key, val in result.items():
             assert math.isfinite(float(val))
 
     @needs_graph
@@ -978,7 +978,7 @@ class TestBoundaryScalarParameters:
         result = graph_metrics_cpp(PTS3, RADII3, 1.0, EN3, 1e15)
         result = _assert_graph_contract(result)
         assert float(result["graph_lcc"]) == pytest.approx(1.0)
-        for key, val in result.items():
+        for _key, val in result.items():
             assert math.isfinite(float(val))
 
 

@@ -47,9 +47,9 @@ try:
         return np.asarray(_sph_harm_raw(l, m, theta_polar, phi_azimuth))
 
 except ImportError:
-    from scipy.special import sph_harm as _sph_harm_raw  # type: ignore[no-redef,attr-defined]
+    from scipy.special import sph_harm as _sph_harm_raw
 
-    def _sph_harm(  # type: ignore[misc,no-redef]
+    def _sph_harm(
         l: int,  # noqa: E741
         m: int,
         phi_azimuth: float | np.ndarray,
@@ -121,7 +121,7 @@ def compute_h_spatial(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
     if n < 2:
         return 0.0
     tree = _cKDTree(pts)
-    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")
     if len(pairs) == 0:
         return 0.0
     dists = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
@@ -153,7 +153,7 @@ def compute_rdf_deviation(pts: np.ndarray, cutoff: float, n_bins: int) -> float:
     if r_bound == 0.0:
         return 0.0
     tree = _cKDTree(pts)
-    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")
     if len(pairs) == 0:
         return 0.0
     dists = np.linalg.norm(pts[pairs[:, 0]] - pts[pairs[:, 1]], axis=1)
@@ -209,7 +209,7 @@ def _steinhardt_per_atom_sparse(
     result: dict[str, np.ndarray] = {}
 
     tree = _cKDTree(pts)
-    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")
 
     if len(pairs) == 0:
         for lv in l_values:
@@ -230,7 +230,7 @@ def _steinhardt_per_atom_sparse(
     deg = np.bincount(rows, minlength=n).astype(float)
     safe_deg = np.where(deg > 0, deg, 1.0)
 
-    for lv in l_values:  # noqa: E741
+    for lv in l_values:
         qlm_sq = np.zeros(n, dtype=float)
         for m in range(-lv, lv + 1):
             ylm_nb = _sph_harm(lv, m, phi_nb, theta_nb)             # (n_bonds,) complex
@@ -277,7 +277,7 @@ def compute_steinhardt_per_atom(
     Atoms with no neighbors within *cutoff* are assigned Q_l = 0.
     """
     if _HAS_STEINHARDT:
-        raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(  # type: ignore[operator]
+        raw: dict[str, np.ndarray] = _steinhardt_per_atom_cpp(
             pts, cutoff, l_values
         )
         return raw
@@ -552,7 +552,7 @@ def _compute_graph_ring_charge(
     """
     if _HAS_GRAPH:
         # Single C++ call: FlatCellList built once, all 5 metrics computed.
-        return dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))  # type: ignore[misc]
+        return dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))
     # Pure-Python fallback
     dmat = _squareform(_pdist(pts))
     return {
@@ -621,10 +621,10 @@ def compute_all_metrics(
     ha = compute_h_atom(atoms)
 
     if _HAS_GRAPH:
-        rdf_h = dict(_rdf_h_cpp(pts, cutoff, n_bins))  # type: ignore[misc]
+        rdf_h = dict(_rdf_h_cpp(pts, cutoff, n_bins))
         hs = float(rdf_h["h_spatial"])
         rdf_dev = float(rdf_h["rdf_dev"])
-        graph_result = dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))  # type: ignore[misc]
+        graph_result = dict(_cpp_graph_metrics(pts, radii, cov_scale, en_vals, cutoff))
     else:
         hs = compute_h_spatial(pts, cutoff, n_bins)
         rdf_dev = compute_rdf_deviation(pts, cutoff, n_bins)
@@ -707,7 +707,7 @@ def compute_angular_entropy(
         return 0.0
 
     tree = _cKDTree(pts)
-    pairs = tree.query_pairs(cutoff, output_type="ndarray")  # type: ignore[call-arg]
+    pairs = tree.query_pairs(cutoff, output_type="ndarray")
     if len(pairs) == 0:
         return 0.0
 

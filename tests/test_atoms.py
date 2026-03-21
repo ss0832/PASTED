@@ -114,12 +114,14 @@ class TestParseFilter:
         metric, lo, hi = parse_filter("H_total:2.0:-")
         assert metric == "H_total"
         assert lo == pytest.approx(2.0)
-        assert math.isinf(hi) and hi > 0
+        assert math.isinf(hi)
+        assert hi > 0
 
     def test_open_lo(self) -> None:
         metric, lo, hi = parse_filter("Q6:-:0.4")
         assert metric == "Q6"
-        assert math.isinf(lo) and lo < 0
+        assert math.isinf(lo)
+        assert lo < 0
         assert hi == pytest.approx(0.4)
 
     def test_closed(self) -> None:

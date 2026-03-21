@@ -47,7 +47,7 @@ class TestParseXyz:
 
     def test_extended_xyz_charge_mult(self) -> None:
         frames = parse_xyz(EXTENDED_XYZ)
-        _, _, charge, mult, metrics = frames[0]
+        _, _, charge, mult, _metrics = frames[0]
         assert charge == 0
         assert mult == 1
 

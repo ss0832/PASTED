@@ -311,13 +311,15 @@ class TestPassesFilters:
     def test_new_metrics_filterable(self) -> None:
         metric2, lo2, hi2 = parse_filter("ring_fraction:-:0.3")
         assert metric2 == "ring_fraction"
-        assert math.isinf(lo2) and lo2 < 0
+        assert math.isinf(lo2)
+        assert lo2 < 0
         assert hi2 == pytest.approx(0.3)
 
         metric3, lo3, hi3 = parse_filter("charge_frustration:0.0:-")
         assert metric3 == "charge_frustration"
         assert lo3 == pytest.approx(0.0)
-        assert math.isinf(hi3) and hi3 > 0
+        assert math.isinf(hi3)
+        assert hi3 > 0
 
 
 # ---------------------------------------------------------------------------

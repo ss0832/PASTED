@@ -51,7 +51,7 @@ class TestPlaceMaxent:
     def test_count(self) -> None:
         atoms = ["C", "N", "O", "C", "N"]
         rng = random.Random(0)
-        atoms_out, pos = place_maxent(atoms, "sphere:5", cov_scale=1.0, rng=rng, maxent_steps=5)
+        _atoms_out, pos = place_maxent(atoms, "sphere:5", cov_scale=1.0, rng=rng, maxent_steps=5)
         assert len(pos) == len(atoms)
 
     def test_atoms_preserved(self) -> None:

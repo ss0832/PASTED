@@ -176,7 +176,7 @@ class TestApiBoundaryValues:
 class TestHTotalLinearComposition:
     """Verify H_total = w_atom * H_atom + w_spatial * H_spatial for arbitrary weights."""
 
-    @pytest.mark.parametrize("w_atom,w_spatial", [
+    @pytest.mark.parametrize(("w_atom", "w_spatial"), [
         (0.5, 0.5),
         (0.3, 0.7),
         (0.0, 1.0),
@@ -201,7 +201,7 @@ class TestHTotalLinearComposition:
 class TestGenerationResultInterface:
     """Exhaustive validation of the list-compatible interface."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def result(self) -> GenerationResult:
         return _gas(n=8, n_samples=30, seed=77)
 
@@ -891,13 +891,13 @@ class TestValidateChargeMult:
 
     def test_charge_exceeds_electrons_fails(self) -> None:
         # H2 total_Z=2, charge=+5 -> n_electrons=-3 -> fails
-        ok, msg = validate_charge_mult(["H", "H"], 5, 1)
+        ok, _msg = validate_charge_mult(["H", "H"], 5, 1)
         assert not ok
 
     def test_empty_atoms_charge_zero_fails_or_ok(self) -> None:
         """atoms=[] has undefined parity; the function must not crash."""
         try:
-            ok, _ = validate_charge_mult([], 0, 1)
+            _ok, _ = validate_charge_mult([], 0, 1)
             # pass/fail is implementation-defined; no crash is the only requirement
         except Exception as e:
             pytest.fail(f"validate_charge_mult([]) crashed: {e}")
@@ -1041,7 +1041,7 @@ class TestBitIdenticalReproducibility:
         r1 = generate(**kwargs)  # type: ignore[arg-type]
         r2 = generate(**kwargs)  # type: ignore[arg-type]
         assert len(r1) == len(r2)
-        for i, (s1, s2) in enumerate(zip(r1, r2)):
+        for i, (s1, s2) in enumerate(zip(r1, r2, strict=True)):
             np.testing.assert_allclose(
                 np.array(s1.positions), np.array(s2.positions),
                 err_msg=f"positions differ at structure {i}",

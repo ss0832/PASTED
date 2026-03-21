@@ -7,7 +7,7 @@ import pytest
 from pasted import StructureGenerator
 
 
-@pytest.fixture()
+@pytest.fixture
 def gas_gen() -> StructureGenerator:
     """A small gas-mode generator used across multiple test classes."""
     return StructureGenerator(
@@ -22,7 +22,7 @@ def gas_gen() -> StructureGenerator:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def chain_gen() -> StructureGenerator:
     """A small chain-mode generator used across multiple test classes."""
     return StructureGenerator(
@@ -36,7 +36,7 @@ def chain_gen() -> StructureGenerator:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def shell_gen() -> StructureGenerator:
     """A small shell-mode generator used across multiple test classes."""
     return StructureGenerator(

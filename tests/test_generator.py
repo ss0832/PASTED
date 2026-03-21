@@ -801,9 +801,9 @@ class TestElementMinMaxCounts:
     def test_impossible_cap_raises_runtime_error(self) -> None:
         """Cap every element to 0 → RuntimeError during sampling."""
         gen = self._gen(element_max_counts={"C": 0, "N": 0, "O": 0})
-        with pytest.raises(RuntimeError, match="capped"):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(RuntimeError, match="capped"):
                 list(gen.stream())
 
 
@@ -819,7 +819,7 @@ class TestGeneratorConfig:
         defaults = dict(n_atoms=8, charge=0, mult=1, mode="gas",
                         region="sphere:6", elements="6,7,8", n_samples=3, seed=0)
         defaults.update(kw)
-        return GeneratorConfig(**defaults)
+        return GeneratorConfig(**defaults)  # type: ignore[arg-type]
 
     def test_config_exported_from_pasted(self) -> None:
         from pasted import GeneratorConfig
@@ -926,7 +926,8 @@ class TestAffineStrength:
             r = gen.generate()
             if not r:
                 return None
-            return np.array(r[0].positions)
+            from typing import cast
+            return np.array(cast("Structure", r[0]).positions)
 
         p0 = get_pos(0.0)
         p1 = get_pos(0.3)
