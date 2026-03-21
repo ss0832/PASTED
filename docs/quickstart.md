@@ -84,6 +84,14 @@ if not result:
     print("No structures passed — try relaxing filters or increasing n_samples.")
 ```
 
+> **Note — `summary()` labels vs attribute names:** the one-line string
+> returned by `result.summary()` uses short labels (`passed`, `attempted`,
+> `rejected_parity`, `rejected_filter`).  The corresponding Python attributes
+> carry an `n_` prefix: `result.n_passed`, `result.n_attempted`,
+> `result.n_rejected_parity`, `result.n_rejected_filter`.
+> Accessing `result.passed` or `result.attempted` directly raises
+> `AttributeError`.
+
 `generate()` and `StructureGenerator.generate()` also emit a
 `UserWarning` automatically (via Python's `warnings` module) whenever
 attempts are rejected by the parity check, no structures pass the filters,
@@ -132,9 +140,9 @@ for s in result:
     print(s)
 ```
 
-> **Note:** `chain` and `shell` do **not** accept a `region` argument — they
-> use `bond_range` / `shell_radius` to control geometry.  Only `gas` and
-> `maxent` require `region`.
+> **Note:** `chain` and `shell` **ignore** the `region` argument — they
+> use `bond_range` / `shell_radius` to control geometry and silently discard
+> any `region` value that is passed.  Only `gas` and `maxent` require `region`.
 
 ### Class API (`StructureGenerator`)
 

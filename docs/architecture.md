@@ -313,6 +313,14 @@ Calling `result.summary()` returns a one-line diagnostic string, e.g.:
 passed=5  attempted=50  rejected_parity=12  rejected_filter=33
 ```
 
+> **Label vs attribute name:** the labels in the `summary()` string
+> (`passed`, `attempted`, `rejected_parity`, `rejected_filter`) are
+> shortened display names.  The corresponding Python attributes use an
+> `n_` prefix — `result.n_passed`, `result.n_attempted`,
+> `result.n_rejected_parity`, `result.n_rejected_filter`.
+> Accessing `result.passed` or `result.attempted` directly raises
+> `AttributeError`.
+
 ### warnings.warn behavior
 
 `stream()` emits a `UserWarning` (via `warnings.warn`) in three situations:
