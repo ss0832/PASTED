@@ -600,7 +600,7 @@ gen = StructureGenerator(
 
 ---
 
-## Position-only optimisation (StructureOptimizer)
+## Position-only optimization (StructureOptimizer)
 
 Set `allow_composition_moves=False` to fix the composition and only
 optimize atomic positions.  This is useful when the stoichiometry is
@@ -632,7 +632,7 @@ assert sorted(result.best.atoms) == sorted(initial.atoms)
 
 ---
 
-## Composition-only optimisation (StructureOptimizer)
+## Composition-only optimization (StructureOptimizer)
 
 Set `allow_displacements=False` to fix the atomic coordinates and only
 optimize element types.  This is useful when exploring compositional
