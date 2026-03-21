@@ -909,32 +909,43 @@ class StructureOptimizer:
         Attempt a replica-exchange swap every this many MC steps
         (default: 10).  Ignored for other methods.
     allow_displacements:
-        When ``True`` (default), atomic-position moves (fragment moves and,
-        optionally, affine moves) are included in the MC step pool.
-        When ``False``, only composition moves are performed — atomic
-        coordinates are held fixed and only element types are optimized.
+        When ``True`` (default), **fragment moves** — small random
+        displacements of one or more atoms — are included in the MC step
+        pool as an independent move type.
+        When ``False``, fragment moves are excluded; coordinates are only
+        modified by affine moves (if *allow_affine_moves* is ``True``).
         If the *initial* structure passed to :meth:`run` contains atoms
         whose symbols are not in *elements*, those atoms are automatically
         replaced with parity-compatible pool elements before the MC loop
         begins.  This sanitization applies to all three methods (SA, BH,
         and PT); see :func:`_sanitize_atoms_to_pool`.
-        Cannot be ``False`` simultaneously with *allow_composition_moves*.
+        Cannot be ``False`` simultaneously with *allow_composition_moves*
+        **and** *allow_affine_moves* (at least one move type must be
+        enabled).
     allow_composition_moves:
-        When ``True`` (default), each MC step randomly chooses between a
-        displacement move and a composition move with equal probability.
-        The composition move selects a random atom and replaces it with a
-        different element drawn from *elements* while preserving the
-        charge/multiplicity parity.
-        When ``False``, only displacement moves are performed — element
-        types are held fixed throughout the run.
-        Cannot be ``False`` simultaneously with *allow_displacements*.
+        When ``True`` (default), **composition moves** — replacing a random
+        atom with a different element drawn from *elements* while preserving
+        charge/multiplicity parity — are included in the MC step pool as an
+        independent move type.
+        When ``False``, element types are held fixed throughout the run.
+        Cannot be ``False`` simultaneously with *allow_displacements*
+        **and** *allow_affine_moves* (at least one move type must be
+        enabled).
     allow_affine_moves:
-        When ``True``, half of the displacement moves are replaced by
-        **affine moves** — a random stretch, compress, or shear applied to
-        the entire structure, followed by a small per-atom jitter.  Affine
-        moves allow the optimizer to explore elongated or compressed
-        configurations that fragment moves cannot reach efficiently.
+        When ``True``, **affine moves** — a random stretch, compress, or
+        shear applied to the entire structure, followed by a small per-atom
+        jitter — are included in the MC step pool as an independent move
+        type alongside (not as a subset of) displacement and composition
+        moves.  Affine moves allow the optimizer to explore elongated or
+        compressed configurations that fragment moves cannot reach
+        efficiently.  When *allow_displacements* is ``False``, affine moves
+        are the only way positions change; the distance-constraint relaxation
+        is **not** applied after affine moves (consistent with the
+        *allow_displacements=False* semantics).
         Default: ``False`` (backward-compatible).
+        Cannot be ``False`` simultaneously with *allow_displacements*
+        **and** *allow_composition_moves* (at least one move type must be
+        enabled).
     affine_strength:
         Global dimensionless scale of the affine transform (default: 0.1).
         At 0.1 the structure is stretched / compressed by up to ±10 % along
@@ -1077,10 +1088,11 @@ class StructureOptimizer:
                 f"'parallel_tempering', got {method!r}"
             )
 
-        if not allow_displacements and not allow_composition_moves:
+        if not allow_displacements and not allow_composition_moves and not allow_affine_moves:
             raise ValueError(
-                "allow_displacements and allow_composition_moves cannot both be False: "
-                "at least one move type must be enabled."
+                "At least one move type must be enabled: "
+                "allow_displacements, allow_composition_moves, and allow_affine_moves "
+                "cannot all be False."
             )
 
         self.n_atoms = n_atoms
@@ -1435,6 +1447,16 @@ class StructureOptimizer:
         log_interval = max(1, self.max_steps // 20)
         width = len(str(self.max_steps))
 
+        # Pre-build the ordered list of enabled move types so that each
+        # iteration can sample uniformly (1/N) without re-evaluating flags.
+        _move_pool: list[str] = []
+        if self.allow_displacements:
+            _move_pool.append("displacement")
+        if self.allow_affine_moves:
+            _move_pool.append("affine")
+        if self.allow_composition_moves:
+            _move_pool.append("composition")
+
         for step in range(self.max_steps):
             # ── Each replica: one Metropolis step ────────────────────────
             for k in range(n_rep):
@@ -1445,25 +1467,22 @@ class StructureOptimizer:
                 q6_k = states_q6[k]
                 radii_k = replicas_radii[k]
 
-                # Propose move
-                _do_displacement = (
-                    self.allow_displacements
-                    and (not self.allow_composition_moves or rng.random() < 0.5)
-                )
-                if _do_displacement:
-                    if self.allow_affine_moves and rng.random() < 0.5:
-                        new_positions = _affine_move(
-                            positions, self.move_step, self.affine_strength, rng,
-                            affine_stretch=self.affine_stretch,
-                            affine_shear=self.affine_shear,
-                            affine_jitter=self.affine_jitter,
-                        )
-                    else:
-                        new_positions = _fragment_move(
-                            positions, q6_k, self.frag_threshold, self.move_step, rng
-                        )
+                # Propose move — sample uniformly from enabled move types
+                _move = rng.choice(_move_pool)
+                if _move == "displacement":
+                    new_positions = _fragment_move(
+                        positions, q6_k, self.frag_threshold, self.move_step, rng
+                    )
                     new_atoms = list(atoms)
-                else:
+                elif _move == "affine":
+                    new_positions = _affine_move(
+                        positions, self.move_step, self.affine_strength, rng,
+                        affine_stretch=self.affine_stretch,
+                        affine_shear=self.affine_shear,
+                        affine_jitter=self.affine_jitter,
+                    )
+                    new_atoms = list(atoms)
+                else:  # composition
                     new_atoms = _composition_move(
                         atoms, self._element_pool, rng, self.charge, self.mult
                     )
@@ -1688,28 +1707,35 @@ class StructureOptimizer:
         log_interval = max(1, self.max_steps // 20)
         width = len(str(self.max_steps))
 
+        # Pre-build the ordered list of enabled move types so that each
+        # iteration can sample uniformly (1/N) without re-evaluating flags.
+        _move_pool: list[str] = []
+        if self.allow_displacements:
+            _move_pool.append("displacement")
+        if self.allow_affine_moves:
+            _move_pool.append("affine")
+        if self.allow_composition_moves:
+            _move_pool.append("composition")
+
         for step in range(self.max_steps):
             T = self._temperature(step)
 
-            # ── Move ─────────────────────────────────────────────────────
-            _do_displacement = (
-                self.allow_displacements
-                and (not self.allow_composition_moves or rng.random() < 0.5)
-            )
-            if _do_displacement:
-                if self.allow_affine_moves and rng.random() < 0.5:
-                    new_positions = _affine_move(
-                        positions, self.move_step, self.affine_strength, rng,
-                        affine_stretch=self.affine_stretch,
-                        affine_shear=self.affine_shear,
-                        affine_jitter=self.affine_jitter,
-                    )
-                else:
-                    new_positions = _fragment_move(
-                        positions, per_atom_q6, self.frag_threshold, self.move_step, rng
-                    )
+            # ── Move — sample uniformly from enabled move types ───────────
+            _move = rng.choice(_move_pool)
+            if _move == "displacement":
+                new_positions = _fragment_move(
+                    positions, per_atom_q6, self.frag_threshold, self.move_step, rng
+                )
                 new_atoms = list(atoms)
-            else:
+            elif _move == "affine":
+                new_positions = _affine_move(
+                    positions, self.move_step, self.affine_strength, rng,
+                    affine_stretch=self.affine_stretch,
+                    affine_shear=self.affine_shear,
+                    affine_jitter=self.affine_jitter,
+                )
+                new_atoms = list(atoms)
+            else:  # composition
                 new_atoms = _composition_move(
                     atoms, self._element_pool, rng, self.charge, self.mult
                 )

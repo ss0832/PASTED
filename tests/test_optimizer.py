@@ -715,10 +715,25 @@ class TestAllowDisplacements:
 
     # ── Mutual-exclusion validation ───────────────────────────────────────
 
-    def test_both_false_raises(self) -> None:
-        """allow_displacements=False + allow_composition_moves=False must raise ValueError."""
-        with pytest.raises(ValueError, match="cannot both be False"):
-            self._opt(allow_displacements=False, allow_composition_moves=False)
+    def test_all_false_raises(self) -> None:
+        """All three move types False must raise ValueError."""
+        with pytest.raises(ValueError, match="At least one move type must be enabled"):
+            self._opt(
+                allow_displacements=False,
+                allow_composition_moves=False,
+                allow_affine_moves=False,
+            )
+
+    def test_affine_only_does_not_raise(self) -> None:
+        """allow_affine_moves=True alone (both others False) must NOT raise."""
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=False,
+            allow_affine_moves=True,
+        )
+        assert opt.allow_affine_moves is True
+        assert opt.allow_displacements is False
+        assert opt.allow_composition_moves is False
 
     # ── Positions are frozen ──────────────────────────────────────────────
 
@@ -832,6 +847,167 @@ class TestAllowDisplacements:
         np.testing.assert_allclose(
             np.array(best_positions), np.array(initial_positions), atol=1e-9,
         )
+
+
+# ===========================================================================
+# TestAllowAffineMoves
+# ===========================================================================
+
+
+class TestAllowAffineMoves:
+    """Tests for allow_affine_moves as an independent, orthogonal move type."""
+
+    def _opt(self, **kwargs: object) -> StructureOptimizer:
+        defaults: dict[str, object] = {
+            "n_atoms": 6,
+            "charge": 0,
+            "mult": 1,
+            "objective": {"H_total": 1.0},
+            "elements": "6,7,8",
+            "max_steps": 50,
+            "seed": 0,
+        }
+        defaults.update(kwargs)
+        return StructureOptimizer(**defaults)  # type: ignore[arg-type]
+
+    def test_default_is_false(self) -> None:
+        """allow_affine_moves defaults to False for backward compatibility."""
+        opt = self._opt()
+        assert opt.allow_affine_moves is False
+
+    def test_affine_only_does_not_raise(self) -> None:
+        """allow_affine_moves=True with both others False must not raise."""
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=False,
+            allow_affine_moves=True,
+        )
+        assert opt.allow_affine_moves is True
+
+    def test_all_false_raises(self) -> None:
+        """All three move flags False must raise ValueError."""
+        with pytest.raises(ValueError, match="At least one move type must be enabled"):
+            self._opt(
+                allow_displacements=False,
+                allow_composition_moves=False,
+                allow_affine_moves=False,
+            )
+
+    def test_affine_only_runs_and_returns_result(self) -> None:
+        """affine-only optimisation must complete and return OptimizationResult."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=7,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]  # type: ignore[union-attr]
+
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=False,
+            allow_affine_moves=True,
+            max_steps=100,
+            seed=7,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
+        assert isinstance(result, OptimizationResult)
+        assert len(result) > 0
+
+    def test_affine_only_preserves_composition(self) -> None:
+        """affine-only: composition must not change (no composition moves)."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=8,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]  # type: ignore[union-attr]
+        initial_composition = sorted(initial.atoms)  # type: ignore[union-attr]
+
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=False,
+            allow_affine_moves=True,
+            max_steps=100,
+            seed=8,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
+        assert sorted(result.best.atoms) == initial_composition, (
+            f"Composition changed in affine-only run: "
+            f"{sorted(result.best.atoms)} != {initial_composition}"
+        )
+
+    def test_affine_and_composition_no_displacement(self) -> None:
+        """affine+composition with allow_displacements=False must not raise."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=9,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]  # type: ignore[union-attr]
+
+        opt = self._opt(
+            allow_displacements=False,
+            allow_composition_moves=True,
+            allow_affine_moves=True,
+            max_steps=100,
+            seed=9,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
+        assert isinstance(result, OptimizationResult)
+
+    def test_parallel_tempering_affine_only(self) -> None:
+        """PT with affine-only moves must complete without error."""
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=50, n_success=1, seed=10,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gen_result = gen.generate()
+        if not gen_result:
+            pytest.skip("Could not generate initial structure")
+        initial = gen_result[0]  # type: ignore[union-attr]
+
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            objective={"H_total": 1.0},
+            elements="6,7,8",
+            method="parallel_tempering",
+            allow_displacements=False,
+            allow_composition_moves=False,
+            allow_affine_moves=True,
+            max_steps=50, n_replicas=2, n_restarts=1, seed=10,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
+        assert isinstance(result, OptimizationResult)
+
+    def test_repr_mentions_flag_when_enabled(self) -> None:
+        opt = self._opt(allow_affine_moves=True)
+        assert "affine_strength" in repr(opt)
+
+    def test_repr_silent_when_disabled(self) -> None:
+        opt = self._opt(allow_affine_moves=False)
+        assert "affine_strength" not in repr(opt)
 
 
 # ===========================================================================

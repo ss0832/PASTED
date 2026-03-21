@@ -122,16 +122,16 @@ except ImportError:
     HAS_GRAPH = False
 
 __all__ = [
-    "HAS_RELAX",
+    "HAS_GRAPH",
     "HAS_MAXENT",
     "HAS_MAXENT_LOOP",
+    "HAS_RELAX",
     "HAS_STEINHARDT",
-    "HAS_GRAPH",
-    "relax_positions",
     "angular_repulsion_gradient",
-    "place_maxent_cpp",
-    "steinhardt_per_atom",
     "graph_metrics_cpp",
     "moran_I_chi_cpp",
+    "place_maxent_cpp",
     "rdf_h_cpp",
+    "relax_positions",
+    "steinhardt_per_atom",
 ]

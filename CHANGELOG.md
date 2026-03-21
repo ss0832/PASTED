@@ -6,7 +6,45 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [0.3.2] — 2026-03-21
+## [0.3.3] — 2026-03-21
+
+### Bug Fixes
+
+#### `StructureOptimizer` — affine moves could not be used as the sole move type
+
+`allow_affine_moves`, `allow_displacements`, and `allow_composition_moves` were
+not treated as orthogonal, independent move types.  Two separate bugs made it
+impossible to run an affine-only optimisation:
+
+1. **Validation error** — `__init__` raised `ValueError` whenever both
+   `allow_displacements=False` and `allow_composition_moves=False`, even if
+   `allow_affine_moves=True`.  The guard has been relaxed: the error is now
+   raised only when **all three** flags are `False`.
+
+2. **Dead-code path** — the move-selection logic in both `_run_one` (SA / BH)
+   and the parallel-tempering loop treated affine as a *sub-type* of
+   displacement moves (`if allow_displacements: … if allow_affine: …`).  With
+   `allow_displacements=False` the affine branch was never reached.  Both loops
+   now pre-build a `_move_pool` list of enabled move types and sample uniformly
+   (1/N probability) at each step, making the three options fully orthogonal.
+
+The distance-constraint relaxation (`relax_positions`) is **not** applied after
+affine moves when `allow_displacements=False`, consistent with the existing
+semantics of that flag.
+
+### Tests
+
+- `TestAllowDisplacements.test_both_false_raises` renamed to
+  `test_all_false_raises`; error-message match string updated.
+- New `TestAllowDisplacements.test_affine_only_does_not_raise` validates the
+  relaxed validation path.
+- New `TestAllowAffineMoves` class covering: affine-only SA runs, composition
+  preservation, affine+composition without displacement, parallel-tempering
+  affine-only, and repr output.
+
+---
+
+
 
 ### Bug Fixes
 

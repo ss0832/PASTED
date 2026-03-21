@@ -376,7 +376,7 @@ def parse_element_spec(spec: str) -> list[str]:
     """
     z_set: set[int] = set()
     for token in spec.split(","):
-        token = token.strip()  # noqa: PLW2901
+        token = token.strip()
         if not token:
             continue
         if "-" in token:
