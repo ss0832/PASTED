@@ -396,8 +396,8 @@ class TestGraphCoreCpp:
         atoms = ["C", "N", "O", "Fe", "H"] * 10
         rng = np.random.default_rng(3)
         positions = [tuple(float(x) for x in row)
-                     for row in rng.uniform(-5, 5, (50, 3))]
-        m = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 2.13, 1.0)
+                     for row in rng.uniform(-5, 5, (50, 3))]  # type: ignore[arg-type]
+        m = compute_all_metrics(atoms, positions, 20, 0.5, 0.5, 2.13, 1.0)  # type: ignore[arg-type]
 
         for key in ("graph_lcc", "graph_cc", "ring_fraction", "charge_frustration",
                     "H_spatial", "RDF_dev"):

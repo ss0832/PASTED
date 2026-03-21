@@ -221,7 +221,7 @@ class TestStructure:
             seed=10,
         ).generate()
         assert results, "Need at least one structure"
-        return results[0]
+        return results[0]  # type: ignore[return-value]
 
     def test_len(self) -> None:
         s = self._make_structure()
@@ -611,8 +611,8 @@ class TestGenerationResultAdd:
         assert (r1 + r2).n_success_target == 5
 
     def test_add_returns_notimplemented_for_non_result(self) -> None:
-        r = GenerationResult(structures=[])
-        result = r.__add__([])  # type: ignore[arg-type]
+        r = GenerationResult(structures=[])  # type: ignore[operator]
+        result = r.__add__([])  # type: ignore[arg-type,operator]
         assert result is NotImplemented
 
 
@@ -901,7 +901,7 @@ class TestAffineStrength:
         defaults.update(kw)
         if mode == "chain":
             defaults.pop("region", None)
-        return StructureGenerator(**defaults)
+        return StructureGenerator(**defaults)  # type: ignore[arg-type]
 
     def test_zero_strength_is_default(self) -> None:
         """affine_strength=0.0 must behave identically to no-affine (backward compat)."""
@@ -992,9 +992,9 @@ class TestStructureCompProperty:
             warnings.simplefilter("ignore")
             result = gen.generate()
         assert result, "No structures generated"
-        s = result[0]
-        assert isinstance(s.comp, str)
-        assert len(s.comp) > 0
+        s = result[0]  # type: ignore[union-attr]
+        assert isinstance(s.comp, str)  # type: ignore[union-attr]
+        assert len(s.comp) > 0  # type: ignore[union-attr]
 
     def test_comp_matches_repr(self) -> None:
         gen = StructureGenerator(
@@ -1006,8 +1006,8 @@ class TestStructureCompProperty:
             warnings.simplefilter("ignore")
             result = gen.generate()
         assert result
-        s = result[0]
-        assert s.comp in repr(s), f"{s.comp!r} not found in {repr(s)!r}"
+        s = result[0]  # type: ignore[union-attr]
+        assert s.comp in repr(s), f"{s.comp!r} not found in {repr(s)!r}"  # type: ignore[union-attr]
 
     def test_comp_consistent_with_atoms(self) -> None:
         from collections import Counter
@@ -1020,13 +1020,13 @@ class TestStructureCompProperty:
             warnings.simplefilter("ignore")
             result = gen.generate()
         assert result
-        s = result[0]
-        counts = Counter(s.atoms)
+        s = result[0]  # type: ignore[union-attr]
+        counts = Counter(s.atoms)  # type: ignore[union-attr]
         expected = "".join(
             f"{sym}{n}" if n > 1 else sym
             for sym, n in sorted(counts.items())
-        )
-        assert s.comp == expected
+        )  # type: ignore[union-attr]
+        assert s.comp == expected  # type: ignore[union-attr]
 
     def test_comp_accessible_on_optimizer_result(self) -> None:
         """comp must work on structures returned by StructureOptimizer."""

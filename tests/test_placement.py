@@ -252,12 +252,12 @@ class TestRelaxPositions:
 
         original = _ext.HAS_RELAX
         try:
-            _ext.HAS_RELAX = False
-            py_result, py_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)
+            _ext.HAS_RELAX = False  # type: ignore[arg-type]
+            py_result, py_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)  # type: ignore[arg-type]
         finally:
             _ext.HAS_RELAX = original
-
-        cpp_result, cpp_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)
+  # type: ignore[arg-type]
+        cpp_result, cpp_conv = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=123)  # type: ignore[arg-type]
 
         # Both must converge
         assert py_conv and cpp_conv
@@ -316,8 +316,8 @@ class TestRelaxPositions:
         )
         atoms = ["C"] * n
         pos = [tuple(float(x) for x in row) for row in pts]
-
-        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1500, seed=0)
+  # type: ignore[arg-type]
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1500, seed=0)  # type: ignore[arg-type]
 
         assert converged, "L-BFGS did not converge on a dense N=200 structure"
         thr = cov_radius_ang("C") * 2.0  # same element
@@ -359,8 +359,8 @@ class TestRelaxPositions:
         atoms = ["C", "N", "O", "Fe", "H", "C", "N"]
         rng = np.random.default_rng(7)
         pos = [tuple(float(x) for x in rng.uniform(-0.3, 0.3, 3)) for _ in atoms]
-
-        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=7)
+  # type: ignore[arg-type]
+        result, converged = relax_positions(atoms, pos, 1.0, max_cycles=1000, seed=7)  # type: ignore[arg-type]
         assert converged
 
         n = len(atoms)

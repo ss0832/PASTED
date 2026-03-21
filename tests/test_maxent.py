@@ -157,8 +157,8 @@ class TestGeneratorMaxent:
             elements="6,7,8",
             n_samples=1,
             seed=1,
-        ).generate()
-        assert structs[0].mode == "maxent"
+        ).generate()  # type: ignore[union-attr]
+        assert structs[0].mode == "maxent"  # type: ignore[union-attr]
 
     def test_no_region_raises(self) -> None:
         with pytest.raises(ValueError, match="region"):

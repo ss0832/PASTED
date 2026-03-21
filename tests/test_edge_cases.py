@@ -35,6 +35,7 @@ import statistics
 import tempfile
 import warnings
 from collections import Counter
+from typing import cast
 
 import numpy as np
 import pytest
@@ -66,7 +67,7 @@ def _gas(n: int = 6, elements: str | list[str] = "6,7,8", n_samples: int = 20, s
             n_atoms=n, charge=0, mult=1,
             mode="gas", region="sphere:8",
             elements=elements, n_samples=n_samples, seed=seed,
-            **kw,
+            **kw,  # type: ignore[arg-type]
         )
 
 
@@ -78,7 +79,7 @@ def _opt(n: int = 6, elements: str = "6,7,8", max_steps: int = 50, seed: int = 0
         objective={"H_total": 1.0},
         method="annealing", max_steps=max_steps,
         n_restarts=n_restarts, seed=seed,
-        **kw,
+        **kw,  # type: ignore[arg-type]
     ).run()
 
 
@@ -222,9 +223,9 @@ class TestGenerationResultInterface:
         assert len(full) == len(result)
 
     def test_add_with_non_result_returns_not_implemented(self) -> None:
-        r = GenerationResult()
-        assert r.__add__(42) is NotImplemented
-        assert r.__add__("list") is NotImplemented
+        r = GenerationResult()  # type: ignore[operator]
+        assert r.__add__(42) is NotImplemented  # type: ignore[operator]
+        assert r.__add__("list") is NotImplemented  # type: ignore[operator]
 
     def test_bool_false_when_empty(self) -> None:
         empty = GenerationResult()
@@ -593,19 +594,19 @@ class TestXyzIoRobustness:
         """A string containing newlines must be parsed as XYZ content, not as a file path."""
         result = _gas(n=6, n_samples=5, seed=55)
         if not result:
-            pytest.skip("No structures")
-        xyz_str = result[0].to_xyz()
+            pytest.skip("No structures")  # type: ignore[union-attr]
+        xyz_str = result[0].to_xyz()  # type: ignore[union-attr]
         assert "\n" in xyz_str
-        s = Structure.from_xyz(xyz_str, recompute_metrics=False)
-        assert len(s.atoms) == len(result[0].atoms)
+        s = Structure.from_xyz(xyz_str, recompute_metrics=False)  # type: ignore[union-attr]
+        assert len(s.atoms) == len(result[0].atoms)  # type: ignore[union-attr]
 
     def test_write_xyz_to_nonexistent_parent_raises_os_error(self) -> None:
         """Writing to a path whose parent directory does not exist must raise FileNotFoundError."""
         result = _gas(n=4, elements="6", n_samples=5, seed=0)
         if not result:
             pytest.skip("No structures")
-        with pytest.raises((FileNotFoundError, OSError)):
-            result[0].write_xyz("/nonexistent_parent_dir/output.xyz")
+        with pytest.raises((FileNotFoundError, OSError)):  # type: ignore[union-attr]
+            result[0].write_xyz("/nonexistent_parent_dir/output.xyz")  # type: ignore[union-attr]
 
     def test_write_xyz_append_false_overwrites(self, tmp_path: object) -> None:
         """append=False must overwrite the existing file, not append to it."""
@@ -614,11 +615,11 @@ class TestXyzIoRobustness:
         result = _gas(n=6, n_samples=10, seed=3)
         if len(result) < 2:
             pytest.skip("Need >= 2 structures")
-
-        result[0].write_xyz(str(path), append=False)
+  # type: ignore[union-attr]
+        result[0].write_xyz(str(path), append=False)  # type: ignore[union-attr]
         size_after_first = path.stat().st_size
-
-        result[1].write_xyz(str(path), append=False)
+  # type: ignore[union-attr]
+        result[1].write_xyz(str(path), append=False)  # type: ignore[union-attr]
         size_after_overwrite = path.stat().st_size
 
         # Size after overwrite should be comparable to the first write, not growing unboundedly
@@ -632,8 +633,8 @@ class TestXyzIoRobustness:
         if not result:
             pytest.skip("No structures")
         with tempfile.NamedTemporaryFile(suffix=".xyz", mode="w", delete=False) as f:
-            fname = f.name
-            f.write(result[0].to_xyz() + "\n")
+            fname = f.name  # type: ignore[union-attr]
+            f.write(result[0].to_xyz() + "\n")  # type: ignore[union-attr]
         try:
             loaded = read_xyz(fname)
         finally:
@@ -765,9 +766,9 @@ class TestGeneratorMultipleCallsDeterminism:
 
         if not r1:
             pytest.skip("No structures generated")
-        np.testing.assert_allclose(
-            np.array(r1[0].positions),
-            np.array(r2[0].positions),
+        np.testing.assert_allclose(  # type: ignore[union-attr]
+            np.array(cast(Structure, r1[0]).positions),
+            np.array(r2[0].positions),  # type: ignore[union-attr]
             err_msg="positions differ between two generate() calls with same seed",
         )
 
@@ -807,13 +808,13 @@ class TestStructureCompEdgeCases:
         result = _gas(n=10, n_samples=5, seed=22)
         if not result:
             pytest.skip("No structures")
-        s = result[0]
-        counts = Counter(s.atoms)
+        s = result[0]  # type: ignore[union-attr]
+        counts = Counter(s.atoms)  # type: ignore[union-attr]
         expected = "".join(
             f"{sym}{n}" if n > 1 else sym
             for sym, n in sorted(counts.items())
-        )
-        assert s.comp == expected
+        )  # type: ignore[union-attr]
+        assert s.comp == expected  # type: ignore[union-attr]
 
 
 # ===========================================================================
@@ -828,17 +829,17 @@ class TestStructureXyzOutput:
         result = _gas(n=6, n_samples=5, seed=0)
         if not result:
             pytest.skip("No structures")
-        s = result[0]
-        first_line = s.to_xyz().splitlines()[0].strip()
-        assert first_line.isdigit(), f"First line should be atom count, got {first_line!r}"
-        assert int(first_line) == len(s.atoms)
+        s = result[0]  # type: ignore[union-attr]
+        first_line = s.to_xyz().splitlines()[0].strip()  # type: ignore[union-attr]
+        assert first_line.isdigit(), f"First line should be atom count, got {first_line!r}"  # type: ignore[union-attr]
+        assert int(first_line) == len(s.atoms)  # type: ignore[union-attr]
 
     def test_to_xyz_custom_prefix_appears_in_comment(self) -> None:
         result = _gas(n=6, n_samples=5, seed=1)
         if not result:
             pytest.skip("No structures")
-        s = result[0]
-        xyz = s.to_xyz(prefix="custom_prefix=42")
+        s = result[0]  # type: ignore[union-attr]
+        xyz = s.to_xyz(prefix="custom_prefix=42")  # type: ignore[union-attr]
         comment_line = xyz.splitlines()[1]
         assert "custom_prefix=42" in comment_line
 
@@ -846,8 +847,8 @@ class TestStructureXyzOutput:
         result = _gas(n=8, n_samples=5, seed=2)
         if not result:
             pytest.skip("No structures")
-        s = result[0]
-        lines = s.to_xyz().splitlines()
+        s = result[0]  # type: ignore[union-attr]
+        lines = s.to_xyz().splitlines()  # type: ignore[union-attr]
         n_atoms = int(lines[0])
         coord_lines = lines[2:2 + n_atoms]
         assert len(coord_lines) == n_atoms
@@ -857,10 +858,10 @@ class TestStructureXyzOutput:
         path = pathlib.Path(str(tmp_path)) / "out.xyz"  # type: ignore[operator]
         result = _gas(n=6, n_samples=10, seed=4)
         if len(result) < 2:
-            pytest.skip("Need >= 2 structures")
-        result[0].write_xyz(str(path), append=False)
-        size1 = path.stat().st_size
-        result[0].write_xyz(str(path), append=True)
+            pytest.skip("Need >= 2 structures")  # type: ignore[union-attr]
+        result[0].write_xyz(str(path), append=False)  # type: ignore[union-attr]
+        size1 = path.stat().st_size  # type: ignore[union-attr]
+        result[0].write_xyz(str(path), append=True)  # type: ignore[union-attr]
         size2 = path.stat().st_size
         # The file should grow after appending
         assert size2 > size1
@@ -1036,9 +1037,9 @@ class TestBitIdenticalReproducibility:
             n_atoms=8, charge=0, mult=1,
             mode="gas", region="sphere:7",
             elements="6,7,8", n_samples=25, seed=12345,
-        )
-        r1 = generate(**kwargs)
-        r2 = generate(**kwargs)
+        )  # type: ignore[arg-type]
+        r1 = generate(**kwargs)  # type: ignore[arg-type]
+        r2 = generate(**kwargs)  # type: ignore[arg-type]
         assert len(r1) == len(r2)
         for i, (s1, s2) in enumerate(zip(r1, r2)):
             np.testing.assert_allclose(

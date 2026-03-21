@@ -250,8 +250,8 @@ class TestStructureOptimizerRun:
             elements="6,7,8",
             max_steps=20,
             seed=5,
-        )
-        result = opt.run(initial=initial)
+        )  # type: ignore[arg-type]
+        result = opt.run(initial=initial)  # type: ignore[arg-type]
         assert isinstance(result, OptimizationResult)
 
     def test_structure_mode_label(self) -> None:
@@ -629,16 +629,16 @@ class TestAllowCompositionMoves:
         if not result_gen:
             pytest.skip("Could not generate initial structure")
         initial = result_gen[0]
-
-        initial_composition = sorted(initial.atoms)
+  # type: ignore[union-attr]
+        initial_composition = sorted(initial.atoms)  # type: ignore[union-attr]
         opt = self._opt(
             allow_composition_moves=False,
             max_steps=200,
             seed=5,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         assert sorted(result.best.atoms) == initial_composition, (
             f"Composition changed despite allow_composition_moves=False: "
@@ -673,8 +673,8 @@ class TestAllowCompositionMoves:
         if not gen_result:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
-
-        initial_composition = sorted(initial.atoms)
+  # type: ignore[union-attr]
+        initial_composition = sorted(initial.atoms)  # type: ignore[union-attr]
         opt = StructureOptimizer(
             n_atoms=6, charge=0, mult=1,
             objective={"H_total": 1.0},
@@ -684,8 +684,8 @@ class TestAllowCompositionMoves:
             max_steps=50, n_replicas=2, n_restarts=1, seed=3,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
         assert sorted(result.best.atoms) == initial_composition
 
 # ---------------------------------------------------------------------------
@@ -735,8 +735,8 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = result_gen[0]
 
-
-        initial_positions = [tuple(p) for p in initial.positions]
+  # type: ignore[union-attr]
+        initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = self._opt(
             allow_displacements=False,
             allow_composition_moves=True,
@@ -744,8 +744,8 @@ class TestAllowDisplacements:
             seed=11,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
@@ -783,8 +783,8 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-
-        initial_positions = [tuple(p) for p in initial.positions]
+  # type: ignore[union-attr]
+        initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = StructureOptimizer(
             n_atoms=6, charge=0, mult=1,
             objective={"H_atom": 1.0},
@@ -794,8 +794,8 @@ class TestAllowDisplacements:
             max_steps=50, n_restarts=1, seed=22,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
             np.array(best_positions), np.array(initial_positions), atol=1e-9,
@@ -815,8 +815,8 @@ class TestAllowDisplacements:
             pytest.skip("Could not generate initial structure")
         initial = gen_result[0]
 
-
-        initial_positions = [tuple(p) for p in initial.positions]
+  # type: ignore[union-attr]
+        initial_positions = [tuple(p) for p in initial.positions]  # type: ignore[union-attr]
         opt = StructureOptimizer(
             n_atoms=6, charge=0, mult=1,
             objective={"H_atom": 1.0},
@@ -826,8 +826,8 @@ class TestAllowDisplacements:
             max_steps=50, n_replicas=2, n_restarts=1, seed=33,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
         best_positions = [tuple(p) for p in result.best.positions]
         np.testing.assert_allclose(
             np.array(best_positions), np.array(initial_positions), atol=1e-9,
@@ -1184,9 +1184,9 @@ class TestRadiiCacheBugFix:
         pool_set = set(pool)
 
         opt = StructureOptimizer(
-            n_atoms=len(initial),
-            charge=initial.charge,
-            mult=initial.mult,
+            n_atoms=len(initial),  # type: ignore[union-attr]
+            charge=initial.charge,  # type: ignore[union-attr]
+            mult=initial.mult,  # type: ignore[union-attr]
             elements=pool,
             objective={"H_atom": 1.0},
             allow_displacements=False,
@@ -1195,8 +1195,8 @@ class TestRadiiCacheBugFix:
             seed=42,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         unexpected = set(result.best.atoms) - pool_set
         assert not unexpected, (
@@ -1257,9 +1257,9 @@ class TestSanitizeAtomsToPool:
         )[0]
 
         opt = StructureOptimizer(
-            n_atoms=len(initial),
-            charge=initial.charge,
-            mult=initial.mult,
+            n_atoms=len(initial),  # type: ignore[union-attr]
+            charge=initial.charge,  # type: ignore[union-attr]
+            mult=initial.mult,  # type: ignore[union-attr]
             elements=["Cr", "Mn", "Fe", "Co", "Ni"],
             objective={"H_atom": 1.0},
             allow_displacements=False,
@@ -1269,12 +1269,12 @@ class TestSanitizeAtomsToPool:
             seed=99,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         np.testing.assert_allclose(
-            np.array(result.best.positions),
-            np.array(initial.positions),
+            np.array(result.best.positions),  # type: ignore[union-attr]
+            np.array(initial.positions),  # type: ignore[union-attr]
             atol=1e-9,
             err_msg="Positions changed despite allow_displacements=False",
         )
@@ -1303,9 +1303,9 @@ class TestParallelTemperingSanitize:
         pool_set = set(pool)
 
         opt = StructureOptimizer(
-            n_atoms=len(initial),
-            charge=initial.charge,
-            mult=initial.mult,
+            n_atoms=len(initial),  # type: ignore[union-attr]
+            charge=initial.charge,  # type: ignore[union-attr]
+            mult=initial.mult,  # type: ignore[union-attr]
             elements=pool,
             objective={"H_atom": 1.0},
             allow_displacements=False,
@@ -1315,8 +1315,8 @@ class TestParallelTemperingSanitize:
             seed=42,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         unexpected = set(result.best.atoms) - pool_set
         assert not unexpected, (
@@ -1335,13 +1335,13 @@ class TestParallelTemperingSanitize:
             n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
             elements="6,7,8", n_samples=30, seed=3,
         )[0]
-        # All atoms already in pool — sanitize must be a no-op.
-        assert all(a in set(pool) for a in initial.atoms)
+        # All atoms already in pool — sanitize must be a no-op.  # type: ignore[union-attr]
+        assert all(a in set(pool) for a in initial.atoms)  # type: ignore[union-attr]
 
         opt = StructureOptimizer(
-            n_atoms=len(initial),
-            charge=initial.charge,
-            mult=initial.mult,
+            n_atoms=len(initial),  # type: ignore[union-attr]
+            charge=initial.charge,  # type: ignore[union-attr]
+            mult=initial.mult,  # type: ignore[union-attr]
             elements=pool,
             objective={"H_atom": 1.0},
             allow_displacements=False,
@@ -1351,8 +1351,8 @@ class TestParallelTemperingSanitize:
             seed=0,
         )
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            result = opt.run(initial=initial)
+            warnings.simplefilter("ignore")  # type: ignore[arg-type]
+            result = opt.run(initial=initial)  # type: ignore[arg-type]
 
         pool_set = set(pool)
         unexpected = set(result.best.atoms) - pool_set

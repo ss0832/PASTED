@@ -125,18 +125,18 @@ class TestStructureFromXyz:
                 n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
                 elements="6,8", n_samples=1, seed=0,
             )
-        original = structs[0]
-        xyz_str = original.to_xyz()
-        loaded = Structure.from_xyz(xyz_str, recompute_metrics=True)
-        assert loaded.atoms == original.atoms
-        assert loaded.charge == original.charge
-        assert loaded.mult == original.mult
+        original = structs[0]  # type: ignore[union-attr]
+        xyz_str = original.to_xyz()  # type: ignore[union-attr]
+        loaded = Structure.from_xyz(xyz_str, recompute_metrics=True)  # type: ignore[union-attr]
+        assert loaded.atoms == original.atoms  # type: ignore[union-attr]
+        assert loaded.charge == original.charge  # type: ignore[union-attr]
+        assert loaded.mult == original.mult  # type: ignore[union-attr]
         # Full metric set is present
         assert set(loaded.metrics.keys()) == ALL_METRICS
         # Composition-based metrics are cutoff-independent → exact match
         stable = ("H_atom",)
-        for key in stable:
-            assert loaded.metrics[key] == pytest.approx(original.metrics[key], abs=1e-4), key
+        for key in stable:  # type: ignore[union-attr]
+            assert loaded.metrics[key] == pytest.approx(original.metrics[key], abs=1e-4), key  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------
