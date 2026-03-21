@@ -406,9 +406,9 @@ class TestXYZIO:
         The important invariant is that no unhandled C-extension segfault or uncaught
         low-level exception escapes — only a clean Python exception is permissible.
         """
-        from pasted import Structure
         import numpy.linalg
 
+        from pasted import Structure
         bad_xyz = "2\ncomment\nC 0.0 NaN INFINITY\nN 1.0 0.0 0.0\n"
         try:
             Structure.from_xyz(bad_xyz)
@@ -422,7 +422,7 @@ class TestXYZIO:
 
     def test_from_xyz_frame_out_of_range_raises_valueerror(self):
         """Requesting a non-existent frame index must raise ValueError."""
-        from pasted import generate, Structure
+        from pasted import Structure, generate
 
         structs = generate(
             n_atoms=6, charge=0, mult=1,
@@ -437,7 +437,7 @@ class TestXYZIO:
 
     def test_from_xyz_multiframe_round_trip(self):
         """Writing N frames then reading each back by index must preserve element lists."""
-        from pasted import generate, Structure
+        from pasted import Structure, generate
 
         structs = generate(
             n_atoms=8, charge=0, mult=1,
@@ -741,7 +741,7 @@ class TestCounterIntuitiveValidCases:
 
     def test_generate_kwargs_and_config_are_equivalent(self):
         """generate(**kwargs) and generate(GeneratorConfig(**kwargs)) must return the same count."""
-        from pasted import generate, GeneratorConfig
+        from pasted import GeneratorConfig, generate
 
         kwargs = dict(
             n_atoms=10, charge=0, mult=1,
