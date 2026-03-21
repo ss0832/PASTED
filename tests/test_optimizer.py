@@ -1104,3 +1104,258 @@ class TestEvalContext:
             warnings.simplefilter("ignore")
             result = opt.run()
         assert result.best is not None
+
+
+# ---------------------------------------------------------------------------
+# Bug fixes 0.3.1 — _composition_move pool usage, radii cache, sanitize
+# ---------------------------------------------------------------------------
+
+
+class TestCompositionMoveBugFixes:
+    """0.3.1 — _composition_move must draw from element_pool (Bug #2)."""
+
+    def test_composition_move_draws_from_pool(self) -> None:
+        """Every returned atom must come from element_pool."""
+        import random
+
+        from pasted._optimizer import _composition_move
+
+        pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
+        pool_set = set(pool)
+        atoms = ["C", "C", "N", "O", "C"]  # all outside pool
+        rng = random.Random(42)
+
+        found_pool_elements: set[str] = set()
+        for _ in range(200):
+            new = _composition_move(list(atoms), pool, rng)
+            for a in new:
+                if a in pool_set:
+                    found_pool_elements.add(a)
+
+        assert len(found_pool_elements) > 0, (
+            "_composition_move never introduced a pool element in 200 attempts"
+        )
+
+    def test_composition_move_length_preserved(self) -> None:
+        import random
+
+        from pasted._optimizer import _composition_move
+
+        pool = ["C", "N", "O", "S"]
+        atoms = ["C", "N", "O"]
+        rng = random.Random(0)
+        for _ in range(50):
+            new = _composition_move(list(atoms), pool, rng)
+            assert len(new) == len(atoms)
+
+    def test_composition_move_single_element_pool(self) -> None:
+        """Pool with one element: fallback path must not crash."""
+        import random
+
+        from pasted._optimizer import _composition_move
+
+        pool = ["Fe"]
+        atoms = ["C", "C", "N"]
+        rng = random.Random(7)
+        new = _composition_move(list(atoms), pool, rng)
+        assert len(new) == len(atoms)
+
+
+class TestRadiiCacheBugFix:
+    """0.3.1 — radii cache must refresh when composition changes (Bug #3)."""
+
+    def test_composition_only_opt_all_pool_atoms(self) -> None:
+        """
+        After composition-only optimisation the best structure must contain
+        only atoms from the element pool.  If the radii cache was stale the
+        optimizer would either crash on a shape mismatch or silently keep
+        wrong radii, producing invalid geometries.
+        """
+        import warnings
+
+        from pasted import StructureOptimizer, generate
+
+        initial = generate(
+            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:8",
+            elements="6,7,8", n_samples=50, seed=5,
+        )[0]
+
+        pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
+        pool_set = set(pool)
+
+        opt = StructureOptimizer(
+            n_atoms=len(initial),
+            charge=initial.charge,
+            mult=initial.mult,
+            elements=pool,
+            objective={"H_atom": 1.0},
+            allow_displacements=False,
+            method="annealing",
+            max_steps=3000,
+            seed=42,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+
+        unexpected = set(result.best.atoms) - pool_set
+        assert not unexpected, (
+            f"Non-pool atoms found in composition-only result: {unexpected}"
+        )
+
+
+class TestSanitizeAtomsToPool:
+    """0.3.1 — _sanitize_atoms_to_pool (Bug #4)."""
+
+    def test_all_atoms_in_pool_after_sanitize(self) -> None:
+        import random
+
+        from pasted._optimizer import _sanitize_atoms_to_pool
+
+        pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
+        pool_set = set(pool)
+        atoms = ["C", "N", "O", "C", "N"]  # all outside pool
+        rng = random.Random(0)
+        result = _sanitize_atoms_to_pool(atoms, pool, rng)
+        assert all(a in pool_set for a in result), (
+            f"Non-pool atoms after sanitize: {[a for a in result if a not in pool_set]}"
+        )
+
+    def test_length_preserved(self) -> None:
+        import random
+
+        from pasted._optimizer import _sanitize_atoms_to_pool
+
+        atoms = ["C", "N", "O"]
+        pool = ["Fe", "Ni"]
+        rng = random.Random(1)
+        result = _sanitize_atoms_to_pool(atoms, pool, rng)
+        assert len(result) == len(atoms)
+
+    def test_already_in_pool_unchanged(self) -> None:
+        import random
+
+        from pasted._optimizer import _sanitize_atoms_to_pool
+
+        pool = ["C", "N", "O"]
+        atoms = ["C", "N", "O"]
+        rng = random.Random(2)
+        result = _sanitize_atoms_to_pool(atoms, pool, rng)
+        assert result == atoms
+
+    def test_composition_only_opt_preserves_positions(self) -> None:
+        """Positions must be exactly preserved when allow_displacements=False."""
+        import warnings
+
+        import numpy as np
+
+        from pasted import StructureOptimizer, generate
+
+        initial = generate(
+            n_atoms=8, charge=0, mult=1, mode="gas", region="sphere:8",
+            elements="6,7,8", n_samples=50, seed=11,
+        )[0]
+
+        opt = StructureOptimizer(
+            n_atoms=len(initial),
+            charge=initial.charge,
+            mult=initial.mult,
+            elements=["Cr", "Mn", "Fe", "Co", "Ni"],
+            objective={"H_atom": 1.0},
+            allow_displacements=False,
+            method="annealing",
+            max_steps=2000,
+            n_restarts=2,
+            seed=99,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+
+        np.testing.assert_allclose(
+            np.array(result.best.positions),
+            np.array(initial.positions),
+            atol=1e-9,
+            err_msg="Positions changed despite allow_displacements=False",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug fix 0.3.1 — parallel tempering sanitize (Bug #6)
+# ---------------------------------------------------------------------------
+
+
+class TestParallelTemperingSanitize:
+    """0.3.1 — PT path must sanitize foreign atoms from initial structure (Bug #6)."""
+
+    def test_pt_no_foreign_atoms_after_run(self) -> None:
+        """Every atom in the PT best result must come from the element pool."""
+        import warnings
+
+        from pasted import StructureOptimizer, generate
+
+        initial = generate(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=30, seed=5,
+        )[0]
+
+        pool = ["Cr", "Mn", "Fe", "Co", "Ni"]
+        pool_set = set(pool)
+
+        opt = StructureOptimizer(
+            n_atoms=len(initial),
+            charge=initial.charge,
+            mult=initial.mult,
+            elements=pool,
+            objective={"H_atom": 1.0},
+            allow_displacements=False,
+            method="parallel_tempering",
+            n_replicas=2,
+            max_steps=200,
+            seed=42,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+
+        unexpected = set(result.best.atoms) - pool_set
+        assert not unexpected, (
+            f"Non-pool atoms found in PT composition-only result: {unexpected}"
+        )
+
+    def test_pt_with_initial_same_pool_unchanged(self) -> None:
+        """When initial atoms already belong to the pool, PT must not alter them
+        before the first MC step (i.e., sanitize is a no-op)."""
+        import warnings
+
+        from pasted import StructureOptimizer, generate
+
+        pool = ["C", "N", "O"]
+        initial = generate(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=30, seed=3,
+        )[0]
+        # All atoms already in pool — sanitize must be a no-op.
+        assert all(a in set(pool) for a in initial.atoms)
+
+        opt = StructureOptimizer(
+            n_atoms=len(initial),
+            charge=initial.charge,
+            mult=initial.mult,
+            elements=pool,
+            objective={"H_atom": 1.0},
+            allow_displacements=False,
+            method="parallel_tempering",
+            n_replicas=2,
+            max_steps=50,
+            seed=0,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run(initial=initial)
+
+        pool_set = set(pool)
+        unexpected = set(result.best.atoms) - pool_set
+        assert not unexpected, (
+            f"Non-pool atoms in PT result with in-pool initial: {unexpected}"
+        )

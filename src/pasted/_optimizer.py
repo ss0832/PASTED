@@ -27,9 +27,18 @@ Fragment coordinate move
     vector of magnitude <= *move_step* Ang.  If no atom exceeds the threshold
     (structure is already fully disordered), a single random atom is moved.
 Composition move
-    Parity-preserving composition change: swap two atoms with different
-    elements (always parity-safe), or replace two atoms simultaneously
-    so the net electron-count change is even (parity-preserving fallback).
+    Parity-preserving composition change: select a random atom and replace
+    it with a different element drawn from *element_pool* whose atomic number
+    has the same parity (Z mod 2) as the original, so the total electron
+    count parity is preserved and charge/multiplicity validity is maintained.
+    When no same-parity candidate exists in the pool, two atoms are replaced
+    simultaneously so the combined ΔZ is even (parity-preserving fallback).
+
+    If the initial structure supplied to :meth:`StructureOptimizer.run`
+    contains atoms outside the element pool, they are replaced by
+    parity-compatible pool elements before the MC loop starts.
+    This sanitization is applied in all three methods (SA, BH, and PT)
+    via :func:`_sanitize_atoms_to_pool`.
 
 Objective function
 ------------------
@@ -615,27 +624,30 @@ def _composition_move(
 
     Two move types are attempted in order:
 
-    1. **Swap**: exchange the element types of two atoms with different
-       elements.  Since the total electron count is unchanged, parity is
-       always preserved.
-    2. **Parity-preserving replace**: when all atoms are the same element
-       (so no swap is possible), replace *two* atoms simultaneously so that
-       the net change in electron count is even, keeping the charge/
-       multiplicity parity invariant.  Both replacement elements are drawn
-       independently from *element_pool*; if no valid pair is found in
-       *max_tries* attempts the best single-replacement is used with a
-       fallback parity correction.
+    1. **Pool replacement** (up to 20 tries): pick a random atom and replace
+       it with a *different* element drawn from *element_pool* that has the
+       same atomic-number parity as the atom being replaced.  Because
+       ``ΔZ = Z(new) - Z(old)`` is even, the total electron count parity is
+       preserved and charge/multiplicity validity is maintained.
+    2. **Two-atom replacement** (fallback): when Path 1 cannot find a valid
+       same-parity candidate (e.g. every pool element has the same symbol as
+       the chosen atom, or the pool contains only one parity class), replace
+       two atoms simultaneously so the net ``ΔZ_total`` is even.
+
+    In the last-resort case (pool with a single parity class *and* ``n == 1``)
+    an unchecked single replacement is returned; the caller's
+    ``validate_charge_mult`` guard will reject it if the result is invalid.
 
     The ``charge`` and ``mult`` parameters are used only to determine the
-    required electron-count parity (even or odd); they do not affect the
-    swap path.
+    required electron-count parity (even or odd).
 
     Parameters
     ----------
     atoms:
-        Current element list (modified copy is returned).
+        Current element list.  A copy is returned; the input is not mutated.
     element_pool:
-        Elements available for replacement.
+        Elements available for replacement.  Every returned atom is drawn
+        from this pool (or already present in *atoms* and unchanged).
     rng:
         Seeded random-number generator.
     charge:
@@ -646,17 +658,23 @@ def _composition_move(
     Returns
     -------
     list[str]
-        New atom list with the same length as *atoms*.
+        New atom list with the same length as *atoms*, with at least one
+        element replaced by a symbol from *element_pool*.
     """
     new_atoms = list(atoms)
     n = len(new_atoms)
 
-    # ── Path 1: swap two atoms with different elements ────────────────────
-    # Electron count is preserved → always parity-valid.
+    # ── Path 1: replace one atom with an element drawn from element_pool ─────
+    # To preserve parity (electron-count mod 2), pick a pool element whose
+    # atomic number has the same parity as the atom being replaced.
+    # If no same-parity pool element exists, fall through to Path 2.
     for _ in range(20):
-        i, j = rng.sample(range(n), 2)
-        if new_atoms[i] != new_atoms[j]:
-            new_atoms[i], new_atoms[j] = new_atoms[j], new_atoms[i]
+        i = rng.randrange(n)
+        zi = ATOMIC_NUMBERS[new_atoms[i]]
+        same_parity = [e for e in element_pool if ATOMIC_NUMBERS[e] % 2 == zi % 2
+                       and e != new_atoms[i]]
+        if same_parity:
+            new_atoms[i] = rng.choice(same_parity)
             return new_atoms
 
     # ── Path 2: parity-preserving two-atom replacement ───────────────────
@@ -694,6 +712,56 @@ def _composition_move(
     # Pool has only one parity class and n == 1, or pool is empty.
     # Replace one atom; caller's validate_charge_mult will reject if invalid.
     new_atoms[i] = rng.choice(element_pool)
+    return new_atoms
+
+
+def _sanitize_atoms_to_pool(
+    atoms: list[str],
+    element_pool: list[str],
+    rng: random.Random,
+) -> list[str]:
+    """Replace every atom not in *element_pool* with a pool element.
+
+    Called at the start of :meth:`StructureOptimizer._run_one` when the
+    caller supplies an *initial* structure whose composition is drawn from a
+    different element set than *element_pool*.  Without this step the
+    Metropolis loop could spend many iterations slowly replacing foreign
+    atoms, or—if the objective value is higher with foreign atoms—retain them
+    permanently.
+
+    Replacements are chosen to preserve the electron-count parity of each
+    replaced position: a non-pool atom is replaced by a pool element whose
+    atomic number has the same Z mod 2.  This keeps the total electron count
+    parity unchanged so the resulting structure passes ``validate_charge_mult``
+    with the same charge/mult that the caller supplied.
+
+    If the pool contains no element with the required parity (rare, e.g. a
+    pool of only odd-Z atoms and an even-Z replacement needed) any pool
+    element is used; ``validate_charge_mult`` in the Metropolis loop will
+    reject the step in that case.
+
+    Parameters
+    ----------
+    atoms:
+        Input element list.  Not mutated.
+    element_pool:
+        Elements allowed in the final structure.
+    rng:
+        Seeded random-number generator.
+
+    Returns
+    -------
+    list[str]
+        Copy of *atoms* with every symbol not in *element_pool* replaced by
+        a parity-compatible symbol from *element_pool*.
+    """
+    pool_set = set(element_pool)
+    new_atoms = list(atoms)
+    for idx, sym in enumerate(new_atoms):
+        if sym not in pool_set:
+            zi = ATOMIC_NUMBERS[sym]
+            same_parity = [e for e in element_pool if ATOMIC_NUMBERS[e] % 2 == zi % 2]
+            new_atoms[idx] = rng.choice(same_parity if same_parity else element_pool)
     return new_atoms
 
 
@@ -773,12 +841,20 @@ class StructureOptimizer:
         optionally, affine moves) are included in the MC step pool.
         When ``False``, only composition moves are performed — atomic
         coordinates are held fixed and only element types are optimized.
+        If the *initial* structure passed to :meth:`run` contains atoms
+        whose symbols are not in *elements*, those atoms are automatically
+        replaced with parity-compatible pool elements before the MC loop
+        begins.  This sanitization applies to all three methods (SA, BH,
+        and PT); see :func:`_sanitize_atoms_to_pool`.
         Cannot be ``False`` simultaneously with *allow_composition_moves*.
     allow_composition_moves:
         When ``True`` (default), each MC step randomly chooses between a
-        displacement move and a composition move (element-type swap) with
-        equal probability.  When ``False``, only displacement moves are
-        performed — element types are held fixed.
+        displacement move and a composition move with equal probability.
+        The composition move selects a random atom and replaces it with a
+        different element drawn from *elements* while preserving the
+        charge/multiplicity parity.
+        When ``False``, only displacement moves are performed — element
+        types are held fixed throughout the run.
         Cannot be ``False`` simultaneously with *allow_displacements*.
     allow_affine_moves:
         When ``True``, half of the displacement moves are replaced by
@@ -1072,6 +1148,11 @@ class StructureOptimizer:
         Initialization
         --------------
         * ``initial`` provided — all replicas start from the same structure.
+          If ``allow_composition_moves=True`` and the initial structure
+          contains atoms whose symbols are outside *element_pool*, each
+          replica's atom list is independently sanitized via
+          :func:`_sanitize_atoms_to_pool` before the MC loop begins
+          (fix: Bug #6 — mirrors the same fix in :meth:`_run_one`).
         * ``initial=None``, ``allow_composition_moves=True`` — each replica
           gets an independent random structure (composition and positions).
         * ``initial=None``, ``allow_composition_moves=False`` — a single
@@ -1118,10 +1199,29 @@ class StructureOptimizer:
         if initial is None and not self.allow_composition_moves:
             _shared_initial = self._make_initial(rng)
 
+        # Pre-check whether the caller-supplied initial structure contains
+        # atoms outside the element pool.  If so, each replica's atom list
+        # must be sanitized before the MC loop begins — same fix as in
+        # _run_one (Bug #4), extended to the PT path (Bug #6).
+        _initial_needs_sanitize = (
+            initial is not None
+            and self.allow_composition_moves
+            and not all(a in set(self._element_pool) for a in initial.atoms)
+        )
+
         for k in range(n_rep):
             if initial is not None:
                 a = list(initial.atoms)
                 p = list(initial.positions)
+                # Sanitize foreign atoms once per replica using replica-specific
+                # RNG so that each replica's composition is independently
+                # randomized while still being confined to the pool.
+                if _initial_needs_sanitize:
+                    rng_san = random.Random(
+                        None if self.seed is None
+                        else self.seed + restart_idx * 97 + k * 13 + 7
+                    )
+                    a = _sanitize_atoms_to_pool(a, self._element_pool, rng_san)
             elif _shared_initial is not None:
                 # Composition fixed: reuse atom types from shared initial,
                 # but place atoms independently so replicas explore different
@@ -1404,6 +1504,17 @@ class StructureOptimizer:
         atoms: list[str] = list(initial.atoms)
         positions: list[Vec3] = list(initial.positions)
 
+        # When composition moves are enabled and the caller supplied an initial
+        # structure whose atoms include symbols outside the element pool, replace
+        # every foreign symbol with a parity-compatible pool element before the
+        # MC loop begins.  Without this step the optimiser could retain foreign
+        # atoms indefinitely whenever their objective value is locally optimal.
+        # (fix: Bug #4 — composition-only optimisation retains non-pool atoms)
+        if self.allow_composition_moves:
+            pool_set = set(self._element_pool)
+            if not all(a in pool_set for a in atoms):
+                atoms = _sanitize_atoms_to_pool(atoms, self._element_pool, rng)
+
         # Pre-compute radii and seed_int once; reused every step.
         radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
         seed_int: int = -1 if self.seed is None else int(self.seed + restart_idx * 97)
@@ -1530,12 +1641,16 @@ class StructureOptimizer:
             )
 
             if accept:
+                old_atoms = atoms          # snapshot before reassignment (fix: Bug #3)
                 atoms = new_atoms
                 positions = new_positions
                 metrics = new_metrics
                 f_current = f_new
-                # Update radii cache when composition changed
-                if atoms is not new_atoms or new_atoms != list(atoms):
+                # Refresh the covalent-radius cache when the composition changed.
+                # old_atoms is captured *before* atoms = new_atoms so that the
+                # identity / equality test is reliable regardless of Python's
+                # object-identity semantics after assignment.
+                if old_atoms != atoms:
                     radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
                 # Update per_atom_q6 for next fragment selection
                 new_pts = np.array(positions)

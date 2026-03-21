@@ -936,22 +936,25 @@ assert sorted(result.best.atoms) == sorted(initial.atoms)
 
 Set `allow_displacements=False` to fix the atomic coordinates and only
 optimize element types.  This is useful when exploring compositional
-disorder on a pre-relaxed geometry (e.g. a fixed lattice):
+disorder on a pre-relaxed geometry (e.g. a fixed lattice).
+
+The element pool does not need to match the initial structure's composition.
+Any atoms outside the pool are automatically replaced by parity-compatible
+pool elements before the MC loop begins, so cross-pool optimization works
+reliably with all three methods (`"annealing"`, `"basin_hopping"`, and
+`"parallel_tempering"`):
 
 ```python
-from pasted import StructureOptimizer, Structure, generate
+from pasted import StructureOptimizer, generate
 
-# Generate an initial geometry whose elements are drawn from the same pool.
-# The initial structure must use elements compatible with the optimizer's
-# element pool — mixing pools (e.g. C/N/O initial with Cr/Mn/Fe/Co/Ni pool)
-# causes near-total parity rejection and effectively freezes composition.
-initial_structs = generate(
+# Starting geometry can use any element set — the optimizer will sanitize
+# foreign atoms to the target pool before the first MC step.
+initial = generate(
     n_atoms=10, charge=0, mult=1,
     mode="gas", region="sphere:8",
-    elements=["Cr", "Mn", "Fe", "Co", "Ni"],  # same pool as optimizer
+    elements="6,7,8",          # C / N / O geometry
     n_samples=50, seed=0,
-)
-initial = initial_structs[0]
+)[0]
 
 opt = StructureOptimizer(
     n_atoms=len(initial),
@@ -969,7 +972,7 @@ opt = StructureOptimizer(
 )
 
 result = opt.run(initial=initial)
-print(result.best)
+print(result.best.comp)   # e.g. 'CoCr3Fe3MnNi2'
 # Positions are identical to initial; only element labels have changed
 import numpy as np
 np.testing.assert_allclose(
@@ -977,14 +980,15 @@ np.testing.assert_allclose(
 )
 ```
 
-> **Choosing an objective for composition-only runs:** the primary composition
-> move is a *swap* of two atom labels, which leaves the element-count histogram
-> unchanged.  Metrics that depend only on composition counts — `H_atom`,
-> `H_spatial` — are therefore invariant under swaps and make poor objectives
-> here.  Metrics that capture the *spatial arrangement* of elements —
-> `moran_I_chi` (electronegativity autocorrelation) and `charge_frustration`
-> (EN variance across neighbor pairs) — respond to swaps and are the
-> recommended choices for composition-only optimization.
+> **Choosing an objective for composition-only runs:** each composition move
+> selects a random atom and replaces it with a different element drawn from
+> the pool, which changes the element-count histogram.  However, metrics
+> that capture the *spatial arrangement* of elements — `moran_I_chi`
+> (electronegativity autocorrelation) and `charge_frustration` (EN variance
+> across neighbor pairs) — respond most sensitively to which element sits
+> where and are therefore the recommended choices for composition-only
+> optimization.  Pure composition-count metrics such as `H_atom` tend to
+> plateau quickly once the pool coverage is broad.
 
 > **Note**: `allow_displacements=False` and `allow_composition_moves=False`
 > cannot both be set — at least one move type must be enabled.  Attempting

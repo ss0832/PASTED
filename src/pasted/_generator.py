@@ -64,13 +64,29 @@ class Structure:
     metrics:
         Computed disorder metrics (see :data:`pasted._atoms.ALL_METRICS`).
     mode:
-        Placement mode used (``"gas"``, ``"chain"``, or ``"shell"``).
+        Placement mode used (``"gas"``, ``"chain"``, ``"shell"``, ``"maxent"``,
+        or ``"opt_<method>"`` for optimizer results).
     sample_index:
         1-based index within the batch of structures that passed filters.
     center_sym:
         Element symbol of the shell center atom (shell mode only).
     seed:
         Random seed used for generation (``None`` if unseeded).
+
+    Properties
+    ----------
+    comp:
+        Read-only Hill-order composition string derived from :attr:`atoms`,
+        e.g. ``'C5N2O3'``.  Computed on access; not stored as a field.
+
+    Examples
+    --------
+    Access the composition string directly::
+
+        s = generate(n_atoms=10, charge=0, mult=1, mode="gas",
+                     region="sphere:8", elements="6,7,8", n_samples=5, seed=0)[0]
+        print(s.comp)          # e.g. 'C4N3O3'
+        print(repr(s))         # Structure(n=10, comp='C4N3O3', mode='gas', H_total=…)
     """
 
     atoms: list[str]
@@ -251,11 +267,35 @@ class Structure:
             mode="loaded_xyz",
         )
 
-    def __repr__(self) -> str:
+    @property
+    def comp(self) -> str:
+        """Hill-order composition string derived from :attr:`atoms`.
+
+        Elements are sorted alphabetically and counts above one are appended
+        as a suffix, e.g. ``'C5N2O3'``.  Single-atom elements are written
+        without a count, e.g. ``'C'`` rather than ``'C1'``.
+
+        This property is computed on each access and is not persisted as a
+        dataclass field.
+
+        Returns
+        -------
+        str
+            Compact composition label, e.g. ``'C5N2O3'``.
+
+        Examples
+        --------
+        ::
+
+            s.comp          # 'C5N2O3'
+            s.comp in repr(s)  # True
+        """
         counts = Counter(self.atoms)
-        comp = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))
+        return "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(counts.items()))
+
+    def __repr__(self) -> str:
         h_total = self.metrics.get("H_total", float("nan"))
-        return f"Structure(n={len(self)}, comp={comp!r}, mode={self.mode!r}, H_total={h_total:.3f})"
+        return f"Structure(n={len(self)}, comp={self.comp!r}, mode={self.mode!r}, H_total={h_total:.3f})"
 
 
 # ---------------------------------------------------------------------------

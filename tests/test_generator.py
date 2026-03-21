@@ -972,3 +972,76 @@ class TestAffineStrength:
                     d = np.linalg.norm(pts[i] - pts[j])
                     # cov_scale=1.0, C radius ≈ 0.77 Å → min dist ≈ 1.54 Å
                     assert d > 0.5, f"Atoms {i},{j} overlap: d={d:.3f} Å"
+
+
+# ---------------------------------------------------------------------------
+# Structure.comp property  (fix: Bug #1 — 0.3.1)
+# ---------------------------------------------------------------------------
+
+
+class TestStructureCompProperty:
+    """Tests for the Structure.comp property added in 0.3.1."""
+
+    def test_comp_returns_string(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=5, seed=0,
+        )
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = gen.generate()
+        assert result, "No structures generated"
+        s = result[0]
+        assert isinstance(s.comp, str)
+        assert len(s.comp) > 0
+
+    def test_comp_matches_repr(self) -> None:
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=5, seed=1,
+        )
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = gen.generate()
+        assert result
+        s = result[0]
+        assert s.comp in repr(s), f"{s.comp!r} not found in {repr(s)!r}"
+
+    def test_comp_consistent_with_atoms(self) -> None:
+        from collections import Counter
+        gen = StructureGenerator(
+            n_atoms=6, charge=0, mult=1, mode="gas", region="sphere:6",
+            elements="6,7,8", n_samples=5, seed=2,
+        )
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = gen.generate()
+        assert result
+        s = result[0]
+        counts = Counter(s.atoms)
+        expected = "".join(
+            f"{sym}{n}" if n > 1 else sym
+            for sym, n in sorted(counts.items())
+        )
+        assert s.comp == expected
+
+    def test_comp_accessible_on_optimizer_result(self) -> None:
+        """comp must work on structures returned by StructureOptimizer."""
+        import warnings
+
+        from pasted import StructureOptimizer
+        opt = StructureOptimizer(
+            n_atoms=6, charge=0, mult=1,
+            objective={"H_total": 1.0},
+            elements="6,7,8",
+            max_steps=20,
+            seed=0,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = opt.run()
+        assert isinstance(result.best.comp, str)
+        assert len(result.best.comp) > 0

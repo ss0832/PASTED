@@ -449,16 +449,21 @@ per-restart structures sorted by objective value (highest first).
 |---|---|---|
 | Fragment coordinate | 50 % (or 25 % when affine moves enabled) | Atoms with local Q6 > `frag_threshold` are displaced by up to `move_step` Å |
 | Affine coordinate | 0 % (25 % when `allow_affine_moves=True`) | Random stretch/compress along one axis + shear of one axis pair, applied to all atoms; per-atom jitter of `move_step × 0.25` added; center of mass pinned. Controlled by `affine_strength` (default 0.1 = ±10 % stretch); each operation can be overridden individually via `affine_stretch`, `affine_shear`, `affine_jitter`. |
-| Composition | 50 % | Parity-preserving element swap or replacement (see below) |
+| Composition | 50 % | Parity-preserving pool replacement (see below) |
 
 **Parity-preserving composition move** — two paths:
 
-1. **Swap** (primary): exchange the element types of two atoms with different
-   symbols.  Total electron count is unchanged → always parity-valid.
-2. **Same-Z-parity replace** (fallback when all atoms are the same element):
-   replace atom `i` with an element whose atomic number has the same Z%2 as
-   `atoms[i]`.  Net ΔZ is even → parity preserved.  If only odd-Z pool
-   elements differ, two atoms are replaced simultaneously so ΔZ_total is even.
+1. **Pool replacement** (primary, up to 20 tries): pick a random atom and
+   replace it with a *different* element drawn from `element_pool` whose
+   atomic number has the same Z%2 parity as the original atom.  Because
+   ΔZ = Z(new) − Z(old) is even, total electron count parity is preserved.
+2. **Two-atom replacement** (fallback when Path 1 finds no same-parity
+   candidate): replace two atoms simultaneously so ΔZ_total is even.
+
+If the initial structure supplied to `run()` contains atoms outside the
+pool, each foreign atom is replaced by a parity-compatible pool element
+via `_sanitize_atoms_to_pool` before the MC loop begins.  This applies to
+all three methods (`"annealing"`, `"basin_hopping"`, `"parallel_tempering"`).
 
 ### Optimization methods
 

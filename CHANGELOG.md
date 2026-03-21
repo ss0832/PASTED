@@ -1,8 +1,160 @@
 # Changelog
 
-All notable changes to PASTED are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to PASTED are documented in this file.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+---
+
+## [0.3.1] — 2026-03-21
+ 
+### Bug Fixes
+ 
+#### `Structure.comp` property was missing (`_generator.py`)
+ 
+`Structure.__repr__` computed the Hill-order composition string as a local
+variable `comp` that was never exposed as a public attribute.  Accessing
+`s.comp` raised `AttributeError` even though the string appeared inside
+`repr(s)`.
+ 
+**Fix:** `comp` is now a read-only `@property` on `Structure`.  `__repr__`
+delegates to `self.comp`, so the string is computed in one place only.
+ 
+#### `_composition_move` ignored `element_pool` (`_optimizer.py`)
+ 
+Path 1 of `_composition_move` swapped two existing atoms within the current
+structure.  Because no element was ever drawn from `element_pool`, running
+`StructureOptimizer` with `allow_displacements=False` and a pool that
+differed from the initial composition (e.g. starting from a C/N/O structure
+and optimizing over Cr/Mn/Fe/Co/Ni) could never introduce pool elements —
+the composition remained frozen at its initial values regardless of the
+number of MC steps.
+ 
+**Fix:** Path 1 now selects a random atom and replaces it with a different
+element drawn from `element_pool` whose atomic number has the same Z mod 2
+parity as the original, preserving charge/multiplicity validity.  Path 2
+(two-atom simultaneous replacement) is kept as the fallback for cases where
+no same-parity pool candidate exists.
+ 
+#### `radii` cache was never refreshed after a composition move (`_optimizer.py`)
+ 
+Inside `_run_one`, the covalent-radius cache `radii` was supposed to be
+recomputed whenever the element types changed.  The guard condition was:
+ 
+```python
+atoms = new_atoms
+if atoms is not new_atoms or new_atoms != list(atoms):   # always False
+    radii = ...
+```
+ 
+After `atoms = new_atoms`, `atoms is new_atoms` is always `True`, making the
+entire condition evaluate to `False`.  The cache was therefore never updated
+after a composition move, so subsequent L-BFGS relaxation steps used stale
+covalent radii and could produce clashing geometries.
+ 
+**Fix:** The previous value of `atoms` is captured in `old_atoms` *before*
+the reassignment, and the guard is `if old_atoms != atoms`.
+ 
+#### Composition-only optimization retained non-pool atoms (`_optimizer.py`)
+ 
+When `StructureOptimizer.run(initial=s)` was called with a structure whose
+atoms were not all members of `elements`, the Metropolis loop could keep
+those foreign atoms indefinitely: if the objective value happened to be
+locally higher with foreign atoms present, every replacement move would be
+rejected.  This made composition-only optimization (`allow_displacements=False`)
+unreliable whenever `initial` was generated from a different element set.
+ 
+**Fix:** A new helper `_sanitize_atoms_to_pool()` is called at the start of
+`_run_one` whenever `allow_composition_moves=True` and the initial structure
+contains atoms outside the pool.  Each foreign atom is replaced by a
+parity-compatible pool element before the MC loop begins.
+ 
+#### `tests/conftest.py` was missing
+ 
+`test_generator.py` referenced three pytest fixtures — `gas_gen`,
+`chain_gen`, and `shell_gen` — that were never defined.  Running `pytest`
+raised `fixture not found` errors for every test that used them.
+ 
+**Fix:** `tests/conftest.py` is added with all three fixtures.
+ 
+#### Parallel Tempering retained non-pool atoms from `initial` (`_optimizer.py`)
+ 
+`_run_parallel_tempering` initialized each replica's atom list directly from
+`initial.atoms` without applying the same sanitization that `_run_one` gained
+in the Bug #4 fix.  When `StructureOptimizer.run(initial=s, method="parallel_tempering")`
+was called with a structure whose atoms were outside `elements`, the PT path
+could retain those foreign atoms indefinitely across all replicas — even though
+the SA and Basin-Hopping paths were already fixed.
+ 
+**Fix:** `_run_parallel_tempering` now checks whether the caller-supplied
+`initial` contains atoms outside the pool.  When it does and
+`allow_composition_moves=True`, each replica's atom list is independently
+sanitized via `_sanitize_atoms_to_pool` before the MC loop begins, using a
+replica-specific RNG so that each replica explores a different parity-compatible
+starting composition.
+ 
+### Documentation
+ 
+- `Structure` class docstring: documented the new `comp` property, updated
+  `mode` attribute to list all valid values (``"gas"``, ``"chain"``,
+  ``"shell"``, ``"maxent"``, ``"opt_<method>"``), and added a usage example.
+- `Structure.comp` property: expanded docstring with return-value
+  description and an inline example.
+- `_composition_move()`: rewrote docstring to accurately describe the
+  pool-replacement Path 1 that replaced the old swap-based logic.
+- `_sanitize_atoms_to_pool()`: new function; documented with rationale,
+  parameter descriptions, and edge-case behavior.
+- `_run_parallel_tempering()`: updated *Initialization* section to describe
+  the per-replica sanitization added for fixing bug.
+- `StructureOptimizer` parameters `allow_displacements` and
+  `allow_composition_moves`: noted that foreign atoms in `initial` are
+  sanitized to the pool before the MC loop for all three methods.
+- `_optimizer.py` module docstring: updated the "Composition move" section
+  to reflect the corrected pool-replacement algorithm and clarify that
+  sanitization via `_sanitize_atoms_to_pool` applies to SA, BH, and PT.
+- `README.md`:
+  - Added `s.comp` to the *Structure attributes* example.
+  - Fixed the *Structure optimizer* example to use `opt.run().best`
+    (previously showed `opt.run()` assigned directly to `best`, which is
+    an `OptimizationResult`, not a `Structure`).
+  - Updated the *Composition-only optimization* subsection to note that
+    all three methods support cross-pool optimization, and added
+    ``method="basin_hopping" / "parallel_tempering"`` to the example.
+  - Removed stale per-metric version annotations
+    (`# new in v0.1.12`, `# non-zero in v0.1.13+`).
+- `docs/quickstart.md`:
+  - Rewrote the *Composition-only optimization* section to remove the
+    incorrect requirement that the initial structure must be drawn from the
+    same pool as the optimizer (Bug #4 and #6 make this unnecessary).
+  - Updated the objective-selection callout to reflect the pool-replacement
+    move algorithm; removed the outdated claim that composition moves are
+    label swaps that leave the element-count histogram unchanged.
+- `docs/architecture.md`:
+  - Updated the *Move types* table and **Parity-preserving composition move**
+    description to replace the old swap-based Path 1 with the corrected
+    pool-replacement algorithm.
+  - Added a note that `_sanitize_atoms_to_pool` is applied to all three
+    optimization methods when the initial structure contains foreign atoms.
+ 
+### Tests
+ 
+- Added `tests/conftest.py` with `gas_gen`, `chain_gen`, and `shell_gen`
+  fixtures shared across test classes.
+- `TestStructureCompProperty` (4 tests in `test_generator.py`): `comp` return
+  type, presence in `repr`, consistency with `atoms`, and accessibility on
+  optimizer results.
+- `TestCompositionMoveBugFixes` (3 tests in `test_optimizer.py`): pool elements
+  are introduced, atom count is preserved, single-element pool does not crash.
+- `TestRadiiCacheBugFix` (1 test in `test_optimizer.py`): composition-only
+  result contains only pool atoms after SA run from a foreign-element initial.
+- `TestSanitizeAtomsToPool` (4 tests in `test_optimizer.py`): all atoms in pool
+  after sanitize, length preserved, in-pool atoms unchanged, positions preserved
+  after `allow_displacements=False` run.
+- `TestParallelTemperingSanitize` (2 tests in `test_optimizer.py`): PT result
+  contains no foreign atoms when initial uses a different element set; sanitize
+  is a no-op when initial atoms already belong to the pool.
+- Total test count: **331 passed** (329 pre-existing + 2 new for bug).
+ 
 ---
 
 ## [0.3.0] — 2026-03-21

@@ -313,6 +313,7 @@ for s in gen.stream():
 s = structures[0]
 s.atoms        # ['C', 'N', 'H', ...]
 s.positions    # [(x, y, z), ...]
+s.comp         # 'C4N3O3'  — Hill-order composition string (new in 0.3.1)
 s.metrics      # {'H_atom': 1.09, 'moran_I_chi': -0.03, ...}
 s.charge       # 0
 s.mult         # 1
@@ -335,16 +336,56 @@ opt = StructureOptimizer(
     lcc_threshold=0.8,
     seed=42,
 )
-best = opt.run()
+result = opt.run()
+best = result.best        # highest-scoring Structure
+print(best)               # Structure(n=50, comp='Cr11Fe13Mn10Co8Ni8', ...)
+print(result.summary())   # restarts=1  best_f=…  method='annealing'
+```
+
+### Composition-only optimization (fix coordinates, vary elements)
+
+Pass an initial structure and set `allow_displacements=False` to optimize
+element types while keeping atomic coordinates fixed.  The element pool
+does not need to overlap with the initial composition — any foreign atoms
+are replaced by parity-compatible pool elements before the MC loop begins.
+This sanitization applies to all three methods (`"annealing"`,
+`"basin_hopping"`, and `"parallel_tempering"`).
+
+```python
+from pasted import StructureOptimizer, generate
+
+# Generate a fixed geometry from any element set
+initial = generate(
+    n_atoms=10, charge=0, mult=1,
+    mode="gas", region="sphere:8",
+    elements="6,7,8",          # C / N / O starting geometry
+    n_samples=50, seed=5,
+)[0]
+
+# Optimize element types on that geometry using a different pool
+opt = StructureOptimizer(
+    n_atoms=len(initial),
+    charge=initial.charge,
+    mult=initial.mult,
+    elements=["Cr", "Mn", "Fe", "Co", "Ni"],   # Cantor alloy pool
+    objective={"H_atom": 1.0, "Q6": -2.0},
+    allow_displacements=False,   # coordinates fixed
+    method="annealing",          # or "basin_hopping" / "parallel_tempering"
+    max_steps=5000,
+    seed=42,
+)
+result = opt.run(initial=initial)
+print(result.best.comp)          # e.g. 'CoCr3Fe3MnNi2'
 ```
 
 ### Accessing metrics
 
 ```python
-s = structures[0]
+s = result.best           # or: s = structures[0]
 print(s.metrics["H_total"])
-print(s.metrics["moran_I_chi"])   # new in v0.1.12
-print(s.metrics["ring_fraction"]) # non-zero in v0.1.13+
+print(s.metrics["moran_I_chi"])
+print(s.metrics["ring_fraction"])
+print(s.comp)             # Hill-order composition string, e.g. 'C5N2O3'
 ```
 
 ## Full Option Reference
