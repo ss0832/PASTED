@@ -1,12 +1,11 @@
 """
-PASTED — Edge Cases: tests NOT covered by the existing suite
+PASTED — Nasty Edge Cases: tests NOT covered by the existing suite
 ==================================================================
 Every test here was designed by first auditing the full existing test
 inventory (test_edge_cases.py, test_adversarial.py, test_generator.py,
 test_optimizer.py, test_atoms.py, test_io.py, test_metrics.py,
 test_placement.py, test_maxent.py) and then probing the live library to
 confirm the expected behavior before committing it as an assertion.
-NEC = Nasty Edge Cases
 
 Categories
   NEC-A  GenerationResult contract — accounting invariant, concatenation,
@@ -104,6 +103,112 @@ def _one_structure(seed: int = 0) -> Structure:
     return cast(Structure, r[0])
 
 
+# ---------------------------------------------------------------------------
+# Type-contract assertion helpers
+# Each helper asserts that a return value honours its declared type signature.
+# They are called in every test that exercises the corresponding function,
+# regardless of the input being nominal or adversarial.
+# ---------------------------------------------------------------------------
+
+def _check_generation_result(r: object) -> None:
+    """generate() / StructureGenerator.generate() → GenerationResult"""
+    assert isinstance(r, GenerationResult), (
+        f"Expected GenerationResult, got {type(r).__name__}"
+    )
+    assert isinstance(r.n_attempted, int), (
+        f"n_attempted: expected int, got {type(r.n_attempted).__name__}"
+    )
+    assert isinstance(r.n_passed, int), (
+        f"n_passed: expected int, got {type(r.n_passed).__name__}"
+    )
+    assert isinstance(r.n_rejected_parity, int), (
+        f"n_rejected_parity: expected int, got {type(r.n_rejected_parity).__name__}"
+    )
+    assert isinstance(r.n_rejected_filter, int), (
+        f"n_rejected_filter: expected int, got {type(r.n_rejected_filter).__name__}"
+    )
+    assert isinstance(r.summary(), str), (
+        f"summary(): expected str, got {type(r.summary()).__name__}"
+    )
+
+
+def _check_optimization_result(r: object) -> None:
+    """StructureOptimizer.run() → OptimizationResult"""
+    assert isinstance(r, OptimizationResult), (
+        f"Expected OptimizationResult, got {type(r).__name__}"
+    )
+    assert isinstance(r.all_structures, list), (
+        f"all_structures: expected list, got {type(r.all_structures).__name__}"
+    )
+    assert isinstance(r.objective_scores, list), (
+        f"objective_scores: expected list, got {type(r.objective_scores).__name__}"
+    )
+    for v in r.objective_scores:
+        assert isinstance(v, float), (
+            f"objective_scores element: expected float, got {type(v).__name__}"
+        )
+    assert isinstance(r.n_restarts_attempted, int), (
+        f"n_restarts_attempted: expected int, got {type(r.n_restarts_attempted).__name__}"
+    )
+    assert isinstance(r.method, str), (
+        f"method: expected str, got {type(r.method).__name__}"
+    )
+    assert isinstance(r.summary(), str), (
+        f"summary(): expected str, got {type(r.summary()).__name__}"
+    )
+
+
+def _check_to_xyz(r: object) -> None:
+    """Structure.to_xyz() → str"""
+    assert isinstance(r, str), f"to_xyz(): expected str, got {type(r).__name__}"
+
+
+def _check_from_xyz(r: object) -> None:
+    """Structure.from_xyz() → Structure"""
+    assert isinstance(r, Structure), (
+        f"from_xyz(): expected Structure, got {type(r).__name__}"
+    )
+
+
+def _check_format_xyz(r: object) -> None:
+    """format_xyz() → str"""
+    assert isinstance(r, str), f"format_xyz(): expected str, got {type(r).__name__}"
+
+
+def _check_parse_filter(r: object) -> None:
+    """parse_filter() → tuple[str, float, float]"""
+    assert isinstance(r, tuple), f"Expected tuple, got {type(r).__name__}"
+    assert len(r) == 3, f"Expected length 3, got {len(r)}"  # type: ignore[arg-type]
+    assert isinstance(r[0], str), f"[0]: expected str, got {type(r[0]).__name__}"  # type: ignore[index]
+    assert isinstance(r[1], float), f"[1]: expected float, got {type(r[1]).__name__}"  # type: ignore[index]
+    assert isinstance(r[2], float), f"[2]: expected float, got {type(r[2]).__name__}"  # type: ignore[index]
+
+
+def _check_parse_objective_spec(r: object) -> None:
+    """parse_objective_spec() → dict[str, float]"""
+    assert isinstance(r, dict), f"Expected dict, got {type(r).__name__}"
+    for k, v in r.items():  # type: ignore[union-attr]
+        assert isinstance(k, str), f"key: expected str, got {type(k).__name__}"
+        assert isinstance(v, float), f"value: expected float, got {type(v).__name__}"
+
+
+def _check_validate_charge_mult(r: object) -> None:
+    """validate_charge_mult() → tuple[bool, str]"""
+    assert isinstance(r, tuple), f"Expected tuple, got {type(r).__name__}"
+    assert len(r) == 2, f"Expected length 2, got {len(r)}"  # type: ignore[arg-type]
+    assert isinstance(r[0], bool), f"[0]: expected bool, got {type(r[0]).__name__}"  # type: ignore[index]
+    assert isinstance(r[1], str), f"[1]: expected str, got {type(r[1]).__name__}"  # type: ignore[index]
+
+
+def _check_compute_all_metrics(r: object) -> None:
+    """compute_all_metrics() → dict[str, float]"""
+    assert isinstance(r, dict), f"Expected dict, got {type(r).__name__}"
+    for k, v in r.items():  # type: ignore[union-attr]
+        assert isinstance(k, str), f"key: expected str, got {type(k).__name__}"
+        assert isinstance(v, float), f"value: expected float, got {type(v).__name__}"
+
+
+
 # ===========================================================================
 # NEC-A  GenerationResult contract
 # ===========================================================================
@@ -133,6 +238,7 @@ class TestGenerationResultContract:
                 seed=42,
                 filters=["H_total:2.0:-"],
             )
+            _check_generation_result(r)
         total = r.n_passed + r.n_rejected_parity + r.n_rejected_filter
         assert total == r.n_attempted
 
@@ -264,7 +370,9 @@ class TestGeneratorConfigFrozenAndProxy:
         with warnings.catch_warnings(record=True):
             warnings.simplefilter("always")
             r_kw = generate(**common)
+            _check_generation_result(r_kw)
             r_cfg = generate(GeneratorConfig(**common))
+            _check_generation_result(r_cfg)
 
         positions_kw = [s.positions for s in r_kw]
         positions_cfg = [s.positions for s in r_cfg]
@@ -381,7 +489,9 @@ class TestXYZSerializationRoundTrips:
         """Positions must survive a to_xyz/from_xyz cycle within tolerance."""
         s = _one_structure(seed=20)
         xyz_str = s.to_xyz()
+        _check_to_xyz(xyz_str)
         s2 = Structure.from_xyz(xyz_str)
+        _check_from_xyz(s2)
         pos1 = np.array(s.positions)
         pos2 = np.array(s2.positions)
         np.testing.assert_allclose(pos1, pos2, atol=1e-3)
@@ -390,6 +500,7 @@ class TestXYZSerializationRoundTrips:
         """Atom list must survive a to_xyz/from_xyz cycle exactly."""
         s = _one_structure(seed=21)
         s2 = Structure.from_xyz(s.to_xyz())
+        _check_from_xyz(s2)
         assert s2.atoms == s.atoms
 
     def test_to_xyz_from_xyz_via_file_positions(self) -> None:
@@ -402,6 +513,7 @@ class TestXYZSerializationRoundTrips:
             fname = fh.name
         try:
             s2 = Structure.from_xyz(fname)
+            _check_from_xyz(s2)
             pos1 = np.array(s.positions)
             pos2 = np.array(s2.positions)
             np.testing.assert_allclose(pos1, pos2, atol=1e-3)
@@ -418,6 +530,7 @@ class TestXYZSerializationRoundTrips:
             fname = fh.name
         try:
             s2 = Structure.from_xyz(fname)
+            _check_from_xyz(s2)
             assert s2.atoms == s.atoms
         finally:
             os.unlink(fname)
@@ -427,6 +540,7 @@ class TestXYZSerializationRoundTrips:
         s = _one_structure(seed=24)
         xyz = format_xyz(s.atoms, s.positions, s.charge, s.mult, s.metrics,
                          prefix="MY_PREFIX")
+        _check_format_xyz(xyz)
         comment_line = xyz.splitlines()[1]
         assert comment_line.startswith("MY_PREFIX")
 
@@ -435,6 +549,7 @@ class TestXYZSerializationRoundTrips:
         with an extra leading space or the literal string 'None'."""
         s = _one_structure(seed=25)
         xyz = format_xyz(s.atoms, s.positions, s.charge, s.mult, s.metrics)
+        _check_format_xyz(xyz)
         comment_line = xyz.splitlines()[1]
         assert not comment_line.startswith(" ")
         assert "None" not in comment_line.split()[0]
@@ -443,6 +558,7 @@ class TestXYZSerializationRoundTrips:
         """Line 0 of format_xyz output must be an integer equal to len(atoms)."""
         s = _one_structure(seed=26)
         xyz = format_xyz(s.atoms, s.positions, s.charge, s.mult, s.metrics)
+        _check_format_xyz(xyz)
         assert int(xyz.splitlines()[0]) == len(s.atoms)
 
 
@@ -464,11 +580,13 @@ class TestParseFilterPathological:
                 elements="6,7,8", n_samples=20, seed=0,
                 filters=["H_total:nan:-"],
             )
+            _check_generation_result(r)
         assert r.n_passed == 0
 
     def test_nan_min_parse_filter_returns_nan(self) -> None:
         """parse_filter with 'nan' as min must return math.nan, not raise."""
         _, lo, _ = parse_filter("H_total:nan:inf")
+        _check_parse_filter(parse_filter("H_total:nan:inf"))
         assert math.isnan(lo)
 
     def test_whitespace_padded_metric_name_raises(self) -> None:
@@ -513,11 +631,13 @@ class TestParseObjectiveSpecContract:
     def test_empty_list_returns_empty_dict(self) -> None:
         """parse_objective_spec([]) must return an empty dict."""
         result = parse_objective_spec([])
+        _check_parse_objective_spec(result)
         assert result == {}
 
     def test_duplicate_key_last_value_wins(self) -> None:
         """When the same metric appears twice the last weight takes precedence."""
         result = parse_objective_spec(["H_total:1.0", "H_total:9.9"])
+        _check_parse_objective_spec(result)
         assert result["H_total"] == pytest.approx(9.9)
 
     def test_non_float_weight_raises_value_error(self) -> None:
@@ -530,16 +650,19 @@ class TestParseObjectiveSpecContract:
         must produce a dict with exactly those 13 keys."""
         specs = [f"{m}:1.0" for m in sorted(ALL_METRICS)]
         result = parse_objective_spec(specs)
+        _check_parse_objective_spec(result)
         assert set(result.keys()) == ALL_METRICS
 
     def test_zero_weight_is_accepted(self) -> None:
         """A weight of 0 is a legal no-op contribution; must not raise."""
         result = parse_objective_spec(["H_total:0"])
+        _check_parse_objective_spec(result)
         assert result["H_total"] == pytest.approx(0.0)
 
     def test_negative_weight_is_accepted(self) -> None:
         """Negative weights are legal (penalize metric); must not raise."""
         result = parse_objective_spec(["Q6:-2.0"])
+        _check_parse_objective_spec(result)
         assert result["Q6"] == pytest.approx(-2.0)
 
 
@@ -561,6 +684,7 @@ class TestComputeAllMetricsDirect:
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)],
             **self._DEFAULT_KW,
         )
+        _check_compute_all_metrics(m)
         assert set(m.keys()) == ALL_METRICS
 
     def test_w_spatial_zero_h_total_equals_h_atom(self) -> None:
@@ -570,6 +694,7 @@ class TestComputeAllMetricsDirect:
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0)],
             n_bins=10, w_atom=1.0, w_spatial=0.0, cutoff=5.0,
         )
+        _check_compute_all_metrics(m)
         assert m["H_total"] == pytest.approx(m["H_atom"])
 
     def test_w_atom_zero_h_total_equals_h_spatial(self) -> None:
@@ -579,6 +704,7 @@ class TestComputeAllMetricsDirect:
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (3.0, 0.0, 0.0)],
             n_bins=10, w_atom=0.0, w_spatial=1.0, cutoff=5.0,
         )
+        _check_compute_all_metrics(m)
         assert m["H_total"] == pytest.approx(m["H_spatial"])
 
     def test_all_values_are_finite_or_nan(self) -> None:
@@ -588,6 +714,7 @@ class TestComputeAllMetricsDirect:
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0), (1.5, 1.5, 0.0)],
             **self._DEFAULT_KW,
         )
+        _check_compute_all_metrics(m)
         for key, val in m.items():
             assert math.isfinite(val) or math.isnan(val), (
                 f"metric {key!r} is infinite: {val}"
@@ -767,7 +894,9 @@ class TestOptimizationResultContract:
             n_restarts=1, seed=0,
         )
         r1 = opt.run()
+        _check_optimization_result(r1)
         r2 = opt.run()
+        _check_optimization_result(r2)
         assert r1.best is not None
         assert r2.best is not None
 
@@ -804,6 +933,7 @@ class TestObjectiveFunctionFlexibility:
             objective=int_obj,
             method="annealing", max_steps=30, seed=0,
         ).run()
+        _check_optimization_result(result)
         assert result.best is not None
 
     def test_all_metrics_dict_objective_runs(self) -> None:
@@ -815,6 +945,7 @@ class TestObjectiveFunctionFlexibility:
             objective=full_obj,
             method="annealing", max_steps=30, seed=0,
         ).run()
+        _check_optimization_result(result)
         assert result.best is not None
 
     def test_callable_objective_covering_all_metrics(self) -> None:
@@ -827,6 +958,7 @@ class TestObjectiveFunctionFlexibility:
             objective=all_metrics_fn,
             method="annealing", max_steps=30, seed=1,
         ).run()
+        _check_optimization_result(result)
         assert result.best is not None
 
 
@@ -846,6 +978,7 @@ class TestShellModeSpecifics:
                 mode="shell", center_z=6,
                 elements="6,7,8", n_samples=20, seed=0,
             )
+            _check_generation_result(r)
         assert len(r) > 0
         for s in r:
             assert s.center_sym is not None
@@ -859,6 +992,7 @@ class TestShellModeSpecifics:
                 mode="shell", center_z=6,
                 elements="6,7,8", n_samples=20, seed=0,
             )
+            _check_generation_result(r)
         assert len(r) > 0
         assert cast(Structure, r[0]).center_sym == "C"
 
@@ -881,6 +1015,7 @@ class TestShellModeSpecifics:
                 mode="shell", center_z=6,
                 elements="6,7,8", n_samples=10, seed=0,
             )
+            _check_generation_result(r)
         # May produce 0 structures depending on parity, but must not raise
         assert isinstance(r, GenerationResult)
 
@@ -898,6 +1033,7 @@ class TestShellModeSpecifics:
                 elements="6,7,8", n_samples=20, seed=0,
                 add_hydrogen=False,
             )
+            _check_generation_result(r)
         assert len(r) > 0
         for s in r:
             assert len(s.atoms) == 4, (
@@ -922,6 +1058,7 @@ class TestHighMultiplicity:
                 mode="gas", region="sphere:8",
                 elements="6,7,8", n_samples=40, seed=0,
             )
+            _check_generation_result(r)
         # May produce 0 due to parity, but must not raise
         assert isinstance(r, GenerationResult)
 
@@ -934,6 +1071,7 @@ class TestHighMultiplicity:
                 mode="gas", region="sphere:8",
                 elements="6,7,8", n_samples=40, seed=0,
             )
+            _check_generation_result(r)
         for s in r:
             assert s.mult == 7
 
@@ -982,6 +1120,7 @@ class TestAffineShearOnly:
                 affine_shear=0.3,
                 affine_jitter=0.0,
             )
+            _check_generation_result(r)
         assert isinstance(r, GenerationResult)
 
 
@@ -995,31 +1134,37 @@ class TestValidateChargeMult:
     def test_carbon_singlet_is_valid(self) -> None:
         """C, charge=0, mult=1 must be valid (6 electrons, even → singlet ok)."""
         ok, msg = validate_charge_mult(["C"], 0, 1)
+        _check_validate_charge_mult((ok, msg))
         assert ok is True
 
     def test_nitrogen_doublet_is_valid(self) -> None:
         """N, charge=0, mult=2 must be valid (7 electrons, odd → doublet ok)."""
         ok, msg = validate_charge_mult(["N"], 0, 2)
+        _check_validate_charge_mult((ok, msg))
         assert ok is True
 
     def test_nitrogen_singlet_is_invalid(self) -> None:
         """N, charge=0, mult=1 must be invalid (7 electrons, odd → singlet bad)."""
         ok, _msg = validate_charge_mult(["N"], 0, 1)
+        _check_validate_charge_mult((ok, _msg))
         assert ok is False
 
     def test_message_is_string(self) -> None:
         """The second return value must always be a non-empty string."""
         _ok, msg = validate_charge_mult(["C"], 0, 1)
+        _check_validate_charge_mult((_ok, msg))
         assert isinstance(msg, str) and len(msg) > 0
 
     def test_positive_charge_modifies_electron_count(self) -> None:
         """C, charge=+1 removes one electron → 5 electrons (odd) → doublet ok."""
         ok, _msg = validate_charge_mult(["C"], 1, 2)
+        _check_validate_charge_mult((ok, _msg))
         assert ok is True
 
     def test_negative_charge_adds_electrons(self) -> None:
         """C, charge=-1 adds one electron → 7 electrons (odd) → doublet ok."""
         ok, _msg = validate_charge_mult(["C"], -1, 2)
+        _check_validate_charge_mult((ok, _msg))
         assert ok is True
 
 
