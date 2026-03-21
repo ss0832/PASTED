@@ -13,7 +13,7 @@ pasted [OPTIONS]
 | `--n-atoms N` | int | — | Number of non-hydrogen atoms per structure (**required**) |
 | `--charge C` | int | — | Total system charge (**required**) |
 | `--mult M` | int | — | Spin multiplicity 2S+1 (**required**) |
-| `--elements SPEC` | str | all Z=1–106 | Element pool: range `"1-30"`, list `"6,7,8"`, or symbol list |
+| `--elements SPEC` | str | all Z=1–106 | Element pool: numeric range `"1-30"`, numeric list `"6,7,8"`, or combined `"1-10,26,28"`. Values must be atomic numbers (integers). |
 | `--n-samples N` | int | 1 | Maximum number of placement attempts. Use `0` for unlimited (requires `--n-success`) |
 | `--n-success N` | int | None | Stop as soon as N structures pass all filters |
 | `--seed S` | int | None | RNG seed for reproducibility |

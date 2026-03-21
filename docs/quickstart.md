@@ -67,7 +67,7 @@ result = generate(
 )
 
 for s in result:
-    print(s)           # Structure(n=14, comp='C2H8N2O2', mode='gas', H_total=2.341)
+    print(s)           # Structure(n=14, comp='C2H2N2O8', mode='gas', H_total=2.341)
     print(s.to_xyz())  # extended-XYZ string
 ```
 
@@ -245,6 +245,28 @@ print(s.metrics["H_total"])
 print(s.metrics["shape_aniso"])
 print(s.metrics["Q6"])
 ```
+
+### The `comp` property
+
+`Structure.comp` returns a compact composition label derived from the atom
+list.  Elements are sorted in **alphabetical order** (Python `sorted()` on
+symbol strings) and counts above one are appended as a suffix:
+
+```python
+s.comp          # e.g. 'C5N2O3'
+repr(s)         # "Structure(n=10, comp='C5N2O3', mode='gas', H_total=2.031)"
+```
+
+> **Sort order note:** `comp` uses **alphabetical** order, not Hill order
+> (which would put C first, H second, then all others alphabetically).  For
+> pools of only C, H, N, O the two orderings are identical, but other elements
+> appear at their alphabetical position.  For example:
+>
+> | atoms | `comp` | Hill order would give |
+> |---|---|---|
+> | `['C','H','H','O']` | `'CH2O'` | `'CH2O'` (same) |
+> | `['Ar','C','H','H']` | `'ArCH2'` | `'CH2Ar'` (different) |
+> | `['Na','C','H','H']` | `'CH2Na'` | `'CH2Na'` (same here) |
 
 ---
 
@@ -889,6 +911,36 @@ print(f"shape_aniso = {result2.best.metrics['shape_aniso']:.4f}")
 ---
 
 ## Element sampling control (StructureGenerator)
+
+### Element pool specification
+
+The `elements=` parameter (Python API) and `--elements` (CLI) control which
+elements are available for random sampling.  Three forms are supported:
+
+| Form | Example | Meaning |
+|---|---|---|
+| Atomic-number spec string | `"6,7,8"` | C, N, O (by atomic number Z) |
+| Atomic-number range string | `"1-30"` | H through Zn |
+| Combined ranges + singles | `"1-10,26,28"` | H–Ne plus Fe and Ni |
+| List of element symbols | `["C", "N", "O"]` | explicit symbol list |
+| `None` (omitted) | — | all Z = 1–106 |
+
+> **Important:** when passing a *string*, it must contain **atomic numbers
+> (integers)**, not element symbols.  `elements="C,N,O"` raises `ValueError`;
+> use `elements="6,7,8"` or `elements=["C", "N", "O"]` instead.
+
+```python
+# Correct — numeric atomic-number string
+gen = StructureGenerator(n_atoms=10, charge=0, mult=1, mode="chain",
+                         elements="6,7,8")
+
+# Correct — explicit symbol list
+gen = StructureGenerator(n_atoms=10, charge=0, mult=1, mode="chain",
+                         elements=["C", "N", "O"])
+
+# WRONG — symbol string raises ValueError
+# gen = StructureGenerator(..., elements="C,N,O")  # ← ValueError!
+```
 
 ### Biased element fractions
 
