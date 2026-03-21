@@ -76,8 +76,15 @@ class Structure:
     Properties
     ----------
     comp:
-        Read-only Hill-order composition string derived from :attr:`atoms`,
-        e.g. ``'C5N2O3'``.  Computed on access; not stored as a field.
+        Read-only composition string derived from :attr:`atoms`, sorted in
+        alphabetical order by element symbol, e.g. ``'C5N2O3'``.
+        Computed on access; not stored as a field.
+
+        .. note::
+            The sort order is **alphabetical** (``sorted()`` on symbol strings),
+            not Hill order (C first, H second, then alphabetical).  Structures
+            containing only C, H, N, O will look identical to Hill order, but
+            others — e.g. ``['Na', 'C', 'H']`` → ``'CH2Na'`` — differ.
 
     Examples
     --------
@@ -273,11 +280,23 @@ class Structure:
 
     @property
     def comp(self) -> str:
-        """Hill-order composition string derived from :attr:`atoms`.
+        """Alphabetically-sorted composition string derived from :attr:`atoms`.
 
-        Elements are sorted alphabetically and counts above one are appended
-        as a suffix, e.g. ``'C5N2O3'``.  Single-atom elements are written
-        without a count, e.g. ``'C'`` rather than ``'C1'``.
+        Elements are sorted in ascending alphabetical order by symbol and
+        counts above one are appended as a suffix, e.g. ``'C5N2O3'``.
+        Single-atom elements are written without a count, e.g. ``'C'``
+        rather than ``'C1'``.
+
+        .. note::
+            The sort order is **alphabetical** (Python ``sorted()``), **not**
+            Hill order (which would place C first, H second, then all other
+            elements alphabetically).  For structures containing only C, H,
+            N, O the two orderings coincide, but elements such as Na, Fe, or
+            Ar will appear at their alphabetical position rather than after H.
+            For example ``['Na', 'C', 'H', 'H']`` yields ``'CH2Na'``
+            (alphabetical) rather than ``'CH2Na'`` (which happens to match
+            Hill here) but ``['Ar', 'C', 'H']`` yields ``'ArCH2'``
+            (alphabetical) not ``'CH2Ar'`` (Hill).
 
         This property is computed on each access and is not persisted as a
         dataclass field.
@@ -502,8 +521,18 @@ class StructureGenerator:
     shell_radius:
         [shell] Shell-radius range in Å (default: ``(1.8, 2.5)``).
     elements:
-        Element pool.  A spec string such as ``"1-30"`` or ``"6,7,8"``, an
-        explicit list of element symbols, or ``None`` for all Z = 1–106.
+        Element pool.  Three forms are accepted:
+
+        * **Atomic-number spec string** — a comma-separated list of integers
+          and/or integer ranges, e.g. ``"6,7,8"`` (C, N, O) or ``"1-30"``
+          (H to Zn) or ``"1-10,26,28"`` (H–Ne plus Fe and Ni).
+          Ranges are inclusive.  **Symbol strings such as** ``"C,N,O"``
+          **are not accepted** and will raise :exc:`ValueError`; use the
+          numeric form ``"6,7,8"`` or pass a list instead.
+        * **Explicit list of element symbols** — e.g. ``["C", "N", "O"]``
+          or ``["Cr", "Mn", "Fe", "Co", "Ni"]``.  Symbols must be valid
+          two-character-or-less IUPAC symbols recognised by PASTED.
+        * ``None`` — all Z = 1–106 (default).
     element_fractions:
         Relative sampling weights for elements in the pool, as a
         ``{symbol: weight}`` dict (e.g. ``{"C": 0.5, "N": 0.3, "O": 0.2}``).
