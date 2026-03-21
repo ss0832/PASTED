@@ -74,6 +74,8 @@ ignore = [
     "RUF001",
     "RUF002",
     "RUF003",
+    # RUF022: __all__ is grouped by API category, not sorted alphabetically.
+    "RUF022",
 ]
 
 [tool.mypy]
