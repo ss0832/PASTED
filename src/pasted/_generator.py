@@ -228,8 +228,12 @@ class Structure:
             )
             result = opt.run(initial=s)
         """
-        p = Path(source) if not isinstance(source, str) or "\n" not in str(source) else None
-        if p is not None and p.exists():
+        p = (
+            Path(source)
+            if not isinstance(source, str) or ("\n" not in str(source) and str(source).strip())
+            else None
+        )
+        if p is not None and p.exists() and p.is_file():
             text = p.read_text()
         else:
             text = str(source)
