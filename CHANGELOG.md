@@ -80,10 +80,11 @@ old behavior explicitly, pass `max_init_attempts=50`.
  
 #### `Structure.comp` property was missing (`_generator.py`)
  
-`Structure.__repr__` computed the Hill-order composition string as a local
-variable `comp` that was never exposed as a public attribute.  Accessing
-`s.comp` raised `AttributeError` even though the string appeared inside
-`repr(s)`.
+`Structure.__repr__` computed the alphabetically-sorted composition string as
+a local variable `comp` that was never exposed as a public attribute.
+Accessing `s.comp` raised `AttributeError` even though the string appeared
+inside `repr(s)`.  (Note: the sort order is alphabetical, not Hill order;
+see the `Structure.comp` documentation for details.)
  
 **Fix:** `comp` is now a read-only `@property` on `Structure`.  `__repr__`
 delegates to `self.comp`, so the string is computed in one place only.

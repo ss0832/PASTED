@@ -159,6 +159,11 @@ uniformly over the sphere as the distance constraints allow.
 | `1-10,26,28` | Z = 1-10 plus Fe(26) and Ni(28) |
 | *(omitted)* | all Z = 1-106 |
 
+> **Note:** `--elements` (CLI) and the `elements=` keyword (Python API) accept
+> **atomic-number integers only** when given as a string — e.g. `"6,7,8"` for
+> C, N, O.  Symbol strings such as `"C,N,O"` raise `ValueError`.  To pass
+> symbols from Python, use a list: `elements=["C", "N", "O"]`.
+
 If H (Z = 1) is in the pool and the sampled composition contains no hydrogen,
 a random number of H atoms is automatically appended. Disable with
 `--no-add-hydrogen`.
@@ -313,7 +318,7 @@ for s in gen.stream():
 s = structures[0]
 s.atoms        # ['C', 'N', 'H', ...]
 s.positions    # [(x, y, z), ...]
-s.comp         # 'C4N3O3'  — Hill-order composition string (new in 0.3.1)
+s.comp         # 'C4N3O3'  — alphabetically-sorted composition string (new in 0.3.1)
 s.metrics      # {'H_atom': 1.09, 'moran_I_chi': -0.03, ...}
 s.charge       # 0
 s.mult         # 1
@@ -385,7 +390,7 @@ s = result.best           # or: s = structures[0]
 print(s.metrics["H_total"])
 print(s.metrics["moran_I_chi"])
 print(s.metrics["ring_fraction"])
-print(s.comp)             # Hill-order composition string, e.g. 'C5N2O3'
+print(s.comp)             # alphabetically-sorted composition string, e.g. 'C5N2O3'
 ```
 
 ## Full Option Reference
