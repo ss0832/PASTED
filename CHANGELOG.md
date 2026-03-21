@@ -5,6 +5,85 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.3.0] — 2026-03-21
+
+### Documentation
+
+This release contains documentation-only changes relative to v0.2.11.
+No API, behavior, or binary changes are included.
+
+#### Bug fixes in `docs/quickstart.md`
+
+- **CLI filter example corrected.**  The `--filter "H_total:2.0:-"` threshold
+  in the *Filtering by disorder metrics* example was unreachable for 15-atom
+  C/N/O/S gas structures (observed maximum ≈ 1.43 with auto cutoff).  The
+  threshold is lowered to `1.0` and `--n-samples` is raised from `200` to
+  `500` so the example reliably produces output.
+
+- **CLI `maxent` example corrected.**  `--n-samples 20` was too small for the
+  `elements=6,7,8` pool at `charge=0 mult=1`: all attempts were rejected by
+  the parity check.  Raised to `--n-samples 50`.
+
+- **Composition-only optimization example corrected.**  The previous example
+  used a C/N/O initial structure with a Cr/Mn/Fe/Co/Ni element pool, causing
+  near-total parity rejection that silently prevented any composition moves.
+  The example is rewritten to generate the initial structure from the same
+  Cantor alloy pool used by the optimizer.
+
+- **Composition-only objective corrected.**  The previous objective
+  `{"H_atom": 1.0, "Q6": -2.0}` is invariant under element-label swaps
+  (the primary composition move), so the optimizer could never improve it.
+  Changed to `{"moran_I_chi": -1.0, "charge_frustration": 2.0}`, which
+  responds to swaps via spatial electronegativity arrangement.  An explanatory
+  note is added describing which metrics are swap-invariant and why
+  `moran_I_chi` / `charge_frustration` are the recommended choices for
+  composition-only runs.
+
+#### New content in `docs/quickstart.md`
+
+- **Shell mode atom count note.**  Added a callout under *Shell mode with a
+  fixed center atom* explaining that the output atom count may exceed
+  `n_atoms` because (a) `--center-z` prepends the center atom and (b)
+  `add_hydrogen` is enabled by default.  Documents `--no-add-hydrogen` and
+  `Structure.center_sym` as mitigation options.
+
+- **Affine transforms — fine-grained parameter control.**  The
+  *Affine transforms in StructureGenerator* section is expanded to cover
+  `affine_stretch`, `affine_shear`, and `affine_jitter` individually:
+  - Per-operation code examples (stretch-only, shear-only, jitter-only).
+  - Full parameter reference table with ranges and fallback rules.
+  - Explicit note that `affine_jitter` has no effect inside
+    `StructureGenerator` / `generate()` because the internal `move_step`
+    is `0.0`; the parameter is only meaningful in `StructureOptimizer`.
+  - CLI flags `--affine-stretch`, `--affine-shear`, `--affine-jitter`
+    documented with a usage example.
+  - `StructureOptimizer` sub-section extended with stretch-only and
+    combined stretch+shear examples tied to `shape_aniso` maximization.
+
+- **Optimizer case studies section** (`## Optimizer case studies`).
+  Three new end-to-end examples:
+
+  1. *Reproducing a target disorder profile* — uses `cutoff=5.0` and
+     Parallel Tempering with a weighted objective to reproduce the metric
+     fingerprint of an external reference structure
+     (`moran_I_chi ≈ 0.94`, `ring_fraction = 0.875`, `graph_lcc = 1.0`).
+     Includes tips on cutoff matching and negative-weight suppression.
+
+  2. *Geometry search with an ASE calculator* — three-stage pipeline:
+     `StructureGenerator` samples random CH₄ geometries →
+     `StructureOptimizer` + `EvalContext` runs basin-hopping with the
+     ASE/EMT potential as the objective → ASE BFGS provides a final
+     gradient-based refinement.  Demonstrates `allow_composition_moves=False`
+     to lock stoichiometry.
+
+  3. *Two-phase curriculum objective* — uses `EvalContext.progress` to
+     switch the objective at the 50 % mark: pure `H_spatial` maximization
+     in the first half (broad exploration), then `H_spatial − 3×Q6` in the
+     second half (disorder + crystalline-order suppression combined).
+     Includes guidance on when curriculum objectives are appropriate.
+
+---
+
 ## [0.2.11] — 2026-03-21
 
 ### Added
