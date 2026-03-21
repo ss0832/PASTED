@@ -112,7 +112,7 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.3.3"
 
-__all__ = [  # noqa: RUF022 — grouped by API category, not alphabetical
+__all__ = [  # grouped by API category, not alphabetical
     # High-level API
     "EvalContext",
     "GenerationResult",
