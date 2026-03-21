@@ -282,11 +282,11 @@ Use `--filter METRIC:MIN:MAX` to keep only structures within a metric range.
 Use `-` for an open bound:
 
 ```bash
-# Keep structures with H_total >= 2.0 and Q6 <= 0.3
+# Keep structures with H_total >= 1.0 and Q6 <= 0.3
 pasted --n-atoms 15 --charge 0 --mult 1 \
        --mode gas --region sphere:8 \
-       --elements 6,7,8,16 --n-samples 200 --seed 1 \
-       --filter "H_total:2.0:-" \
+       --elements 6,7,8,16 --n-samples 500 --seed 1 \
+       --filter "H_total:1.0:-" \
        --filter "Q6:-:0.3" \
        -o filtered.xyz
 ```
@@ -312,7 +312,7 @@ as uniform as possible.  Like `gas`, it requires a `region` spec:
 ```bash
 pasted --n-atoms 12 --charge 0 --mult 1 \
        --mode maxent --region sphere:6 \
-       --elements 6,7,8 --n-samples 20 --seed 42 \
+       --elements 6,7,8 --n-samples 50 --seed 42 \
        -o maxent.xyz
 ```
 
@@ -807,17 +807,29 @@ optimize element types.  This is useful when exploring compositional
 disorder on a pre-relaxed geometry (e.g. a fixed lattice):
 
 ```python
-from pasted import StructureOptimizer, Structure
+from pasted import StructureOptimizer, Structure, generate
 
-# Load a geometry with a fixed set of coordinates
-initial = Structure.from_xyz("fixed_geometry.xyz")
+# Generate an initial geometry whose elements are drawn from the same pool.
+# The initial structure must use elements compatible with the optimizer's
+# element pool — mixing pools (e.g. C/N/O initial with Cr/Mn/Fe/Co/Ni pool)
+# causes near-total parity rejection and effectively freezes composition.
+initial_structs = generate(
+    n_atoms=10, charge=0, mult=1,
+    mode="gas", region="sphere:8",
+    elements=["Cr", "Mn", "Fe", "Co", "Ni"],  # same pool as optimizer
+    n_samples=50, seed=0,
+)
+initial = initial_structs[0]
 
 opt = StructureOptimizer(
     n_atoms=len(initial),
     charge=initial.charge,
     mult=initial.mult,
     elements=["Cr", "Mn", "Fe", "Co", "Ni"],  # Cantor alloy pool
-    objective={"H_atom": 1.0, "Q6": -2.0},
+    objective={
+        "moran_I_chi": -1.0,          # minimize EN spatial autocorrelation
+        "charge_frustration": 2.0,    # maximize EN variance across neighbors
+    },
     allow_displacements=False,   # composition-only; coordinates fixed
     method="annealing",
     max_steps=5000,
@@ -832,6 +844,15 @@ np.testing.assert_allclose(
     np.array(result.best.positions), np.array(initial.positions)
 )
 ```
+
+> **Choosing an objective for composition-only runs:** the primary composition
+> move is a *swap* of two atom labels, which leaves the element-count histogram
+> unchanged.  Metrics that depend only on composition counts — `H_atom`,
+> `H_spatial` — are therefore invariant under swaps and make poor objectives
+> here.  Metrics that capture the *spatial arrangement* of elements —
+> `moran_I_chi` (electronegativity autocorrelation) and `charge_frustration`
+> (EN variance across neighbor pairs) — respond to swaps and are the
+> recommended choices for composition-only optimization.
 
 > **Note**: `allow_displacements=False` and `allow_composition_moves=False`
 > cannot both be set — at least one move type must be enabled.  Attempting
