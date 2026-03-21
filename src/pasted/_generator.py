@@ -14,6 +14,8 @@ import random
 import sys
 import warnings
 from collections import Counter
+
+import numpy as np
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -262,12 +264,11 @@ class Structure:
 
         if recompute_metrics:
             if cutoff is None:
-                radii = [_cov_radius_ang(a) for a in atoms]
-                pair_sums = sorted(
-                    ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
-                )
-                median_sum = pair_sums[len(pair_sums) // 2]
-                cutoff = cov_scale * 1.5 * median_sum
+                import numpy as _np
+                radii = _np.array([_cov_radius_ang(a) for a in atoms])
+                # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
+                # Avoids O(N² log N) pair enumeration for large structures.
+                cutoff = cov_scale * 1.5 * float(_np.median(radii)) * 2.0
             metrics = compute_all_metrics(
                 atoms, positions, n_bins, w_atom, w_spatial, cutoff, cov_scale
             )
@@ -829,14 +830,17 @@ class StructureGenerator:
             if self._cfg.verbose:
                 self._log(f"[cutoff] {override:.3f} Å (user-specified)")
             return override
-        radii = [_cov_radius_ang(s) for s in self._element_pool]
-        pair_sums = sorted(ra + rb for i, ra in enumerate(radii) for rb in radii[i:])
-        median_sum = pair_sums[len(pair_sums) // 2]
+        radii = np.array([_cov_radius_ang(s) for s in self._element_pool])
+        # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
+        # The element pool is at most 106 elements, so O(N²) would be fast here
+        # too; we still use the O(N) form for consistency with _metrics.py and
+        # to match the formula documented in architecture.md (v0.2.6).
+        median_sum = float(np.median(radii)) * 2.0
         cutoff = self._cfg.cov_scale * 1.5 * median_sum
         if self._cfg.verbose:
             self._log(
                 f"[cutoff] {cutoff:.3f} Å (auto: cov_scale={self._cfg.cov_scale} × 1.5 × "
-                f"median(r_i+r_j)={median_sum:.3f} Å)"
+                f"median(r_i+r_j)≈{median_sum:.3f} Å)"
             )
         return cutoff
 
@@ -1182,15 +1186,30 @@ class StructureGenerator:
         # expected behavior for mixed-element pools and does not require
         # a warning — the verbose summary line already reports the counts.
         if n_invalid > 0 and n_passed == 0:
-            warnings.warn(
-                f"All {n_attempted} attempt(s) were rejected by the charge/"
-                f"multiplicity parity check ({n_invalid} invalid). "
-                f"No structures were generated. "
-                f"Check that your element pool can satisfy "
-                f"charge={self._cfg.charge}, mult={self._cfg.mult}.",
-                UserWarning,
-                stacklevel=4,
-            )
+            if n_rejected_filter == 0:
+                # Pure parity failure — no attempt reached the filter stage.
+                warnings.warn(
+                    f"All {n_attempted} attempt(s) were rejected by the charge/"
+                    f"multiplicity parity check ({n_invalid} invalid). "
+                    f"No structures were generated. "
+                    f"Check that your element pool can satisfy "
+                    f"charge={self._cfg.charge}, mult={self._cfg.mult}.",
+                    UserWarning,
+                    stacklevel=4,
+                )
+            else:
+                # Mixed failure: some attempts failed parity AND some failed filters.
+                # Report both causes so users don't only debug the element pool.
+                warnings.warn(
+                    f"{n_invalid} of {n_attempted} attempt(s) were rejected by the "
+                    f"charge/multiplicity parity check, and the remaining "
+                    f"{n_rejected_filter} that passed parity were rejected by metric "
+                    f"filters. No structures were generated. "
+                    f"Check your element pool (charge={self._cfg.charge}, "
+                    f"mult={self._cfg.mult}) and relax --filter thresholds.",
+                    UserWarning,
+                    stacklevel=4,
+                )
 
         if n_passed == 0 and n_invalid == 0:
             warnings.warn(
@@ -1387,12 +1406,10 @@ def read_xyz(
         if recompute_metrics:
             cut = cutoff
             if cut is None:
-                radii = [_cov_radius_ang(a) for a in atoms]
-                pair_sums = sorted(
-                    ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
-                )
-                median_sum = pair_sums[len(pair_sums) // 2]
-                cut = cov_scale * 1.5 * median_sum
+                import numpy as _np
+                radii = _np.array([_cov_radius_ang(a) for a in atoms])
+                # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
+                cut = cov_scale * 1.5 * float(_np.median(radii)) * 2.0
             metrics = compute_all_metrics(
                 atoms, positions, n_bins, w_atom, w_spatial, cut, cov_scale
             )

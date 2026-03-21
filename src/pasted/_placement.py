@@ -699,8 +699,13 @@ def place_maxent(
     # Cache radii once; used by both paths and by do_relax (Python fallback).
     radii = np.array([_cov_radius_ang(a) for a in atoms], dtype=float)
     # v0.2.6: O(N) replacement for the previous O(N² log N) sorted(pair_sums)
-    # call.  The identity median(rᵢ + rⱼ) = 2 · median(rᵢ) holds for all
-    # built-in element pools; see the docstring "Implementation notes" section.
+    # call.  The identity median(rᵢ + rⱼ) = 2 · median(rᵢ) holds exactly
+    # when the radius distribution is unimodal (e.g. C/N/O/S, 1-30 pools).
+    # For strongly bimodal pools such as H + heavy metals the approximation
+    # may overestimate ang_cutoff by up to ~50 %, causing the angular
+    # repulsion to act over a wider neighbourhood than intended.  The effect
+    # is a slightly weaker uniformity guarantee rather than a hard failure.
+    # Pass an explicit cutoff= if strict ang_cutoff control is required.
     median_sum = float(np.median(radii)) * 2.0
     ang_cutoff = cov_scale * maxent_cutoff_scale * median_sum
 

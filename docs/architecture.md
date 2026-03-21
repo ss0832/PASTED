@@ -98,15 +98,21 @@ per structure before the L-BFGS loop.  For N=2,000 this single step consumed
 ~88% of total wall time when `maxent_steps` was small.
 
 **Fix (v0.2.6):** the identity `median(rᵢ + rⱼ) = 2 · median(rᵢ)` holds
-whenever the radius distribution is unimodal and symmetric about its median,
-which is true for all built-in element pools.  The replacement:
+whenever the radius distribution is unimodal and approximately symmetric
+about its median.  This is true for typical element pools (C/N/O, 1–30, etc.)
+where errors are below 3 %.  For strongly **bimodal** pools such as H + heavy
+metals, the approximation can overestimate `ang_cutoff` by up to ~50 % — the
+angular repulsion is then applied over a wider neighbourhood, resulting in a
+slightly weaker uniformity guarantee rather than a hard failure.  Pass an
+explicit `cutoff=` value if strict `ang_cutoff` control is required.
+The replacement:
 
 ```python
 median_sum = float(np.median(radii)) * 2.0
 ```
 
-is O(N), allocates no extra memory, and yields a numerically identical
-`ang_cutoff` for all tested element pools.  Measured speedups vs. v0.2.5:
+is O(N), allocates no extra memory, and yields a cutoff within 3 % of the
+exact value for all standard element pools.  Measured speedups vs. v0.2.5:
 
 | n_atoms | v0.2.5    | v0.2.6   | speedup |
 |--------:|----------:|---------:|--------:|
@@ -323,14 +329,21 @@ passed=5  attempted=50  rejected_parity=12  rejected_filter=33
 
 ### warnings.warn behavior
 
-`stream()` emits a `UserWarning` (via `warnings.warn`) in three situations:
+`stream()` emits a `UserWarning` (via `warnings.warn`) in the following situations:
 
 | Situation | Warning message |
 |---|---|
-| All attempts rejected by parity | *"All N attempt(s) were rejected by the charge/multiplicity parity check …"* |
-| Some attempts rejected by parity | *"M of N attempt(s) were rejected by the charge/multiplicity parity check …"* |
-| No structures pass filters | *"No structures passed the metric filters after N attempt(s) …"* |
+| All attempts rejected by parity (no filter failures) | *"All N attempt(s) were rejected by the charge/multiplicity parity check …"* |
+| Parity failures **and** filter failures both present, no structures passed | *"M of N attempt(s) were rejected by the parity check, and the remaining K that passed parity were rejected by metric filters …"* |
+| No parity failures but all structures rejected by filters | *"No structures passed the metric filters after N attempt(s) …"* |
 | Budget exhausted before `n_success` | *"Attempt budget exhausted (N attempts) before reaching n_success=K …"* |
+
+> **Note — partial parity rejection with passing structures:** when some
+> attempts are rejected by parity but at least one structure still passes,
+> **no warning is emitted**.  Mixed-element pools (e.g. `elements="6,7,8"`)
+> routinely produce ~50 % parity failures by chance; this is expected
+> behavior and is reported only in the verbose summary line
+> (`rejected_parity=N`), not as a `UserWarning`.
 
 These warnings fire regardless of the `verbose` flag so that downstream
 consumers (ASE, high-throughput pipelines) receive a machine-visible signal

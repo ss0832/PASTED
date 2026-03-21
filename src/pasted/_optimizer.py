@@ -1179,16 +1179,14 @@ class StructureOptimizer:
             if self.verbose:
                 self._log(f"[cutoff] {override:.3f} Å (user-specified)")
             return override
-        radii = [_cov_radius_ang(s) for s in self._element_pool]
-        pair_sums = sorted(
-            ra + rb for i, ra in enumerate(radii) for rb in radii[i:]
-        )
-        median_sum = pair_sums[len(pair_sums) // 2]
+        radii = np.array([_cov_radius_ang(s) for s in self._element_pool])
+        # O(N) approximation: median(r_i + r_j) ≈ 2 × median(r_i).
+        median_sum = float(np.median(radii)) * 2.0
         cutoff = self.cov_scale * 1.5 * median_sum
         if self.verbose:
             self._log(
                 f"[cutoff] {cutoff:.3f} Å (auto: cov_scale={self.cov_scale} × 1.5 × "
-                f"median(r_i+r_j)={median_sum:.3f} Å)"
+                f"median(r_i+r_j)≈{median_sum:.3f} Å)"
             )
         return cutoff
 
