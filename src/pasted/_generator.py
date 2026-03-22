@@ -551,7 +551,7 @@ class StructureGenerator:
     chain_bias:
         [chain] Global-axis drift strength ∈ [0, 1] (default: 0.0).
         The direction of the first bond becomes the bias axis; each
-        subsequent step is blended toward that axis before normalisation.
+        subsequent step is blended toward that axis before normalization.
         0.0 → no bias (backwards-compatible); higher values produce more
         elongated structures with larger ``shape_aniso``.
     bond_range:

@@ -226,7 +226,7 @@ histogram** inside the `FlatCellList` `collect` lambda.  The previous
 implementation first collected all pair distances into a `std::vector<double>`
 before binning — an unnecessary O(N·k) heap allocation that has been removed.
 
-#### Per-bond arithmetic optimisations (v0.3.7)
+#### Per-bond arithmetic optimizations (v0.3.7)
 
 **① + ② — atan2 elimination + Chebyshev recurrence.**  The former code
 called `std::atan2` once per bond and then issued `l_max` independent
@@ -264,7 +264,7 @@ Combined speedup on `compute_steinhardt` (PASTED gas structures, k ≈ 0.7):
 (N = 20–5 000), with the largest gain at N = 500–1 000 where trig was the
 dominant cost.
 
-#### Real spherical harmonics fast-path for l=4,6,8 (v0.3.8, optimisation ④)
+#### Real spherical harmonics fast-path for l=4,6,8 (v0.3.8, optimization ④)
 
 When `l_values = [4, 6, 8]` (the default), the `accumulate` lambda takes a
 dedicated code path that replaces both the P_lm recurrence and the Chebyshev
@@ -430,7 +430,7 @@ regardless of N.  Measured speedup (PASTED default structures, k ≈ 0.7):
 | 5 000 | 6.383 ms | 5.605 ms | **4.484 ms** | **1.4×** |
 
 The buffer-transpose (v0.3.6) mainly helped at N ≥ 2 000 (cache boundary).
-The arithmetic optimisations (v0.3.7) are most visible at N = 500–1 000
+The arithmetic optimizations (v0.3.7) are most visible at N = 500–1 000
 because that is where the per-bond trig was the dominant cost.  Together
 the two changes deliver **2.1–2.3×** on `compute_steinhardt` and
 **1.3–1.4×** on `compute_all_metrics` across typical PASTED structures.

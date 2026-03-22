@@ -843,7 +843,7 @@ def _sanitize_atoms_to_pool(
 
 
 class StructureOptimizer:
-    """Optimise a single structure to maximize a disorder objective.
+    """Optimize a single structure to maximize a disorder objective.
 
     Parameters
     ----------
@@ -993,7 +993,7 @@ class StructureOptimizer:
     w_spatial:
         Weight of ``H_spatial`` in ``H_total`` (default: 0.5).
     n_restarts:
-        Independent optimisation runs (default: 1).  The best result
+        Independent optimization runs (default: 1).  The best result
         across all restarts is returned.
     max_init_attempts:
         Maximum number of single-sample tries that :meth:`_make_initial`
@@ -1709,9 +1709,9 @@ class StructureOptimizer:
         # When composition moves are enabled and the caller supplied an initial
         # structure whose atoms include symbols outside the element pool, replace
         # every foreign symbol with a parity-compatible pool element before the
-        # MC loop begins.  Without this step the optimiser could retain foreign
+        # MC loop begins.  Without this step the optimizer could retain foreign
         # atoms indefinitely whenever their objective value is locally optimal.
-        # (fix: Bug #4 — composition-only optimisation retains non-pool atoms)
+        # (fix: Bug #4 — composition-only optimization retains non-pool atoms)
         if self.allow_composition_moves:
             pool_set = set(self._element_pool)
             if not all(a in pool_set for a in atoms):

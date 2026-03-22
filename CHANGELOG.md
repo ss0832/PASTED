@@ -10,6 +10,76 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.10] — 2026-03-22
+
+### Fixed
+
+#### BUG — `compute_shape_anisotropy`: `ZeroDivisionError` on subnormal coordinates (`_metrics.py`)
+
+*Discovered via: hypothesis property-based test `TestComputeAllMetricsCompleteness`*
+
+`compute_shape_anisotropy` guarded against division by zero in the gyration
+tensor trace using an exact equality check (`tr == 0`).  This check failed to
+catch subnormal coordinate differences — pairs of atoms whose positions differ
+by as little as ≈ 6e-108 Å produce a non-zero `tr` value that is nonetheless
+so small that `1.5 * tr2 / tr**2` overflows to infinity or raises
+`ZeroDivisionError` before `np.clip` can act.
+
+**Fix:** the guard is tightened from `tr == 0` to `tr < 1e-30`.  Any
+gyration tensor with trace below this threshold is treated as a degenerate
+coincident-atom configuration and returns `0.0` (spherical).
+
+**Affected files:**
+- `src/pasted/_metrics.py` — guard condition and docstring updated
+
+#### BUG — `test_maxent.py::TestPlaceMaxentCutoff::test_ang_cutoff_unchanged_end_to_end` always failed in the project's own test suite
+
+*Discovered via: `pytest` run from the project root*
+
+`conftest.py` at the project root inserts `src/` ahead of the installed
+package on `sys.path` so that tests exercise the source tree rather than the
+wheel.  When C++ extensions are not compiled inside `src/pasted/_ext/` (the
+typical state for a source checkout), `HAS_MAXENT_LOOP` is `False` in the
+test environment.  The test unconditionally attempted to monkey-patch the C++
+entry point `_pl._cpp_place_maxent`, which is never called when
+`HAS_MAXENT_LOOP=False`, so `captured` remained empty and the assertion
+`len(captured) == 1` always failed.
+
+**Fix:** `@pytest.mark.skipif(not HAS_MAXENT_LOOP, reason="…")` added to the
+test method so that it is skipped in pure-Python environments and only runs
+when the C++ extension is active.
+
+**Affected files:**
+- `tests/test_maxent.py` — `HAS_MAXENT_LOOP` import and `skipif` decorator added
+
+### Reverted
+
+#### REVERT — `FlatCellList` CSR sorted layout removed from `_steinhardt.cpp` and `_relax.cpp`
+
+The physically sorted CSR layout (counting-sort `FlatCellList` with
+`sorted_idx`, `cell_start`, and `sorted_pts` buffers) that was introduced as
+a performance optimization has been removed.  Both `_steinhardt_core` and
+`_relax_core` return to the linked-list `FlatCellList` (`cell_head` + `next`
+arrays) that was in place through v0.3.9.
+
+**Reason for revert:** the measured speedup was inconsistent and
+environment-dependent (regressions at N < 500, gains only at N ≥ 5,000
+without `-march=native`), the additional complexity increased maintenance
+burden, and the feature did not meet the stability bar required for release.
+All correctness properties (UBSan integer-overflow guard, Verlet-list reuse,
+coincident-atom jitter) introduced in earlier releases are preserved.
+
+**Affected files:**
+- `src/pasted/_ext/_steinhardt.cpp` — reverted to linked-list `FlatCellList`;
+  `sorted_pts` buffer and CSR `cell_start` removed; header comment updated
+- `src/pasted/_ext/_relax.cpp` — reverted to linked-list `FlatCellList`;
+  `PenaltyEvaluator` physical-sort members (`new_to_old_`, `old_to_new_`,
+  `sorted_pts_`, `sorted_radii_`, `sorted_grad_`) removed; `evaluate()`
+  Large-N branch simplified; header comment updated
+- `docs/architecture.md` — CSR layout descriptions removed from both the
+  Steinhardt and relax sections
+
+---
 
 ## [0.3.9] — 2026-03-22
 
@@ -31,7 +101,7 @@ In the XYZ format, blank lines are legal as separators, but splitting a blank li
 
 #### BUG — `FlatCellList::build()`: signed integer overflow in `int`
 
-*Discovered via: UBSan (Undefined Behaviour Sanitizer)*  
+*Discovered via: UBSan (Undefined Behavior Sanitizer)*  
 *Affected files: `_steinhardt.cpp`, `_graph_core.cpp`, `_relax.cpp` (all three files)*
 
 When `cutoff` is large (e.g., 1000 Å), the cell count computation `nx * ny * nz` could overflow `int`, resulting in an invalid size passed to `cell_head.assign()`, triggering undefined behavior in C++.
@@ -154,7 +224,7 @@ result is unchanged.
 
 ### Performance
 
-#### PERF — `_steinhardt_core`: real spherical harmonics hardcoded for l=4,6,8 (optimisation ④)
+#### PERF — `_steinhardt_core`: real spherical harmonics hardcoded for l=4,6,8 (optimization ④)
 
 When `l_values = [4, 6, 8]` (the default used by `compute_all_metrics`), the
 `accumulate` lambda now takes a dedicated fast-path that replaces the
@@ -223,8 +293,8 @@ updated with root-cause analysis and post-fix benchmark table.
 
 #### PERF — `_steinhardt_core`: atan2 elimination + Chebyshev recurrence + stack P_lm (`_steinhardt.cpp`)
 
-Three per-bond arithmetic optimisations applied to the `accumulate` lambda in
-`steinhardt_per_atom_cpp` (optimisations ①+②+③ from the performance analysis):
+Three per-bond arithmetic optimizations applied to the `accumulate` lambda in
+`steinhardt_per_atom_cpp` (optimizations ①+②+③ from the performance analysis):
 
 **① + ② — atan2 elimination and Chebyshev recurrence for cos(m·φ)/sin(m·φ).**
 The former code called `std::atan2(dy, dx)` once per bond and then issued
@@ -280,7 +350,7 @@ and superlinear wall-time growth despite an O(N·k·l²) algorithm.
 atom `i` are contiguous (stride 8 B, ≤ 216 bytes per atom — fits in a single
 cache line regardless of N).
 
-Measured speedup on PASTED default gas structures (k ≈ 0.7 neighbours/atom;
+Measured speedup on PASTED default gas structures (k ≈ 0.7 neighbors/atom;
 all C++ extensions active; single CPU core):
 
 | N | `compute_steinhardt` | `compute_all_metrics` |
@@ -338,7 +408,7 @@ the FlatCellList enumeration pass.
 #### PERF-2 — `graph_metrics_cpp`: `graph_cc` triangle counting uses `binary_search` (`_graph_core.cpp`)
 
 The triangle-counting loop in `graph_cc` previously used `std::find` for
-neighbour lookup — an O(k) linear scan that made the full loop O(N·k³).
+neighbor lookup — an O(k) linear scan that made the full loop O(N·k³).
 Adjacency lists are now **sorted once** after the FlatCellList pass, and
 `std::binary_search` is used instead (O(log k)), reducing the triangle loop
 to O(N·k²·log k).  At the typical k ≈ 2–16 of PASTED structures this is
@@ -560,11 +630,11 @@ instead of their filter configuration.
 
 #### BUG-2 — `architecture.md` warning table listed a non-existent warning case
 
-The `warnings.warn` behaviour table in `docs/architecture.md` included a row
+The `warnings.warn` behavior table in `docs/architecture.md` included a row
 for *"Some attempts rejected by parity"* (`M of N attempt(s) …`) that was
 never emitted by the implementation.  The intent (documented in a code
 comment) is that partial parity rejection where some structures still pass is
-**expected** behaviour and does not warrant a warning.  The table has been
+**expected** behavior and does not warrant a warning.  The table has been
 corrected to match the actual four-case implementation, and a note explaining
 why the partial-parity case is intentionally silent has been added.
 
@@ -634,7 +704,7 @@ passing an explicit `cutoff=` for bimodal pools.
 
 `allow_affine_moves`, `allow_displacements`, and `allow_composition_moves` were
 not treated as orthogonal, independent move types.  Two separate bugs made it
-impossible to run an affine-only optimisation:
+impossible to run an affine-only optimization:
 
 1. **Validation error** — `__init__` raised `ValueError` whenever both
    `allow_displacements=False` and `allow_composition_moves=False`, even if
@@ -1522,7 +1592,7 @@ set_num_threads(4)
 * **`allow_displacements=False` no longer moves atom positions.**
 
   `relax_positions` is now skipped when `allow_displacements=False` in
-  all three optimisation methods (SA, BH, PT).
+  all three optimization methods (SA, BH, PT).
 
 ### Performance
 
@@ -1591,7 +1661,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
   | Module | Strategy | Parallel region |
   | --- | --- | --- |
   | `_relax_core` | Pair list pre-built serially; gradient accumulation via thread-local buffers merged after parallel loop | `PenaltyEvaluator::evaluate` |
-  | `_steinhardt_core` | Neighbour list pre-built serially; per-atom spherical harmonic accumulation parallelized | outer atom loop in `steinhardt_per_atom_cpp` |
+  | `_steinhardt_core` | Neighbor list pre-built serially; per-atom spherical harmonic accumulation parallelized | outer atom loop in `steinhardt_per_atom_cpp` |
   | `_graph_core` | Pair list pre-built serially; distance filtering and adjacency construction via thread-local pair buckets merged serially | `graph_metrics_cpp`, `rdf_h_cpp` |
   | `_maxent_core` | Per-atom angular repulsion gradient with thread-local gradient buffers | `eval_angular` outer atom loop |
 
@@ -1673,7 +1743,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
   simultaneously raises a `ValueError` because no move type would remain
   enabled.
 
-  Applies to all three optimisation methods: `"annealing"`,
+  Applies to all three optimization methods: `"annealing"`,
   `"basin_hopping"`, and `"parallel_tempering"`.
 
   CLI: `--no-displacements` flag added to the `--optimize` mode.
@@ -1701,18 +1771,18 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
 
 - **`allow_composition_moves` parameter for `StructureOptimizer`.**
 
-  Controls whether element-type swaps are performed during optimisation.
+  Controls whether element-type swaps are performed during optimization.
 
-  | Value | Behaviour |
+  | Value | Behavior |
   |---|---|
   | `True` (default) | Each MC step randomly chooses between a fragment move (position change) and a composition move (element-type swap) with equal probability — unchanged from v0.1.15 |
   | `False` | Only fragment moves are executed; element types are held fixed for the entire run |
 
   Use `allow_composition_moves=False` when the composition is predetermined
-  and should not be modified during optimisation (e.g. optimising the
+  and should not be modified during optimization (e.g. optimizing the
   geometry of a fixed stoichiometry).
 
-  Applies to all three optimisation methods: `"annealing"`,
+  Applies to all three optimization methods: `"annealing"`,
   `"basin_hopping"`, and `"parallel_tempering"`.
 
   CLI: `--no-composition-moves` flag added to the `--optimize` mode.
@@ -1722,7 +1792,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
       n_atoms=12, charge=0, mult=1,
       objective={"H_total": 1.0, "Q6": -2.0},
       elements="24,25,26,27,28",
-      allow_composition_moves=False,   # position-only optimisation
+      allow_composition_moves=False,   # position-only optimization
       max_steps=5000, seed=42,
   )
   result = opt.run(initial=my_structure)
@@ -1797,8 +1867,8 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
     constraints, sum-exceeds-n_atoms error, min > max error, unknown element
     errors, impossible-cap RuntimeError.
   - `TestAllowCompositionMoves` (6 tests) — default True, composition
-    preservation when disabled (SA and PT), still optimises, `repr`
-    behaviour.
+    preservation when disabled (SA and PT), still optimizes, `repr`
+    behavior.
 
 ## [0.1.15] - 2026-03-19
 
@@ -1813,7 +1883,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
   | Step | v0.1.14 (Python SD) | v0.1.15 (C++ L-BFGS) |
   |---|---|---|
   | Gradient computation | C++ `angular_repulsion_gradient` | C++ (inlined, same Cell List) |
-  | Optimiser | steepest descent, fixed `maxent_lr` | L-BFGS m=7, Armijo backtracking |
+  | Optimizer | steepest descent, fixed `maxent_lr` | L-BFGS m=7, Armijo backtracking |
   | Step limit | unit-norm clip × `maxent_lr` | per-atom trust radius (default 0.5 Å) |
   | Restoring force | Python NumPy | C++ |
   | CoM pinning | Python NumPy | C++ |
@@ -1864,7 +1934,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
 
 - **`_maxent.cpp` refactored**: `angular_repulsion_gradient` and
   `place_maxent_cpp` now share a single `build_nb` / `eval_angular` pair
-  instead of duplicating neighbour-list and gradient logic.
+  instead of duplicating neighbor-list and gradient logic.
 
 
 
@@ -2157,7 +2227,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
   - `charge_frustration` — variance of |Δχ| (absolute Pauling
     electronegativity difference) across all cutoff-adjacent pairs.
     High values indicate that each atom is surrounded by a mix of
-    electronegative and electropositive neighbours — i.e. the local
+    electronegative and electropositive neighbors — i.e. the local
     electrostatic environment is inconsistent, analogous to geometric
     frustration in spin systems.  Low values indicate compositionally
     homogeneous neighbourhoods.
@@ -2296,7 +2366,7 @@ Measured on the same workload as the v0.1.17 baseline (median of 5 runs):
     coarse for the existing test suite (tolerance 1e-5 Å).  `1e-12`
     bounds per-pair residuals to ≤ 1.4×10⁻⁶ Å.
   - Jitter scope narrowed from *all* coordinates to *coincident-pair*
-    atoms only (d < 1e-10 Å), matching the v0.1.10 GS behaviour.
+    atoms only (d < 1e-10 Å), matching the v0.1.10 GS behavior.
     The unconditional jitter made `relax_positions(seed=None)` non-
     deterministic for normal structures, breaking the optimizer
     reproducibility test.

@@ -60,7 +60,7 @@ Each value is the median of ≥ 3 repeats filling a 1.5 s budget.
 > **v0.3.8 — `moran_I_chi` clamp:** result is now clamped to 1.0 from above
 > (binary-weight sparse-graph artefact; no timing impact).
 >
-> **v0.3.8 — `steinhardt` optimisation ④:** when `l_values = [4, 6, 8]` the
+> **v0.3.8 — `steinhardt` optimization ④:** when `l_values = [4, 6, 8]` the
 > accumulate lambda uses hardcoded Cartesian polynomial arithmetic (joint CSE
 > over l=4,6,8 via SymPy) instead of the associated-Legendre recurrence.
 > Speedup **1.4–1.6×** at N = 100–1 000 on gas structures (k ≈ 0.7),
@@ -70,7 +70,7 @@ Peak RSS across the full N = 5–5 000 sweep: **152 MB** (growth < 3 MB total;
 no memory leak detected over 500 repeated calls at each size).
 
 **`compute_all_metrics` latency scales roughly linearly in N** (k ≈ 0.7 at the
-default cutoff, so each sub-metric is O(N·k)).  Two rounds of optimisation
+default cutoff, so each sub-metric is O(N·k)).  Two rounds of optimization
 have dramatically reduced `compute_steinhardt` cost:
 
 - **v0.3.6** — buffer transposed from `(n_l, l_max+1, N)` to `(N, n_l,
@@ -82,7 +82,7 @@ have dramatically reduced `compute_steinhardt` cost:
 
 Combined, `compute_steinhardt` is **2.1–2.3×** faster at N = 500–1 000 and
 `compute_all_metrics` is **1.3–1.4×** faster across typical structures.
-See `docs/architecture.md` → *Per-bond arithmetic optimisations* for the full
+See `docs/architecture.md` → *Per-bond arithmetic optimizations* for the full
 analysis.
 
 ### v0.3.2 → v0.3.8 comparison (measured, gas structures k ≈ 0.7)
@@ -112,7 +112,7 @@ k ≈ 0.7 (cutoff = 3.5 Å), median of 2–10 repeats.
 | 2 000 | 4.808 | 4.642 | 1.0× |
 | 5 000 | 10.265 | 10.596 | ~1× |
 
-> **Note:** the v0.3.6/v0.3.7 Steinhardt optimisations target CPU-cache
+> **Note:** the v0.3.6/v0.3.7 Steinhardt optimizations target CPU-cache
 > and pipeline effects that are most visible on real hardware with `-march=native`
 > or under sustained load.  In a containerised CI environment without native
 > SIMD the speedup at N ≤ 2 000 is modest (~1.1×); the 2.1–2.3× figure
@@ -437,7 +437,7 @@ pasted --n-atoms 12 --charge 0 --mult 1 \
 ```
 
 > **Tip:** `maxent` is slower than `gas` or `chain` because it runs an
-> iterative angular-repulsion optimisation per structure.  For large N, the
+> iterative angular-repulsion optimization per structure.  For large N, the
 > C++ extension (`HAS_MAXENT_LOOP=True`) is strongly recommended.
 
 For a complete reference of all CLI options, flags, and optimizer mode, see

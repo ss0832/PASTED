@@ -23,7 +23,7 @@
  * three-term recurrence; normalization factors N_lm are pre-computed from
  * factorial tables.
  *
- * Neighbour finding
+ * Neighbor finding
  * -----------------
  * N < CELL_THRESHOLD : O(N^2) full-pair scan.
  * N >= CELL_THRESHOLD: FlatCellList O(N) amortized (same structure as
@@ -42,7 +42,7 @@
  * making the intermediate nb_list allocation pure overhead.  The original
  * single-pass lambda accumulation was restored in v0.2.9.
  *
- * Hot-path optimisations (v0.3.7)
+ * Hot-path optimizations (v0.3.7)
  * --------------------------------
  * ① + ② — atan2 elimination + Chebyshev recurrence for cos(mφ)/sin(mφ).
  *   The former code called std::atan2 once per bond and then issued
@@ -61,7 +61,7 @@
  *   Eliminates one heap alloc + assign() per bond and keeps the 936-byte
  *   table in L1 cache for the full duration of the bond loop.
  *
- * Hot-path optimisations (v0.3.8)
+ * Hot-path optimizations (v0.3.8)
  * --------------------------------
  * ④ — Real spherical harmonics hardcoded for l=4,6,8.
  *   When l_values == [4,6,8] the accumulate lambda skips compute_plm and the
@@ -151,15 +151,15 @@ static void compute_plm(double x, double s /* sin(theta) */, int lmax,
 }
 
 // ---------------------------------------------------------------------------
-// FlatCellList (read-only version; adapted from _relax_core)
+// FlatCellList — linked-list spatial index
 // ---------------------------------------------------------------------------
 
 struct FlatCellList {
     double inv_cell;
     int    nx, ny, nz;
     double ox, oy, oz;
-    std::vector<int> cell_head;
-    std::vector<int> next;
+    std::vector<int> cell_head;  // cell_head[cid] = first atom in cell, -1 if empty
+    std::vector<int> next;       // next[i] = next atom in same cell, -1 if none
 
     void build(const double* pts, int n, double cell_size) {
         inv_cell = 1.0 / cell_size;
@@ -167,14 +167,13 @@ struct FlatCellList {
         double ymin = pts[1], ymax = pts[1];
         double zmin = pts[2], zmax = pts[2];
         for (int i = 1; i < n; ++i) {
-            xmin = std::min(xmin, pts[i * 3 + 0]); xmax = std::max(xmax, pts[i * 3 + 0]);
-            ymin = std::min(ymin, pts[i * 3 + 1]); ymax = std::max(ymax, pts[i * 3 + 1]);
-            zmin = std::min(zmin, pts[i * 3 + 2]); zmax = std::max(zmax, pts[i * 3 + 2]);
+            xmin = std::min(xmin, pts[i*3+0]); xmax = std::max(xmax, pts[i*3+0]);
+            ymin = std::min(ymin, pts[i*3+1]); ymax = std::max(ymax, pts[i*3+1]);
+            zmin = std::min(zmin, pts[i*3+2]); zmax = std::max(zmax, pts[i*3+2]);
         }
         ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
-        // Guard: coarsen the grid if nx*ny*nz would overflow int or
-        // exceed the cell-count cap (1<<22 ≈ 4M cells, ~16 MB).
-        // Double cell_size until it fits; hot-loop stays int throughout.
+        // Guard: coarsen the grid until nx*ny*nz <= 1<<22 (4M cells, ~16 MB).
+        // Prevents signed integer overflow when cutoff is large (UBSan fix, v0.3.9).
         {
             static constexpr std::int64_t MAX_CELLS = 1LL << 22;
             auto tent_nx = [&]{ return static_cast<int>((xmax - ox) * inv_cell) + 2; };
@@ -190,36 +189,39 @@ struct FlatCellList {
         cell_head.assign(static_cast<std::size_t>(nx * ny * nz), -1);
         next.resize(static_cast<std::size_t>(n));
         for (int i = 0; i < n; ++i) {
-            const int cx = static_cast<int>((pts[i * 3 + 0] - ox) * inv_cell);
-            const int cy = static_cast<int>((pts[i * 3 + 1] - oy) * inv_cell);
-            const int cz = static_cast<int>((pts[i * 3 + 2] - oz) * inv_cell);
+            const int cx = static_cast<int>((pts[i*3+0] - ox) * inv_cell);
+            const int cy = static_cast<int>((pts[i*3+1] - oy) * inv_cell);
+            const int cz = static_cast<int>((pts[i*3+2] - oz) * inv_cell);
             const int cid = cx + nx * (cy + ny * cz);
-            next[static_cast<std::size_t>(i)] = cell_head[static_cast<std::size_t>(cid)];
+            next[static_cast<std::size_t>(i)] =
+                cell_head[static_cast<std::size_t>(cid)];
             cell_head[static_cast<std::size_t>(cid)] = i;
         }
     }
 
-    // Call process(i, j) for all unique unordered pairs within cutoff.
-    // Also calls process(j, i) so that both directions are accumulated.
+    // Call process(i, j) and process(j, i) for all pairs within cutoff.
+    // Both directions are emitted so that the Steinhardt accumulator can treat
+    // atom i as the center and j as a neighbor for every bond.
     template <typename F>
-    void for_each_neighbor(const double* pts, int /*n*/, double cutoff2, F process) const {
-        const double co2 = cutoff2;
+    void for_each_neighbor(const double* pts, int /*n*/,
+                           double cutoff2, F process) const {
         for (int cz = 0; cz < nz; ++cz)
         for (int cy = 0; cy < ny; ++cy)
         for (int cx = 0; cx < nx; ++cx) {
             const int cid = cx + nx * (cy + ny * cz);
-            int i = cell_head[static_cast<std::size_t>(cid)];
-            while (i >= 0) {
-                // Same-cell pairs (upper triangle, then both directions)
-                int j = next[static_cast<std::size_t>(i)];
-                while (j >= 0) {
-                    const double dx = pts[i*3]-pts[j*3];
-                    const double dy = pts[i*3+1]-pts[j*3+1];
-                    const double dz = pts[i*3+2]-pts[j*3+2];
-                    if (dx*dx + dy*dy + dz*dz <= co2) { process(i, j); process(j, i); }
-                    j = next[static_cast<std::size_t>(j)];
+            for (int i = cell_head[static_cast<std::size_t>(cid)]; i >= 0;
+                     i = next[static_cast<std::size_t>(i)]) {
+                // Same-cell: traverse the remainder of the linked list
+                for (int j = next[static_cast<std::size_t>(i)]; j >= 0;
+                         j = next[static_cast<std::size_t>(j)]) {
+                    const double dx = pts[i*3  ] - pts[j*3  ];
+                    const double dy = pts[i*3+1] - pts[j*3+1];
+                    const double dz = pts[i*3+2] - pts[j*3+2];
+                    if (dx*dx + dy*dy + dz*dz <= cutoff2) {
+                        process(i, j); process(j, i);
+                    }
                 }
-                // Cross-cell (only higher-index cells to avoid duplicates)
+                // Cross-cell: only higher-index cells to avoid duplicate pairs
                 for (int ddz = -1; ddz <= 1; ++ddz)
                 for (int ddy = -1; ddy <= 1; ++ddy)
                 for (int ddx = -1; ddx <= 1; ++ddx) {
@@ -228,16 +230,16 @@ struct FlatCellList {
                     if (ncx<0||ncy<0||ncz<0||ncx>=nx||ncy>=ny||ncz>=nz) continue;
                     const int nid = ncx + nx*(ncy + ny*ncz);
                     if (nid <= cid) continue;
-                    int k = cell_head[static_cast<std::size_t>(nid)];
-                    while (k >= 0) {
-                        const double dx = pts[i*3]-pts[k*3];
-                        const double dy = pts[i*3+1]-pts[k*3+1];
-                        const double dz = pts[i*3+2]-pts[k*3+2];
-                        if (dx*dx + dy*dy + dz*dz <= co2) { process(i, k); process(k, i); }
-                        k = next[static_cast<std::size_t>(k)];
+                    for (int k = cell_head[static_cast<std::size_t>(nid)]; k >= 0;
+                             k = next[static_cast<std::size_t>(k)]) {
+                        const double dx = pts[i*3  ] - pts[k*3  ];
+                        const double dy = pts[i*3+1] - pts[k*3+1];
+                        const double dz = pts[i*3+2] - pts[k*3+2];
+                        if (dx*dx + dy*dy + dz*dz <= cutoff2) {
+                            process(i, k); process(k, i);
+                        }
                     }
                 }
-                i = next[static_cast<std::size_t>(i)];
             }
         }
     }
@@ -535,7 +537,7 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
 PYBIND11_MODULE(_steinhardt_core, m) {
     m.doc() =
         "pasted._ext._steinhardt_core: sparse Steinhardt Q_l (C++17).\n"
-        "Uses an explicit neighbor list (FlatCellList for N>=64) to avoid\n"
+        "Uses a linked-list FlatCellList spatial index (N>=64) to avoid\n"
         "the O(N^2) dense matrix built by the Python/scipy path.\n"
         "\n"
         "Accumulator layout (v0.3.6+): (N, n_l, lm1) — atom index outermost.\n"
@@ -547,8 +549,12 @@ PYBIND11_MODULE(_steinhardt_core, m) {
         "P_lm table now stack-allocated (double[13][13]), no heap alloc per bond.\n"
         "\n"
         "v0.3.8: when l_values==[4,6,8], a hardcoded Cartesian-polynomial fast-path\n"
-        "(optimisation ④) replaces the P_lm recurrence with straight-line arithmetic\n"
-        "generated by SymPy joint CSE.  Speedup: 1.4-1.6x at N=100-1000.";
+        "(optimization ④) replaces the P_lm recurrence with straight-line arithmetic\n"
+        "generated by SymPy joint CSE.  Speedup: 1.4-1.6x at N=100-1000.\n"
+        "\n"
+        "v0.3.9: UBSan fix — FlatCellList::build() now monitors the nx*ny*nz product\n"
+        "as int64_t and doubles cell_size until the count fits in 1<<22 cells,\n"
+        "preventing signed integer overflow for large cutoff values.";
     m.def(
         "steinhardt_per_atom", &steinhardt_per_atom_cpp,
         py::arg("pts"), py::arg("cutoff"), py::arg("l_values"),

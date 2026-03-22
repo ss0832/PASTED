@@ -146,7 +146,7 @@ uniformly over the sphere as the distance constraints allow.
 --region SPEC           same as gas mode (required)
 --maxent-steps N        gradient-descent iterations (default: 300)
 --maxent-lr LR          learning rate (default: 0.05)
---maxent-cutoff-scale S neighbour cutoff scale factor (default: 2.5)
+--maxent-cutoff-scale S neighbor cutoff scale factor (default: 2.5)
 ```
 
 ## Element Pool
@@ -416,7 +416,7 @@ placement mode:
   --shell-radius LO:HI  [shell] shell radius range Ang (default: 1.8:2.5)
   --maxent-steps N      [maxent] gradient-descent iterations (default: 300)
   --maxent-lr LR        [maxent] learning rate (default: 0.05)
-  --maxent-cutoff-scale S [maxent] neighbour cutoff scale (default: 2.5)
+  --maxent-cutoff-scale S [maxent] neighbor cutoff scale (default: 2.5)
 
 elements:
   --elements SPEC       atomic-number spec (default: all Z=1-106)

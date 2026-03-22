@@ -1,6 +1,6 @@
 /**
- * pasted._ext._relax_core  (v0.2.11)
- * ====================================
+ * pasted._ext._relax_core
+ * ========================
  * L-BFGS minimisation of the harmonic steric-clash penalty energy:
  *
  *   E = sum_{i<j}  0.5 * max(0,  d_thr_ij - d_ij)^2
@@ -15,21 +15,20 @@
  * Architecture
  * ------------
  *   Vec                   — thin RAII wrapper over std::vector<double>
- *   FlatCellList          — O(N·k) pair enumeration via cell list
+ *   FlatCellList          — O(N·k) pair enumeration via linked-list spatial index
  *   PenaltyEvaluator      — computes E and analytical gradient in O(N·k)
  *   lbfgs_minimize()      — L-BFGS, history m=7, Armijo backtracking
  *
  * Memory management
  * -----------------
- * PenaltyEvaluator holds one persistent scratch member:
+ * PenaltyEvaluator holds persistent scratch members (all allocated once):
  *
- *   pairs_  (vector<pair<int,int>>)  — pair list; cleared (capacity kept)
- *                                      and rebuilt each evaluate() call.
+ *   pairs_        (vector<pair<int,int>>)  — Verlet pair list in original-index space
  *
- * The per-thread tgrad_ scratch used in earlier versions has been removed:
- * libgomp was never linked in the distributed wheels, so the #else serial
- * branch was always the active path.  The pair loop now writes directly
- * into grad[], eliminating the per-evaluate() zero-fill and merge pass.
+ * Verlet-list reuse (v0.2.2):
+ * pairs_ is rebuilt only every N_VERLET_REBUILD evaluate() calls.
+ * Between rebuilds the same extended pair list is reused, amortizing the
+ * cost of the FlatCellList traversal.  Skin = min(0.8 A, cell_size * 0.3).
  *
  * Python API
  * ----------
@@ -124,30 +123,27 @@ struct Vec {
 };
 
 // ===========================================================================
-// FlatCellList  (identical to v0.1.10)
+// FlatCellList — linked-list spatial index
 // ===========================================================================
 
 struct FlatCellList {
     double inv_cell;
     int    nx, ny, nz;
     double ox, oy, oz;
-    std::vector<int> cell_head;
-    std::vector<int> next;
+    std::vector<int> cell_head;  // cell_head[cid] = first atom in cell, -1 if empty
+    std::vector<int> next;       // next[i] = next atom in same cell, -1 if none
 
     void build(const double* pts, int n, double cell_size) {
         inv_cell = 1.0 / cell_size;
-        double xmin = pts[0], xmax = pts[0];
-        double ymin = pts[1], ymax = pts[1];
-        double zmin = pts[2], zmax = pts[2];
-        for (int i = 1; i < n; ++i) {
-            xmin = std::min(xmin, pts[i*3  ]); xmax = std::max(xmax, pts[i*3  ]);
-            ymin = std::min(ymin, pts[i*3+1]); ymax = std::max(ymax, pts[i*3+1]);
-            zmin = std::min(zmin, pts[i*3+2]); zmax = std::max(zmax, pts[i*3+2]);
+        double xmin=pts[0],xmax=pts[0],ymin=pts[1],ymax=pts[1],zmin=pts[2],zmax=pts[2];
+        for (int i=1;i<n;++i){
+            xmin=std::min(xmin,pts[i*3  ]); xmax=std::max(xmax,pts[i*3  ]);
+            ymin=std::min(ymin,pts[i*3+1]); ymax=std::max(ymax,pts[i*3+1]);
+            zmin=std::min(zmin,pts[i*3+2]); zmax=std::max(zmax,pts[i*3+2]);
         }
-        ox = xmin - cell_size;
-        oy = ymin - cell_size;
-        oz = zmin - cell_size;
-        // Guard: coarsen grid until nx*ny*nz ≤ 1<<22 (4M cells).
+        ox=xmin-cell_size; oy=ymin-cell_size; oz=zmin-cell_size;
+        // Guard: coarsen grid until nx*ny*nz <= 1<<22 (4M cells).
+        // Prevents signed integer overflow for large cutoffs (UBSan fix, v0.3.9).
         {
             static constexpr std::int64_t MAX_CELLS = 1LL << 22;
             auto tnx=[&]{return static_cast<int>((xmax-ox)*inv_cell)+2;};
@@ -159,38 +155,40 @@ struct FlatCellList {
             }
             nx = tnx(); ny = tny(); nz = tnz();
         }
-        const int total = nx * ny * nz;
-        cell_head.assign(static_cast<std::size_t>(total), -1);
+        cell_head.assign(static_cast<std::size_t>(nx*ny*nz), -1);
         next.resize(static_cast<std::size_t>(n));
-        for (int i = 0; i < n; ++i) {
-            const int cx  = static_cast<int>((pts[i*3  ] - ox) * inv_cell);
-            const int cy  = static_cast<int>((pts[i*3+1] - oy) * inv_cell);
-            const int cz  = static_cast<int>((pts[i*3+2] - oz) * inv_cell);
-            const int cid = cx + nx * (cy + ny * cz);
-            next[i]        = cell_head[cid];
-            cell_head[cid] = i;
+        for (int i=0;i<n;++i){
+            int cx=static_cast<int>((pts[i*3  ]-ox)*inv_cell);
+            int cy=static_cast<int>((pts[i*3+1]-oy)*inv_cell);
+            int cz=static_cast<int>((pts[i*3+2]-oz)*inv_cell);
+            int cid=cx + nx*(cy + ny*cz);
+            next[static_cast<std::size_t>(i)] =
+                cell_head[static_cast<std::size_t>(cid)];
+            cell_head[static_cast<std::size_t>(cid)] = i;
         }
     }
 
+    // Enumerate unique unordered pairs (i < j in original-index space).
     template<typename F>
-    void for_each_pair(const double* /*pts*/, int /*n*/, F process) const {
-        for (int cz = 0; cz < nz; ++cz)
-        for (int cy = 0; cy < ny; ++cy)
-        for (int cx = 0; cx < nx; ++cx) {
-            const int cid = cx + nx * (cy + ny * cz);
-            for (int i = cell_head[cid]; i >= 0; i = next[i]) {
-                for (int j = next[i]; j >= 0; j = next[j])
-                    process(i, j);
-                for (int dz = -1; dz <= 1; ++dz)
-                for (int dy = -1; dy <= 1; ++dy)
-                for (int dx = -1; dx <= 1; ++dx) {
-                    if (dx == 0 && dy == 0 && dz == 0) continue;
-                    const int ncx = cx+dx, ncy = cy+dy, ncz = cz+dz;
+    void for_each_pair(int /*n*/, F process) const {
+        for (int cz=0;cz<nz;++cz)
+        for (int cy=0;cy<ny;++cy)
+        for (int cx=0;cx<nx;++cx) {
+            const int cid = cx + nx*(cy + ny*cz);
+            for (int i=cell_head[static_cast<std::size_t>(cid)]; i>=0;
+                     i=next[static_cast<std::size_t>(i)]) {
+                for (int j=next[static_cast<std::size_t>(i)]; j>=0;
+                         j=next[static_cast<std::size_t>(j)]) process(i,j);
+                for (int dz=-1;dz<=1;++dz)
+                for (int dy=-1;dy<=1;++dy)
+                for (int dx=-1;dx<=1;++dx) {
+                    if (!dx&&!dy&&!dz) continue;
+                    int ncx=cx+dx,ncy=cy+dy,ncz=cz+dz;
                     if (ncx<0||ncy<0||ncz<0||ncx>=nx||ncy>=ny||ncz>=nz) continue;
                     const int nid = ncx + nx*(ncy + ny*ncz);
                     if (nid <= cid) continue;
-                    for (int k = cell_head[nid]; k >= 0; k = next[k])
-                        process(i, k);
+                    for (int k=cell_head[static_cast<std::size_t>(nid)]; k>=0;
+                             k=next[static_cast<std::size_t>(k)]) process(i,k);
                 }
             }
         }
@@ -203,41 +201,35 @@ struct FlatCellList {
 // E      = sum_{i<j}  0.5 * max(0, thr_ij - d_ij)^2
 // dE/dr_i = sum_{j}  -(thr_ij - d_ij)/d_ij * (r_i - r_j)   [when d_ij < thr]
 //
-// Verlet-list optimisation (v0.2.2):
-// pairs_ is rebuilt only when any atom has moved more than skin/2 since the
-// last rebuild.  Between rebuilds the same extended pair list is reused,
-// eliminating the dominant serial FlatCellList traversal cost.
-// Skin = 0.8 Å  =>  rebuild trigger at 0.4 Å displacement (< trust_radius).
+// Verlet-list optimization (v0.2.2):
+// pairs_ is rebuilt only every N_VERLET_REBUILD evaluate() calls.
+// Between rebuilds the same extended pair list is reused, amortizing
+// the FlatCellList traversal cost.
+// Skin = min(0.8 A, cell_size * 0.3) => rebuild every 4 calls is safe
+// because trust_radius is much smaller than the implicit skin.
 
-// Verlet rebuild interval: rebuild pair list every N_VERLET_REBUILD evaluate() calls.
-// Using a fixed interval avoids the O(N) displacement-check loop and is safer
-// when trust_radius is large relative to the skin.  With N_VERLET_REBUILD=4 and
-// trust_radius=0.5 Å the implicit skin is ~1 Å, safely above zero.
-static constexpr int    N_VERLET_REBUILD = 4;  // rebuild every 4 evaluate() calls
-// Adaptive skin: min(0.8 Å, cell_size × 0.3).
-// Caps extended pair list at ≤ (1.3)^3 ≈ 2.2× the original count,
-// preventing the 3-4× overhead that occurs for small-radius elements (C, O, H).
-static constexpr double VERLET_SKIN_MAX  = 0.8;  // Å — absolute upper bound
-static constexpr double VERLET_SKIN_FRAC = 0.3;  // fraction of cell_size
+static constexpr int    N_VERLET_REBUILD = 4;
+static constexpr double VERLET_SKIN_MAX  = 0.8;
+static constexpr double VERLET_SKIN_FRAC = 0.3;
 
 class PenaltyEvaluator {
     const double* radii_;
     double        cov_scale_;
     int           n_;
-    double        cell_size_;       // cell list cell width (2 × max_r)
-    double        cell_size_ext_;   // extended cell for Verlet list (+ skin)
+    double        cell_size_;
+    double        cell_size_ext_;
     FlatCellList  cl_;
-    // Persistent scratch — allocated once, reused every evaluate() call.
     std::vector<std::pair<int,int>>  pairs_;
-    // Verlet tracking
-    int  eval_count_    = 0;   // number of evaluate() calls since last rebuild
+    int  eval_count_    = 0;
     bool needs_rebuild_ = true;
 
     void _rebuild(const double* xd) {
-        pairs_.clear();
         cl_.build(xd, n_, cell_size_ext_);
-        cl_.for_each_pair(xd, n_, [&](int i, int j){ pairs_.emplace_back(i, j); });
-        eval_count_  = 0;
+        pairs_.clear();
+        cl_.for_each_pair(n_, [&](int i, int j) {
+            pairs_.emplace_back(i, j);
+        });
+        eval_count_    = 0;
         needs_rebuild_ = false;
     }
 
@@ -259,7 +251,7 @@ public:
         const double* xd = x.data();
         double*       gd = grad.data();
 
-        // ── Verlet rebuild check (counter-based) ──────────────────────────────
+        // Verlet rebuild check (counter-based)
         if (n_ >= CELL_LIST_THRESHOLD) {
             if (needs_rebuild_ || eval_count_ >= N_VERLET_REBUILD) {
                 _rebuild(xd);
@@ -271,7 +263,7 @@ public:
         double energy = 0.0;
 
         if (n_ < CELL_LIST_THRESHOLD) {
-            // Small N: O(N²) serial loop.
+            // Small N: O(N²) serial loop
             for (int i = 0; i < n_-1; ++i) {
                 for (int j = i+1; j < n_; ++j) {
                     const double dx  = xd[3*i  ] - xd[3*j  ];
@@ -291,7 +283,7 @@ public:
                 }
             }
         } else {
-            // Large N: iterate pre-built pair list, write directly to gd.
+            // Large N: iterate the Verlet pair list in original-index space
             const int npairs = static_cast<int>(pairs_.size());
             for (int p = 0; p < npairs; ++p) {
                 const int i = pairs_[static_cast<std::size_t>(p)].first;
@@ -307,15 +299,16 @@ public:
                 energy += 0.5 * overlap * overlap;
                 if (d > 1e-10) {
                     const double gf = -overlap / d;
-                    const double gx = gf * dx, gy = gf * dy, gz = gf * dz;
-                    gd[3*i  ] += gx;  gd[3*i+1] += gy;  gd[3*i+2] += gz;
-                    gd[3*j  ] -= gx;  gd[3*j+1] -= gy;  gd[3*j+2] -= gz;
+                    const double gx = gf*dx, gy = gf*dy, gz = gf*dz;
+                    gd[3*i  ] += gx; gd[3*i+1] += gy; gd[3*i+2] += gz;
+                    gd[3*j  ] -= gx; gd[3*j+1] -= gy; gd[3*j+2] -= gz;
                 }
             }
         }
         return energy;
     }
 };
+
 // ===========================================================================
 // lbfgs_minimize
 // ===========================================================================
@@ -703,9 +696,11 @@ static F64Array poisson_disk_box_cpp(
 
 PYBIND11_MODULE(_relax_core, m) {
     m.doc() =
-        "pasted._ext._relax_core (v0.2.2)\n"
+        "pasted._ext._relax_core\n"
         "L-BFGS steric-clash relaxation + Bridson Poisson-disk placement.\n"
-        "Verlet list reuse (skin=0.8 A) reduces pair-list rebuild cost.";
+        "FlatCellList linked-list spatial index for pair enumeration (N>=64).\n"
+        "Verlet list reuse (skin = min(0.8 A, cell_size * 0.3)) reduces\n"
+        "pair-list rebuild cost; list is rebuilt every 4 evaluate() calls.";
 
     m.def(
         "poisson_disk_sphere",

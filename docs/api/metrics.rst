@@ -98,7 +98,7 @@ therefore be used as ``--filter`` targets on the CLI and in the
 
    .. note::
 
-      **Steinhardt optimisations (v0.3.6 + v0.3.7).**
+      **Steinhardt optimizations (v0.3.6 + v0.3.7).**
 
       *v0.3.6 — accumulator buffer transpose.*  Layout changed from
       ``(n_l, l_max+1, N)`` to ``(N, n_l, l_max+1)`` (atom index outermost),
@@ -112,7 +112,7 @@ therefore be used as ``--filter`` targets on the CLI and in the
 
       Combined speedup: **~2.1–2.3×** on ``compute_steinhardt`` and
       **~1.3×** on ``compute_all_metrics`` at N = 500–1 000.
-      See ``docs/architecture.md`` → *Per-bond arithmetic optimisations*.
+      See ``docs/architecture.md`` → *Per-bond arithmetic optimizations*.
 
    .. note::
 

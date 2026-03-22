@@ -182,7 +182,7 @@ def _assert_rdf_contract(result: Any) -> dict[str, float]:
 # ===========================================================================
 # FZ-A  Subprocess SIGSEGV isolation
 # ===========================================================================
-# These inputs put the C++ core into undefined-behaviour territory because
+# These inputs put the C++ core into undefined-behavior territory because
 # pybind11 does not validate array shapes or lengths before passing pointers.
 # We can only assert "no fatal signal" — output values are meaningless UB.
 # ===========================================================================
@@ -282,7 +282,7 @@ class TestSubprocessIsolation:
 # ===========================================================================
 # Probed outputs (3-atom triangle, atom-0 NaN):
 #   relax_positions  → out[0]=[nan,0,0]  out[1]/[2] unchanged; conv=False
-#   angular_gradient → all zeros  (NaN atom has no valid neighbours)
+#   angular_gradient → all zeros  (NaN atom has no valid neighbors)
 #   steinhardt Q6    → [0., 1., 1.]  (atom-0 isolated; atoms 1,2 connected)
 #   graph_metrics    → lcc=2/3  ring_fraction=0  moran finite
 #   rdf_h_cpp        → h_spatial=0  rdf_dev=0  (NaN pair excluded)
@@ -349,7 +349,7 @@ class TestNanCoordinates:
     @needs_maxent
     def test_angular_gradient_nan_atom0_all_zero(self) -> None:
         """NaN in any coordinate makes all inter-atom distances NaN → no
-        valid neighbour for any atom → gradient collapses to all zeros."""
+        valid neighbor for any atom → gradient collapses to all zeros."""
         grad = angular_repulsion_gradient(self._pts_nan0(), 5.0)
         grad = _assert_grad_contract(grad, len(self._pts_nan0()))
         assert grad.shape == (3, 3)
@@ -368,7 +368,7 @@ class TestNanCoordinates:
     def test_steinhardt_nan_atom0_q6_isolated(self) -> None:
         """Atom 0 is at NaN; its distance to every other atom is NaN and
         outside any finite cutoff.  Q6[0]=0 (isolated); atoms 1 and 2
-        remain connected so Q6[1]=Q6[2]=1.0 (2-atom neighbour shell)."""
+        remain connected so Q6[1]=Q6[2]=1.0 (2-atom neighbor shell)."""
         result = steinhardt_per_atom(self._pts_nan0(), 5.0, [6])
         result = _assert_steinhardt_contract(result, len(self._pts_nan0()))
         q6 = result["Q6"]
@@ -453,8 +453,8 @@ class TestNanCoordinates:
 # ===========================================================================
 # All-inf probed outputs:
 #   relax      → output retains inf values; conv=False
-#   ang_grad   → all zeros  (inf atoms have no finite-cutoff neighbours)
-#   steinhardt → all zeros  (no neighbours)
+#   ang_grad   → all zeros  (inf atoms have no finite-cutoff neighbors)
+#   steinhardt → all zeros  (no neighbors)
 #   graph      → lcc=1/3  (no bonds, each node isolated)
 #   rdf        → h_spatial=0  rdf_dev=0
 # ===========================================================================
@@ -492,7 +492,7 @@ class TestInfCoordinates:
     @needs_maxent
     def test_angular_gradient_all_inf_all_zero(self) -> None:
         """All atoms at +inf: pairwise distances are NaN (inf-inf=NaN) →
-        no valid neighbour within finite cutoff → gradient = 0."""
+        no valid neighbor within finite cutoff → gradient = 0."""
         grad = angular_repulsion_gradient(self._pts_all_inf(), 5.0)
         grad = _assert_grad_contract(grad, len(self._pts_all_inf()))
         assert grad.shape == (3, 3)
@@ -577,7 +577,7 @@ class TestGeometricCollapse:
 
     @needs_steinhardt
     def test_steinhardt_all_origin_finite(self) -> None:
-        """Zero-distance neighbours: Q_l must be finite (not NaN, not inf)."""
+        """Zero-distance neighbors: Q_l must be finite (not NaN, not inf)."""
         pts = np.zeros((4, 3), dtype=np.float64)
         result = steinhardt_per_atom(pts, 5.0, [6])
         result = _assert_steinhardt_contract(result, len(pts))
@@ -853,7 +853,7 @@ class TestBoundaryScalarParameters:
 
     @needs_maxent
     def test_angular_gradient_cutoff_very_large_nonzero_finite(self) -> None:
-        """cutoff=1e15: all atoms are neighbours → non-zero repulsion →
+        """cutoff=1e15: all atoms are neighbors → non-zero repulsion →
         gradient has nonzero entries; all values finite."""
         grad = angular_repulsion_gradient(PTS3, 1e15)
         grad = _assert_grad_contract(grad, len(PTS3))
@@ -933,7 +933,7 @@ class TestBoundaryScalarParameters:
 
     @needs_steinhardt
     def test_steinhardt_l_zero_all_one(self) -> None:
-        """Q_0 = 1 for every atom that has any neighbours (monopole)."""
+        """Q_0 = 1 for every atom that has any neighbors (monopole)."""
         result = steinhardt_per_atom(PTS3, 5.0, [0])
         result = _assert_steinhardt_contract(result, len(PTS3))
         assert "Q0" in result
@@ -1057,7 +1057,7 @@ class TestAncillaryArrayAnomalies:
 # ===========================================================================
 # 2-atom probe: [fmax,0,0] + [0,0,0]
 #   relax:      dist >> cov_threshold → no clash → conv=True
-#   ang_grad:   pair dist ~inf → no neighbour within 5 Å → all zeros
+#   ang_grad:   pair dist ~inf → no neighbor within 5 Å → all zeros
 #   steinhardt: same reasoning → Q6=[0,0]
 #   graph:      lcc=0.5 (two isolated nodes)
 #   rdf:        pair excluded → h=0; rdf_dev=0
@@ -1084,7 +1084,7 @@ class TestFloatOverflow:
 
     @needs_maxent
     def test_angular_gradient_fmax_coord_all_zero(self) -> None:
-        """Pair distance overflows to inf → no neighbour within 5 Å →
+        """Pair distance overflows to inf → no neighbor within 5 Å →
         gradient = 0."""
         grad = angular_repulsion_gradient(self._pts_fmax(), 5.0)
         grad = _assert_grad_contract(grad, len(self._pts_fmax()))
@@ -1093,7 +1093,7 @@ class TestFloatOverflow:
 
     @needs_steinhardt
     def test_steinhardt_fmax_coord_all_q_zero(self) -> None:
-        """Same reasoning: fmax atom has no neighbours → Q_l = 0."""
+        """Same reasoning: fmax atom has no neighbors → Q_l = 0."""
         result = steinhardt_per_atom(self._pts_fmax(), 5.0, [6])
         result = _assert_steinhardt_contract(result, len(self._pts_fmax()))
         np.testing.assert_array_equal(result["Q6"], np.zeros(2))

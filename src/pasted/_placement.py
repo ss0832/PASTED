@@ -389,7 +389,7 @@ def place_chain(
 
         After the first bond is placed its direction becomes the *bias axis*.
         Every subsequent step direction is blended toward that axis before
-        normalisation::
+        normalization::
 
             d_biased = d + axis * chain_bias
             d_final  = d_biased / ||d_biased||

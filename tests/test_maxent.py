@@ -15,6 +15,7 @@ from pasted import (
     place_maxent,
 )
 from pasted._atoms import cov_radius_ang
+from pasted._ext import HAS_MAXENT_LOOP
 from pasted._placement import _angular_repulsion_gradient, place_gas, relax_positions
 
 # ---------------------------------------------------------------------------
@@ -224,6 +225,10 @@ class TestPlaceMaxentCutoff:
         fast = self._fast_median_sum(radii)
         assert fast == pytest.approx(ref, abs=1e-9), f"homogeneous S pool: ref={ref}, fast={fast}"
 
+    @pytest.mark.skipif(
+        not HAS_MAXENT_LOOP,
+        reason="HAS_MAXENT_LOOP=False: C++ path not active; monkey-patch has no effect",
+    )
     def test_ang_cutoff_unchanged_end_to_end(self) -> None:
         """Structures generated before and after the patch must be identical.
 

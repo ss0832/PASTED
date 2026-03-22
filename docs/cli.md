@@ -89,7 +89,7 @@ pasted --n-atoms 12 --elements 6,7,8 --charge 0 --mult 1 \
 | `--region SPEC` | — | Same as gas mode (**required**) |
 | `--maxent-steps N` | 300 | Gradient-descent iterations |
 | `--maxent-lr LR` | 0.05 | Learning rate |
-| `--maxent-cutoff-scale S` | 2.5 | Neighbour cutoff scale factor |
+| `--maxent-cutoff-scale S` | 2.5 | Neighbor cutoff scale factor |
 
 ## Metric options
 
@@ -198,7 +198,7 @@ pasted --n-atoms 50 --charge 0 --mult 1 --elements 24,25,26,27,28 \
     --objective H_atom:1.0 --objective Q6:-2.0 \
     --seed 42 -o best.xyz
 
-# Cantor-alloy optimisation with composition moves (default)
+# Cantor-alloy optimization with composition moves (default)
 pasted --n-atoms 50 --charge 0 --mult 1 --elements 24,25,26,27,28 \
     --optimize --method parallel_tempering \
     --n-samples 2 --n-replicas 4 --max-steps 2000 \

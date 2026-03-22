@@ -106,7 +106,7 @@ examples
         help=(
             "[chain] Global-axis drift strength (0.0–1.0, default: 0.0). "
             "The first bond direction becomes the bias axis; each subsequent "
-            "step is blended toward it before normalisation. "
+            "step is blended toward it before normalization. "
             "0.0 = no bias (default); 0.3 = moderate elongation; "
             "1.0 = strongly rod-like. Increases shape_aniso."
         ),
@@ -156,7 +156,7 @@ examples
         type=float,
         default=2.5,
         help=(
-            "[maxent] Neighbour cutoff = this × median cov sum (default: 2.5). "
+            "[maxent] Neighbor cutoff = this × median cov sum (default: 2.5). "
             "Controls how many neighbors participate in angular repulsion."
         ),
     )

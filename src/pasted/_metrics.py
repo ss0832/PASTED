@@ -174,6 +174,8 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
 
     Range: [0, 1] (0=spherical, 1=rod-like).
     Returns NaN for a single atom.
+    Returns 0.0 when all atoms are coincident (gyration tensor trace < 1e-30),
+    guarding against ``ZeroDivisionError`` from subnormal or identical coordinates.
 
     Implementation note
     -------------------
@@ -185,13 +187,17 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
 
     Computing these directly avoids the LAPACK ``eigvalsh`` call (~1.5× faster
     per call, saving ~10 ms over a 500-step optimizer run).
+
+    The near-zero guard ``tr < 1e-30`` replaces the previous exact ``tr == 0``
+    check, which failed to catch subnormal coordinate differences (e.g. two
+    atoms at positions differing by ≈ 6e-108 Å) and raised ``ZeroDivisionError``.
     """
     if len(pts) < 2:
         return float("nan")
     p = pts - pts.mean(axis=0)
     T = (p.T @ p) / len(p)
     tr = float(T[0, 0] + T[1, 1] + T[2, 2])  # trace(T) = λ₁+λ₂+λ₃
-    if tr == 0:
+    if tr < 1e-30:  # guard: all atoms at the same point (or subnormal coords)
         return 0.0
     tr2 = float(np.einsum("ij,ij->", T, T))  # ‖T‖²_F = λ₁²+λ₂²+λ₃²
     return float(np.clip(1.5 * tr2 / tr**2 - 0.5, 0.0, 1.0))
@@ -297,7 +303,7 @@ def compute_steinhardt_per_atom(
     The P_lm table is now stack-allocated (``double[13][13]``) rather
     than heap-allocated per bond.
 
-    Since v0.3.8 (optimisation ④), when ``l_values = [4, 6, 8]`` a
+    Since v0.3.8 (optimization ④), when ``l_values = [4, 6, 8]`` a
     hardcoded Cartesian-polynomial fast-path is used instead of the
     associated-Legendre recurrence.  Every real spherical harmonic
     ``S_lm(x,y,z)`` is a pure integer-coefficient polynomial on the unit
@@ -464,7 +470,7 @@ def _tarjan_bridges(adj: list[list[int]], n: int) -> set[tuple[int, int]]:
             continue
         disc[start] = low[start] = timer
         timer += 1
-        # Stack entries: (vertex, parent, iterator over its neighbours)
+        # Stack entries: (vertex, parent, iterator over its neighbors)
         stack: list[tuple[int, int, Iterator[int]]] = [(start, -1, iter(adj[start]))]
         while stack:
             u, parent_v, it = stack[-1]
@@ -479,7 +485,7 @@ def _tarjan_bridges(adj: list[list[int]], n: int) -> set[tuple[int, int]]:
                     # Back edge: tighten low[u]
                     low[u] = min(low[u], disc[v])
             except StopIteration:
-                # All neighbours of u exhausted; propagate low upward
+                # All neighbors of u exhausted; propagate low upward
                 stack.pop()
                 if stack:
                     pu = stack[-1][0]
@@ -497,7 +503,7 @@ def compute_ring_fraction(
 ) -> float:
     """Fraction of atoms that belong to at least one ring.
 
-    Builds a neighbour graph from the distance matrix and finds all bridge
+    Builds a neighbor graph from the distance matrix and finds all bridge
     edges using Tarjan's iterative DFS algorithm (O(N + E)).  An atom is
     considered to be *in a ring* if and only if at least one of its incident
     edges is a non-bridge — that is, it participates in a cycle.

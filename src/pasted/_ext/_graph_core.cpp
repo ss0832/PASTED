@@ -261,7 +261,7 @@ py::dict graph_metrics_cpp(
                         if (disc[v] < low[u]) low[u] = disc[v];
                     }
                 } else {
-                    // All neighbours exhausted; propagate low upward
+                    // All neighbors exhausted; propagate low upward
                     stk.pop_back();
                     if (!stk.empty()) {
                         int pu = stk.back().u;
