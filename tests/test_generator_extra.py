@@ -183,9 +183,11 @@ class TestPlaceOneErrorVerbose:
         """L1209-1212: a RuntimeError from _place_one must be logged and re-raised."""
         from unittest.mock import patch
 
+        # C-only pool (Z=6, even) with even n_atoms guarantees parity passes,
+        # so _place_one is actually reached before the mock fires.
         gen = StructureGenerator(
             n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            mode="chain", elements="6",
             n_samples=1, seed=0, verbose=True,
         )
         with patch.object(gen, "_place_one", side_effect=RuntimeError("boom")):
@@ -207,13 +209,14 @@ class TestRelaxNotConverged:
         """L1234: when relax_positions returns converged=False, a warning is logged."""
         from unittest.mock import patch
 
+        # C-only pool (Z=6, even) with even n_atoms guarantees parity passes,
+        # so relax_positions is actually reached before the mock fires.
         gen = StructureGenerator(
             n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            mode="chain", elements="6",
             n_samples=1, seed=0, verbose=True,
         )
 
-        original_relax = None
         import pasted._generator as _gen_mod
 
         original_relax = _gen_mod.relax_positions
