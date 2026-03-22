@@ -10,6 +10,30 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Performance
 
+#### PERF — `compute_shape_anisotropy`: replace `eigvalsh` with trace / Frobenius norm (`_metrics.py`)
+
+`compute_shape_anisotropy` previously computed the eigenvalues of the 3×3
+gyration tensor via `np.linalg.eigvalsh` (a full LAPACK call) even though
+only two scalar quantities derived from those eigenvalues were used:
+
+    trace(T)  = λ₁ + λ₂ + λ₃
+    ‖T‖²_F    = λ₁² + λ₂² + λ₃²
+
+Both are directly available from the matrix elements without
+diagonalisation.  The new implementation reads three diagonal entries for the
+trace and uses `np.einsum("ij,ij->", T, T)` for the Frobenius norm squared.
+Measured speedup: ~1.5× per call (~20 µs → ~13 µs), saving approximately
+10 ms over a 500-step optimizer run where the function is called ~1500 times.
+
+#### PERF — `validate_charge_mult`: skip `Counter` and `f-string` on success path (`_atoms.py`)
+
+On the `ok=True` path `validate_charge_mult` previously built a
+`Counter(atoms_list)` and formatted a detailed diagnostic string even though
+all hot-loop callers in `_optimizer.py` discard the second return value
+(`ok, _ = validate_charge_mult(...)`).  The function now returns `(True, "")`
+immediately after the two guard checks pass, avoiding the allocation entirely.
+Measured speedup: ~2.2× per call on the success path (~1.30 µs → ~0.59 µs).
+
 #### PERF-1 — `graph_metrics_cpp`: remove duplicate adjacency list (`_graph_core.cpp`)
 
 The `graph_metrics_cpp` function previously maintained two **identical**

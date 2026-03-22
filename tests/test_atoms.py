@@ -170,11 +170,13 @@ class TestValidateChargeMult:
         assert not ok
         assert "n_electrons" in msg
 
-    def test_composition_in_message(self) -> None:
+    def test_success_returns_empty_message(self) -> None:
         # C+C: Z=6+6=12, n_e=12, mult=1 → n_unpaired=0, 12%2==0%2 → OK
+        # On the ok=True path the message is "" (lazy — callers in the
+        # optimizer hot loop discard it, so building it is unnecessary work).
         ok, msg = validate_charge_mult(["C", "C"], 0, 1)
         assert ok
-        assert "C" in msg
+        assert msg == ""
 
 
 # ---------------------------------------------------------------------------

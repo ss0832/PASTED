@@ -1523,6 +1523,9 @@ class StructureOptimizer:
                                 [_cov_radius_ang(a) for a in new_atoms], dtype=float
                             )
 
+                # msg (second element) is intentionally discarded here — on the
+                # ok=True path validate_charge_mult returns "" to avoid the
+                # Counter + f-string overhead in this hot loop.
                 ok_parity, _ = validate_charge_mult(new_atoms, self.charge, self.mult)
                 if not ok_parity:
                     continue
@@ -1824,6 +1827,9 @@ class StructureOptimizer:
                     )
 
             # ── Charge/mult validity ──────────────────────────────────────
+            # msg (second element) is intentionally discarded here — on the
+            # ok=True path validate_charge_mult returns "" to avoid the
+            # Counter + f-string overhead in this hot loop.
             ok, _ = validate_charge_mult(new_atoms, self.charge, self.mult)
             if not ok:
                 continue

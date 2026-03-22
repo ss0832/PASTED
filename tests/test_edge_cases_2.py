@@ -1264,11 +1264,21 @@ class TestValidateChargeMult:
         assert ok is False
 
     def test_message_is_string(self) -> None:
-        """The second return value must always be a non-empty string."""
+        """The second return value must always be a str.
+
+        On the ok=True path the message is intentionally "" (empty) — the
+        Counter + f-string construction is skipped because all hot-loop
+        callers in _optimizer.py discard the message.  Only the type
+        guarantee (str) is enforced here.
+        """
         _ok, msg = validate_charge_mult(["C"], 0, 1)
         _check_validate_charge_mult((_ok, msg))
         assert isinstance(msg, str)
-        assert len(msg) > 0
+        # ok=True → empty string (lazy message); ok=False → non-empty diagnostic
+        if _ok:
+            assert msg == ""
+        else:
+            assert len(msg) > 0
 
     def test_positive_charge_modifies_electron_count(self) -> None:
         """C, charge=+1 removes one electron → 5 electrons (odd) → doublet ok."""
