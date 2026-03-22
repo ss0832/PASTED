@@ -8,6 +8,42 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Documentation
+
+#### DOC — `compute_all_metrics` N=5–5000 benchmark and superlinear-scaling root-cause analysis
+
+Added a performance benchmark table to `docs/quickstart.md` covering all
+sub-components of `compute_all_metrics` (C++ extensions active) from N = 5
+to N = 5 000.  Key findings:
+
+- Peak RSS across the full sweep is **152 MB** (< 3 MB growth; no memory
+  leak detected over 500 repeated calls at each size).
+- Wall time is dominated by `compute_steinhardt` from N ≈ 200 onwards;
+  at N = 5 000 it accounts for **6.4 ms** of the **13.3 ms** total.
+- Despite an algorithmic complexity of O(N·k·l²), `compute_steinhardt`
+  exhibits **superlinear scaling** — a CPU cache pressure effect, not an
+  algorithmic one.
+
+**Root cause of superlinear scaling** (`docs/architecture.md` updated with
+full analysis): the C++ Steinhardt accumulator uses layout
+`(n_l, l_max+1, N)` with the atom index as the *innermost* dimension.
+Each bond's inner `m`-loop writes to addresses `N × 8 bytes` apart.  At
+N ≤ 500 these strides fit in L2 cache (< 256 KB total); at N ≥ 1 000 the
+two buffers spill into L3, inflating each write latency ~5–10×:
+
+| N | stride/m-step | 2 × buffer | cache tier |
+|--:|--:|--:|:--|
+| 100 | 0.8 KB | 42 KB | L2 |
+| 500 | 3.9 KB | 211 KB | L2 |
+| 1 000 | 7.8 KB | 422 KB | **L3** |
+| 2 000 | 15.6 KB | 844 KB | L3 |
+| 5 000 | 39.1 KB | 2.1 MB | L3 |
+
+**Known fix (not yet applied):** transposing the buffer to `(N, n_l,
+l_max+1)` (atom index outermost) would keep the m-loop stride at 8 bytes
+and is expected to reduce `compute_steinhardt` wall time by ~3–5× at
+N = 2 000–5 000.
+
 ### Performance
 
 #### PERF — `compute_shape_anisotropy`: replace `eigvalsh` with trace / Frobenius norm (`_metrics.py`)

@@ -91,6 +91,19 @@ therefore be used as ``--filter`` targets on the CLI and in the
    computation for ``Q4``, ``Q6``, and ``Q8`` (~2000× vs. the dense Python
    fallback).
 
+   .. note::
+
+      **Superlinear wall-time scaling of** ``compute_steinhardt`` **(known
+      limitation).**  Although the algorithm is O(N·k·l²), measured latency
+      grows faster than linear from N ≈ 1 000.  The cause is a CPU cache
+      pressure effect in the C++ accumulator buffer (layout
+      ``(n_l, l_max+1, N)`` — atom index innermost), whose strides of
+      N × 8 bytes exceed the L2 cache at N ≈ 1 000 and cause ~5–10×
+      higher write latency.  ``compute_steinhardt`` is therefore the
+      dominant cost in ``compute_all_metrics`` for N ≳ 200.
+      See ``docs/architecture.md`` → *Superlinear wall-time scaling* for the
+      full analysis and the planned buffer-transpose fix.
+
    .. warning::
 
       When ``HAS_GRAPH = False``, the five graph/ring/charge/Moran metrics

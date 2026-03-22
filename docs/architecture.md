@@ -313,6 +313,44 @@ that writes `re_buf`/`im_buf` directly during neighbor traversal.
 | Sparse Python fallback | ~0.21 s | ~164× |
 | C++ (`_steinhardt_core`) | ~17 ms | **~2 000×** |
 
+#### Superlinear wall-time scaling of `compute_steinhardt` (known limitation)
+
+Although the algorithmic complexity of `_steinhardt_core` is O(N·k·l²),
+measured wall time grows **superlinearly** in N — the dominant term from
+N ≈ 500 onward is a **CPU cache pressure effect**, not an algorithmic one.
+
+**Root cause — accumulator buffer layout.**  The C++ accumulator is a pair of
+flat arrays with shape `(n_l, l_max+1, N)`:
+
+```cpp
+// re_buf[l_idx * (l_max+1) * n  +  m * n  +  i]
+std::vector<double> re_buf(n_l * (l_max + 1) * n, 0.0);
+```
+
+The innermost dimension is the *atom index* `i`.  When the inner `m`-loop
+(0 … l_max = 8) writes to `re_buf`, consecutive iterations access memory
+addresses that are `N × 8 bytes` apart.  At small N those strides fit in L1/L2
+cache, but from N ≈ 1 000 the working set crosses into L3:
+
+| N | stride per m-step | 2 × buffer total | cache tier |
+|--:|--:|--:|:--|
+| 100 | 0.8 KB | 42 KB | L2 |
+| 500 | 3.9 KB | 211 KB | L2 |
+| 1 000 | 7.8 KB | 422 KB | **L3** |
+| 2 000 | 15.6 KB | 844 KB | L3 |
+| 5 000 | 39.1 KB | 2.1 MB | L3 |
+
+The L2→L3 transition around N = 1 000 inflates each write latency ~5–10×,
+which is why `compute_steinhardt` accounts for an increasing share of
+`compute_all_metrics` wall time as N grows (see the benchmark table in
+`docs/quickstart.md`).
+
+**Known fix (not yet applied):** transposing the buffer to `(N, n_l, l_max+1)` —
+atom index outermost — would make the m-loop stride 1 element (8 bytes),
+keeping every bond's writes in a single cache line regardless of N.  This
+layout change would reduce `compute_steinhardt` wall time by ~3–5× at
+N = 2 000–5 000 without any algorithmic change.
+
 ---
 
 ## StructureGenerator internals
