@@ -1222,3 +1222,48 @@ class TestStructureCompProperty:
             result = opt.run()
         assert isinstance(result.best.comp, str)
         assert len(result.best.comp) > 0
+
+
+# ---------------------------------------------------------------------------
+# Regression: stream() early-break must not poison a subsequent generate()
+# ---------------------------------------------------------------------------
+
+
+class TestStreamWithStatsDecoupling:
+    """Verify that breaking out of stream() early does not affect generate()."""
+
+    def _gen(self) -> StructureGenerator:
+        return StructureGenerator(
+            n_atoms=6,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:6",
+            elements="6,8",  # C + O: all-even, no parity failures
+            n_samples=20,
+            seed=7,
+        )
+
+    def test_early_break_then_generate_correct_stats(self) -> None:
+        """generate() stats must reflect its own full run, not a prior broken stream()."""
+        gen = self._gen()
+        # Consume only the first structure from stream() — intentional early break.
+        for _ in gen.stream():
+            break
+
+        # Now run generate() independently; stats must reflect its own 20 attempts.
+        result = gen.generate()
+        assert result.n_attempted == 20
+        assert result.n_passed == len(result.structures)
+        assert result.n_attempted == (
+            result.n_passed + result.n_rejected_parity + result.n_rejected_filter
+        )
+
+    def test_two_independent_generate_calls_agree(self) -> None:
+        """Calling generate() twice on the same generator must return identical results."""
+        gen = self._gen()
+        r1 = gen.generate()
+        r2 = gen.generate()
+        assert r1.n_attempted == r2.n_attempted
+        assert r1.n_passed == r2.n_passed
+        assert [s.atoms for s in r1] == [s.atoms for s in r2]

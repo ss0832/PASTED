@@ -6,6 +6,29 @@ High-level API:
 - :class:`Structure`          — dataclass holding one generated structure.
 - :class:`StructureGenerator` — stateful generator (class API).
 - :func:`generate`            — convenience functional wrapper.
+
+Internal design
+---------------
+The generation loop lives in a single private method,
+:meth:`StructureGenerator._stream_with_stats`, which returns a
+``(structures_iterator, stats_dict)`` pair.  The public methods
+:meth:`~StructureGenerator.stream` and
+:meth:`~StructureGenerator.generate` are thin wrappers around it:
+
+- ``stream()`` forwards the iterator directly to the caller.
+- ``generate()`` exhausts the iterator, reads the populated *stats_dict*,
+  and wraps everything in a :class:`GenerationResult`.
+
+This two-layer design eliminates the hidden coupling that previously
+existed via the ``_last_run_stats`` instance variable: interrupting
+``stream()`` early can no longer leave stale counters for a subsequent
+``generate()`` call.
+
+Verbose log output is routed through three focused helpers
+(:meth:`~StructureGenerator._log_filter_header`,
+:meth:`~StructureGenerator._log_sample_result`,
+:meth:`~StructureGenerator._log_summary`) so that the generation loop
+itself contains only placement logic.
 """
 
 from __future__ import annotations
@@ -836,6 +859,91 @@ class StructureGenerator:
         """Print *msg* to stderr when verbose mode is active."""
         print(msg, file=sys.stderr)
 
+    # ------------------------------------------------------------------ #
+    # Verbose logging helpers                                              #
+    # ------------------------------------------------------------------ #
+
+    def _log_filter_header(self) -> None:
+        """Log the active filter bounds to stderr (verbose mode only).
+
+        Emits a single ``[filter]`` line listing every active filter in
+        the form ``METRIC in [lo, hi]``.  Does nothing when there are no
+        filters or verbose mode is off.
+        """
+        if self._cfg.verbose and self._filters:
+            self._log(
+                "[filter] "
+                + ",  ".join(f"{m} in [{lo:.4g},{hi:.4g}]" for m, lo, hi in self._filters)
+            )
+
+    def _log_sample_result(
+        self,
+        i: int,
+        width: int,
+        denom: str,
+        flag: str,
+        *,
+        metrics: dict[str, float] | None = None,
+        msg: str | None = None,
+    ) -> None:
+        """Log one sample outcome to stderr (verbose mode only).
+
+        Parameters
+        ----------
+        i:
+            Zero-based attempt index.
+        width:
+            Field width for left-padding the attempt counter.
+        denom:
+            Denominator string (e.g. ``"20"`` or ``"∞"``).
+        flag:
+            Short status tag: ``"PASS"``, ``"skip"``, ``"invalid"``, or
+            ``"warn"``.
+        metrics:
+            Metric dict to append when *flag* is ``"PASS"`` or ``"skip"``.
+        msg:
+            Free-form message to append (used for ``"invalid"`` and
+            ``"warn"``).
+        """
+        if not self._cfg.verbose:
+            return
+        prefix = f"[{i + 1:>{width}}/{denom}:{flag}]"
+        if metrics is not None:
+            self._log(
+                prefix + "  " + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
+            )
+        elif msg is not None:
+            self._log(f"{prefix} {msg}")
+        else:
+            self._log(prefix)
+
+    def _log_summary(
+        self,
+        n_attempted: int,
+        n_passed: int,
+        n_invalid: int,
+        n_rejected_filter: int,
+    ) -> None:
+        """Log the end-of-run summary line to stderr (verbose mode only).
+
+        Parameters
+        ----------
+        n_attempted:
+            Total placement attempts made.
+        n_passed:
+            Number of structures that passed all filters.
+        n_invalid:
+            Attempts rejected by the charge/multiplicity parity check.
+        n_rejected_filter:
+            Attempts rejected by metric filters.
+        """
+        if not self._cfg.verbose:
+            return
+        self._log(
+            f"[summary] attempted={n_attempted}  passed={n_passed}  "
+            f"rejected_parity={n_invalid}  rejected_filter={n_rejected_filter}"
+        )
+
     def _resolve_cutoff(self, override: float | None) -> float:
         if override is not None:
             if self._cfg.verbose:
@@ -1047,6 +1155,207 @@ class StructureGenerator:
     # Generation                                                           #
     # ------------------------------------------------------------------ #
 
+    def _stream_with_stats(self) -> tuple[Iterator[Structure], dict[str, int]]:
+        """Run the generation loop and expose both structures and run statistics.
+
+        Returns a ``(structures_iterator, stats_dict)`` pair.  The
+        *stats_dict* is a mutable mapping that is populated **in-place** as
+        the iterator is consumed; callers that need statistics must exhaust
+        the iterator before reading from it.
+
+        This is the single source of truth for all generation logic.
+        :meth:`stream` and :meth:`generate` are thin wrappers around it,
+        which eliminates the hidden coupling that previously existed via the
+        ``_last_run_stats`` instance variable.
+
+        Returns
+        -------
+        tuple[Iterator[Structure], dict[str, int]]
+            ``(it, stats)`` where *it* yields passing structures and *stats*
+            is populated with ``n_attempted``, ``n_passed``,
+            ``n_rejected_parity``, and ``n_rejected_filter`` once *it* is
+            exhausted.
+        """
+        stats: dict[str, int] = {}
+
+        def _inner() -> Iterator[Structure]:
+            rng = random.Random(self._cfg.seed)
+            self._log_filter_header()
+
+            do_add_h = ("H" in self._element_pool) and self._cfg.add_hydrogen
+            n_passed = n_invalid = n_attempted = n_rejected_filter = 0
+            unlimited = self._cfg.n_samples == 0
+            denom = "∞" if unlimited else str(self._cfg.n_samples)
+            width = len(denom)
+
+            while True:
+                # Stop conditions
+                if not unlimited and n_attempted >= self._cfg.n_samples:
+                    break
+                if self._cfg.n_success is not None and n_passed >= self._cfg.n_success:
+                    break
+
+                i = n_attempted
+                n_attempted += 1
+
+                atoms_list = self._sample_atoms(rng)
+                if do_add_h:
+                    atoms_list = add_hydrogen(atoms_list, rng)
+
+                ok, val_msg = validate_charge_mult(
+                    atoms_list, self._cfg.charge, self._cfg.mult
+                )
+                if not ok:
+                    n_invalid += 1
+                    self._log_sample_result(i, width, denom, "invalid", msg=val_msg)
+                    continue
+
+                try:
+                    atoms_out, positions, center_sym = self._place_one(atoms_list, rng)
+                except (RuntimeError, ValueError) as exc:
+                    if self._cfg.verbose:
+                        self._log(f"[ERROR] sample {i + 1}: {exc}")
+                    raise
+
+                # ── Optional affine transform (applied once, before relax) ──
+                if self._cfg.affine_strength > 0.0:
+                    positions = _affine_move(
+                        positions,
+                        0.0,
+                        self._cfg.affine_strength,
+                        rng,
+                        affine_stretch=self._cfg.affine_stretch,
+                        affine_shear=self._cfg.affine_shear,
+                        affine_jitter=self._cfg.affine_jitter,
+                    )
+
+                positions, converged = relax_positions(
+                    atoms_out,
+                    positions,
+                    self._cfg.cov_scale,
+                    self._cfg.relax_cycles,
+                    seed=self._cfg.seed,
+                )
+                if not converged:
+                    self._log_sample_result(
+                        i,
+                        width,
+                        denom,
+                        "warn",
+                        msg=(
+                            f"relax_positions did not converge in "
+                            f"{self._cfg.relax_cycles} cycles."
+                        ),
+                    )
+
+                metrics = compute_all_metrics(
+                    atoms_out,
+                    positions,
+                    self._cfg.n_bins,
+                    self._cfg.w_atom,
+                    self._cfg.w_spatial,
+                    self._cutoff,
+                    self._cfg.cov_scale,
+                )
+                passed = passes_filters(metrics, self._filters)
+                self._log_sample_result(
+                    i,
+                    width,
+                    denom,
+                    "PASS" if passed else "skip",
+                    metrics=metrics,
+                )
+                if not passed:
+                    n_rejected_filter += 1
+                    continue
+
+                n_passed += 1
+                yield Structure(
+                    atoms=atoms_out,
+                    positions=positions,
+                    charge=self._cfg.charge,
+                    mult=self._cfg.mult,
+                    metrics=metrics,
+                    mode=self._cfg.mode,
+                    sample_index=n_passed,
+                    center_sym=center_sym if self._cfg.mode == "shell" else None,
+                    seed=self._cfg.seed,
+                )
+
+            n_skip = n_attempted - n_passed - n_invalid
+            self._log_summary(n_attempted, n_passed, n_invalid, n_skip)
+
+            # ── warnings.warn for noteworthy outcomes ──────────────────────
+            # Fires regardless of verbose so that downstream consumers
+            # (ASE, HT pipelines) receive machine-visible signals even when
+            # PASTED is not in verbose mode.
+            #
+            # Parity warnings fire only when n_passed == 0 (complete failure).
+            # Partial parity rejection where some structures still passed is
+            # expected behavior for mixed-element pools and does not require
+            # a warning — the verbose summary line already reports the counts.
+            if n_invalid > 0 and n_passed == 0:
+                if n_rejected_filter == 0:
+                    # Pure parity failure — no attempt reached the filter stage.
+                    warnings.warn(
+                        f"All {n_attempted} attempt(s) were rejected by the charge/"
+                        f"multiplicity parity check ({n_invalid} invalid). "
+                        f"No structures were generated. "
+                        f"Check that your element pool can satisfy "
+                        f"charge={self._cfg.charge}, mult={self._cfg.mult}.",
+                        UserWarning,
+                        stacklevel=4,
+                    )
+                else:
+                    # Mixed failure: some attempts failed parity AND some failed
+                    # filters.  Report both causes so users don't only debug the
+                    # element pool.
+                    warnings.warn(
+                        f"{n_invalid} of {n_attempted} attempt(s) were rejected by the "
+                        f"charge/multiplicity parity check, and the remaining "
+                        f"{n_rejected_filter} that passed parity were rejected by metric "
+                        f"filters. No structures were generated. "
+                        f"Check your element pool (charge={self._cfg.charge}, "
+                        f"mult={self._cfg.mult}) and relax --filter thresholds.",
+                        UserWarning,
+                        stacklevel=4,
+                    )
+
+            if n_passed == 0 and n_invalid == 0:
+                warnings.warn(
+                    f"No structures passed the metric filters after "
+                    f"{n_attempted} attempt(s) "
+                    f"({n_skip} rejected by filters). "
+                    f"Try relaxing the --filter thresholds or increasing n_samples.",
+                    UserWarning,
+                    stacklevel=4,
+                )
+            elif (
+                self._cfg.n_success is not None
+                and n_passed < self._cfg.n_success
+                and not unlimited
+            ):
+                warnings.warn(
+                    f"Attempt budget exhausted ({n_attempted} attempts) before "
+                    f"reaching n_success={self._cfg.n_success}; "
+                    f"only {n_passed} structure(s) collected. "
+                    f"Increase n_samples or relax filters.",
+                    UserWarning,
+                    stacklevel=4,
+                )
+
+            # Populate the shared stats dict now that the loop is complete.
+            stats.update(
+                {
+                    "n_attempted": n_attempted,
+                    "n_passed": n_passed,
+                    "n_rejected_parity": n_invalid,
+                    "n_rejected_filter": n_rejected_filter,
+                }
+            )
+
+        return _inner(), stats
+
     def stream(self) -> Iterator[Structure]:
         """Generate structures one by one, yielding each that passes all filters.
 
@@ -1066,7 +1375,8 @@ class StructureGenerator:
           reached, a warning is emitted to *stderr* and the iterator ends.
 
         Each call creates a fresh :class:`random.Random` seeded with
-        ``self._cfg.seed``, so repeated calls with the same seed are reproducible.
+        ``self._cfg.seed``, so repeated calls with the same seed are
+        reproducible.
 
         Yields
         ------
@@ -1085,184 +1395,24 @@ class StructureGenerator:
             for s in gen.stream():
                 s.write_xyz("out.xyz")
         """
-        rng = random.Random(self._cfg.seed)
-
-        if self._cfg.verbose and self._filters:
-            self._log(
-                "[filter] "
-                + ",  ".join(f"{m} in [{lo:.4g},{hi:.4g}]" for m, lo, hi in self._filters)
-            )
-
-        do_add_h = ("H" in self._element_pool) and self._cfg.add_hydrogen
-        n_passed = n_invalid = n_attempted = n_rejected_filter = 0
-        unlimited = self._cfg.n_samples == 0
-        denom = "∞" if unlimited else str(self._cfg.n_samples)
-        width = len(denom)
-
-        while True:
-            # Stop conditions
-            if not unlimited and n_attempted >= self._cfg.n_samples:
-                break
-            if self._cfg.n_success is not None and n_passed >= self._cfg.n_success:
-                break
-
-            i = n_attempted
-            n_attempted += 1
-
-            atoms_list = self._sample_atoms(rng)
-            if do_add_h:
-                atoms_list = add_hydrogen(atoms_list, rng)
-
-            ok, val_msg = validate_charge_mult(atoms_list, self._cfg.charge, self._cfg.mult)
-            if not ok:
-                n_invalid += 1
-                if self._cfg.verbose:
-                    self._log(f"[{i + 1:>{width}}/{denom}:invalid] {val_msg}")
-                continue
-
-            try:
-                atoms_out, positions, center_sym = self._place_one(atoms_list, rng)
-            except (RuntimeError, ValueError) as exc:
-                if self._cfg.verbose:
-                    self._log(f"[ERROR] sample {i + 1}: {exc}")
-                raise
-
-            # ── Optional affine transform (applied once, before relax) ────
-            if self._cfg.affine_strength > 0.0:
-                positions = _affine_move(
-                    positions,
-                    0.0,
-                    self._cfg.affine_strength,
-                    rng,
-                    affine_stretch=self._cfg.affine_stretch,
-                    affine_shear=self._cfg.affine_shear,
-                    affine_jitter=self._cfg.affine_jitter,
-                )
-
-            positions, converged = relax_positions(
-                atoms_out,
-                positions,
-                self._cfg.cov_scale,
-                self._cfg.relax_cycles,
-                seed=self._cfg.seed,
-            )
-            if not converged and self._cfg.verbose:
-                self._log(
-                    f"[{i + 1:>{width}}/{denom}:warn] "
-                    f"relax_positions did not converge in {self._cfg.relax_cycles} cycles."
-                )
-
-            metrics = compute_all_metrics(
-                atoms_out,
-                positions,
-                self._cfg.n_bins,
-                self._cfg.w_atom,
-                self._cfg.w_spatial,
-                self._cutoff,
-                self._cfg.cov_scale,
-            )
-            passed = passes_filters(metrics, self._filters)
-            if self._cfg.verbose:
-                flag = "PASS" if passed else "skip"
-                self._log(
-                    f"[{i + 1:>{width}}/{denom}:{flag}]  "
-                    + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
-                )
-            if not passed:
-                n_rejected_filter += 1
-                continue
-
-            n_passed += 1
-            yield Structure(
-                atoms=atoms_out,
-                positions=positions,
-                charge=self._cfg.charge,
-                mult=self._cfg.mult,
-                metrics=metrics,
-                mode=self._cfg.mode,
-                sample_index=n_passed,
-                center_sym=center_sym if self._cfg.mode == "shell" else None,
-                seed=self._cfg.seed,
-            )
-
-        n_skip = n_attempted - n_passed - n_invalid
-        if self._cfg.verbose:
-            self._log(
-                f"[summary] attempted={n_attempted}  passed={n_passed}  "
-                f"rejected_parity={n_invalid}  rejected_filter={n_skip}"
-            )
-
-        # ── warnings.warn for noteworthy outcomes ─────────────────────────
-        # Fires regardless of verbose so that downstream consumers
-        # (ASE, HT pipelines) receive machine-visible signals even when
-        # PASTED is not in verbose mode.
-        #
-        # Parity warnings fire only when n_passed == 0 (complete failure).
-        # Partial parity rejection where some structures still passed is
-        # expected behavior for mixed-element pools and does not require
-        # a warning — the verbose summary line already reports the counts.
-        if n_invalid > 0 and n_passed == 0:
-            if n_rejected_filter == 0:
-                # Pure parity failure — no attempt reached the filter stage.
-                warnings.warn(
-                    f"All {n_attempted} attempt(s) were rejected by the charge/"
-                    f"multiplicity parity check ({n_invalid} invalid). "
-                    f"No structures were generated. "
-                    f"Check that your element pool can satisfy "
-                    f"charge={self._cfg.charge}, mult={self._cfg.mult}.",
-                    UserWarning,
-                    stacklevel=4,
-                )
-            else:
-                # Mixed failure: some attempts failed parity AND some failed filters.
-                # Report both causes so users don't only debug the element pool.
-                warnings.warn(
-                    f"{n_invalid} of {n_attempted} attempt(s) were rejected by the "
-                    f"charge/multiplicity parity check, and the remaining "
-                    f"{n_rejected_filter} that passed parity were rejected by metric "
-                    f"filters. No structures were generated. "
-                    f"Check your element pool (charge={self._cfg.charge}, "
-                    f"mult={self._cfg.mult}) and relax --filter thresholds.",
-                    UserWarning,
-                    stacklevel=4,
-                )
-
-        if n_passed == 0 and n_invalid == 0:
-            warnings.warn(
-                f"No structures passed the metric filters after "
-                f"{n_attempted} attempt(s) "
-                f"({n_skip} rejected by filters). "
-                f"Try relaxing the --filter thresholds or increasing n_samples.",
-                UserWarning,
-                stacklevel=4,
-            )
-        elif self._cfg.n_success is not None and n_passed < self._cfg.n_success and not unlimited:
-            warnings.warn(
-                f"Attempt budget exhausted ({n_attempted} attempts) before "
-                f"reaching n_success={self._cfg.n_success}; "
-                f"only {n_passed} structure(s) collected. "
-                f"Increase n_samples or relax filters.",
-                UserWarning,
-                stacklevel=4,
-            )
-
-        # Store run statistics so generate() can build a GenerationResult
-        # without re-running the generator loop.
-        self._last_run_stats: dict[str, int] = {
-            "n_attempted": n_attempted,
-            "n_passed": n_passed,
-            "n_rejected_parity": n_invalid,
-            "n_rejected_filter": n_rejected_filter,
-        }
+        it, _ = self._stream_with_stats()
+        return it
 
     def generate(self) -> GenerationResult:
         """Generate structures and return a :class:`GenerationResult`.
 
-        Collects all structures yielded by :meth:`stream`, attaches
-        generation metadata (attempt counts, rejection breakdowns), and
-        returns a :class:`GenerationResult` that behaves like a
+        Collects all structures yielded by the internal generation loop,
+        attaches generation metadata (attempt counts, rejection breakdowns),
+        and returns a :class:`GenerationResult` that behaves like a
         ``list[Structure]`` in all normal usage while also carrying the
         diagnostics needed for automated pipelines.
+
+        Run statistics (``n_attempted``, ``n_passed``, etc.) are obtained
+        directly from :meth:`_stream_with_stats` rather than via a shared
+        instance variable, so there is no hidden coupling between
+        :meth:`stream` and :meth:`generate`.  Calling one does not affect
+        the other, and partial iteration of :meth:`stream` cannot leave
+        stale counters for a subsequent :meth:`generate` call.
 
         :class:`GenerationResult` supports the full ``list`` interface
         (indexing, iteration, ``len``, ``bool``) so existing code that
@@ -1301,8 +1451,8 @@ class StructureGenerator:
             if result.n_rejected_parity > 0:
                 print(result.summary())
         """
-        structures = list(self.stream())
-        stats: dict[str, int] = getattr(self, "_last_run_stats", {})
+        it, stats = self._stream_with_stats()
+        structures = list(it)  # exhausts the iterator, populating stats
         return GenerationResult(
             structures=structures,
             n_attempted=stats.get("n_attempted", len(structures)),

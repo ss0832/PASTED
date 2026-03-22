@@ -6,6 +6,54 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+#### REFACTOR — Decouple `stream()` / `generate()` via `_stream_with_stats()` (`_generator.py`)
+
+`stream()` previously communicated run statistics to `generate()` by writing
+to a `_last_run_stats` instance variable at the end of its generator body.
+This created a hidden coupling: if a caller broke out of `stream()` early
+(e.g. `for s in gen.stream(): break`) and then called `generate()`, the
+stale counters from the previous (incomplete) run would be returned silently.
+
+**Fix:** the generation loop now lives in a private method
+`_stream_with_stats(self) -> tuple[Iterator[Structure], dict[str, int]]`
+that returns a `(structures_iterator, stats_dict)` pair.  The `stats_dict`
+is a mutable mapping that is populated in-place only when the iterator is
+fully exhausted.  The two public methods become thin, stateless wrappers:
+
+- `stream()` — calls `_stream_with_stats()` and forwards the iterator.
+  Public API is unchanged.
+- `generate()` — calls `_stream_with_stats()`, exhausts the iterator via
+  `list(it)`, then reads `stats` directly.  No longer touches
+  `_last_run_stats`.
+
+The `_last_run_stats` instance variable has been removed entirely.
+
+#### REFACTOR — Extract verbose log helpers from `stream()` (`_generator.py`)
+
+The verbose `self._log(...)` calls that were scattered throughout the
+generation loop have been extracted into three focused private methods:
+
+- `_log_filter_header()` — emits the `[filter]` preamble line.
+- `_log_sample_result(i, width, denom, flag, *, metrics, msg)` — emits one
+  per-sample status line (`PASS`, `skip`, `invalid`, or `warn`).
+- `_log_summary(n_attempted, n_passed, n_invalid, n_rejected_filter)` —
+  emits the `[summary]` footer line.
+
+Each helper guards itself with `if not self._cfg.verbose: return`, so
+callers need not repeat the verbose check.  The generation loop in
+`_stream_with_stats._inner()` now contains only placement logic, with
+log calls at natural event boundaries.
+
+**Affected files:**
+- `src/pasted/_generator.py` — implementation, module docstring, and method
+  docstrings updated
+
+---
+
 ## [0.3.5] — 2026-03-22
 
 ### Bug Fixes
