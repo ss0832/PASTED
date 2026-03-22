@@ -35,13 +35,15 @@ looks like in structural space.
 ## Requirements
 
 ```
+Linux (tested)
 Python >= 3.10
 numpy
 scipy
+C++ compiler (GCC/Clang)
+pybind11 >= 2.12
 ```
 
-A C++17 compiler is required to build the optional acceleration extensions
-(~25x speedup for `compute_all_metrics` at N=1000). If no compiler is
+A C++17 compiler is required to build the optional acceleration extensions. If no compiler is
 available, the package falls back to pure Python/NumPy transparently.
 
 ## Installation
