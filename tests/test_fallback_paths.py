@@ -76,14 +76,14 @@ class TestRelaxPositionsFallback:
 
     def test_two_separated_atoms_already_converged(self):
         """Atoms far apart → converged=True on first iteration."""
-        pos, converged = self._run(
+        _pos, converged = self._run(
             ["C", "C"], [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)]
         )
         assert converged is True
 
     def test_overlapping_atoms_get_separated(self):
         """Two atoms placed at the same point must be pushed apart."""
-        pos, converged = self._run(
+        pos, _converged = self._run(
             ["C", "C"], [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]
         )
         p0 = np.array(pos[0])
@@ -94,7 +94,7 @@ class TestRelaxPositionsFallback:
 
     def test_very_close_atoms_converge(self):
         """Atoms slightly too close must reach convergence (not exhaust cycles)."""
-        pos, converged = self._run(
+        _pos, converged = self._run(
             ["C", "N"], [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)],
             max_cycles=2000,
         )
@@ -129,8 +129,8 @@ class TestRelaxPositionsFallback:
 
     def test_result_close_to_cpp_path(self):
         """Python fallback result must be close to the C++ result (same math)."""
-        from pasted._placement import relax_positions
         from pasted._ext import HAS_RELAX
+        from pasted._placement import relax_positions
 
         if not HAS_RELAX:
             pytest.skip("C++ relax not available — cannot compare paths")
@@ -199,8 +199,8 @@ class TestAngularRepulsionGradientFallback:
 
     def test_matches_cpp_result(self):
         """Python gradient must be close to the C++ result."""
-        from pasted._placement import _angular_repulsion_gradient
         from pasted._ext import HAS_MAXENT
+        from pasted._placement import _angular_repulsion_gradient
 
         if not HAS_MAXENT:
             pytest.skip("C++ angular gradient not available")
@@ -233,6 +233,7 @@ class TestPlaceMaxentFallback:
     def _run(self, atoms, region, relax_also_python=True, maxent_steps=5, seed=0):
         """Run place_maxent with C++ loop disabled (and optionally C++ relax too)."""
         import random
+
         from pasted._placement import place_maxent
 
         rng = random.Random(seed)
@@ -278,7 +279,7 @@ class TestPlaceMaxentFallback:
             pytest.skip("C++ relax not available for hybrid mode test")
 
         atoms = ["C", "N", "O"]
-        out_atoms, positions = self._run(atoms, "sphere:5", relax_also_python=False)
+        _out_atoms, positions = self._run(atoms, "sphere:5", relax_also_python=False)
         assert len(positions) == 3
         for xyz in positions:
             assert all(math.isfinite(v) for v in xyz)
@@ -286,6 +287,7 @@ class TestPlaceMaxentFallback:
     def test_unknown_region_raises(self):
         """place_maxent must raise ValueError for an unrecognised region spec."""
         import random
+
         from pasted._placement import place_maxent
 
         rng = random.Random(0)
@@ -303,11 +305,11 @@ class TestComputeAllMetricsFallback:
     """Verify compute_all_metrics uses the pure-Python path when HAS_GRAPH=False."""
 
     def _metrics(self, atoms, positions):
-        from pasted._metrics import compute_all_metrics
-        from pasted._atoms import _cov_radius_ang
         import numpy as np
 
-        pts = np.array(positions)
+        from pasted._atoms import _cov_radius_ang
+        from pasted._metrics import compute_all_metrics
+
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         cutoff = 1.5 * float(np.median(radii)) * 2.0
 
@@ -353,9 +355,9 @@ class TestComputeAllMetricsFallback:
 
     def test_results_close_to_cpp_path(self):
         """Python fallback metrics must agree with C++ metrics within tolerance."""
-        from pasted._metrics import compute_all_metrics
-        from pasted._ext import HAS_GRAPH
         from pasted._atoms import _cov_radius_ang
+        from pasted._ext import HAS_GRAPH
+        from pasted._metrics import compute_all_metrics
 
         if not HAS_GRAPH:
             pytest.skip("C++ graph metrics not available — cannot compare paths")
@@ -365,15 +367,16 @@ class TestComputeAllMetricsFallback:
             (0.0, 0.0, 0.0), (1.8, 0.0, 0.0), (0.0, 1.8, 0.0),
             (1.8, 1.8, 0.0), (0.9, 0.9, 1.5),
         ]
-        pts = np.array(positions)
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         cutoff = 1.5 * float(np.median(radii)) * 2.0
 
-        kwargs = dict(n_bins=10, w_atom=0.5, w_spatial=0.5, cutoff=cutoff, cov_scale=1.0)
-
-        m_cpp = compute_all_metrics(atoms, positions, **kwargs)
+        m_cpp = compute_all_metrics(
+            atoms, positions, 10, 0.5, 0.5, cutoff, 1.0
+        )
         with _patch(**_ALL_METRICS_FLAGS):
-            m_py = compute_all_metrics(atoms, positions, **kwargs)
+            m_py = compute_all_metrics(
+                atoms, positions, 10, 0.5, 0.5, cutoff, 1.0
+            )
 
         for key in ("H_atom", "H_total", "graph_lcc", "graph_cc", "ring_fraction"):
             assert math.isclose(m_cpp[key], m_py[key], rel_tol=1e-4, abs_tol=1e-6), (
@@ -390,7 +393,7 @@ class TestSteinhhardtFallback:
     """Verify the pure-Python Steinhardt Q_l computation."""
 
     def _steinhardt(self, pts, l_values, cutoff):
-        from pasted._metrics import _steinhardt_per_atom_sparse, compute_steinhardt
+        from pasted._metrics import compute_steinhardt
 
         with _patch(**_STEINHARDT_FLAG):
             return compute_steinhardt(np.array(pts), l_values, cutoff)
@@ -417,8 +420,8 @@ class TestSteinhhardtFallback:
 
     def test_matches_cpp_result(self):
         """Python Steinhardt must agree with C++ path within tolerance."""
-        from pasted._metrics import compute_steinhardt
         from pasted._ext import HAS_STEINHARDT
+        from pasted._metrics import compute_steinhardt
 
         if not HAS_STEINHARDT:
             pytest.skip("C++ Steinhardt not available — cannot compare paths")
@@ -587,8 +590,9 @@ class TestRingFractionRegression:
     @pytest.mark.parametrize("ring_size", [3, 4, 5, 6, 8])
     def test_pure_ring_python_fallback(self, ring_size):
         """A pure N-cycle: every atom is in the ring → ring_fraction = 1.0 (Python)."""
-        from pasted._metrics import compute_ring_fraction
         from unittest.mock import patch
+
+        from pasted._metrics import compute_ring_fraction
 
         positions, cutoff = self._ring_positions(ring_size)
         dmat = self._dmat(positions)
@@ -601,8 +605,8 @@ class TestRingFractionRegression:
     @pytest.mark.parametrize("ring_size", [3, 4, 5, 6, 8])
     def test_pure_ring_cpp_path(self, ring_size):
         """A pure N-cycle: every atom is in the ring → ring_fraction = 1.0 (C++)."""
-        from pasted._metrics import compute_all_metrics
         from pasted._ext import HAS_GRAPH
+        from pasted._metrics import compute_all_metrics
 
         if not HAS_GRAPH:
             pytest.skip("C++ graph metrics not available")
@@ -619,8 +623,9 @@ class TestRingFractionRegression:
 
     def test_chain_has_no_ring_atoms(self):
         """A linear chain: no cycles → ring_fraction = 0.0 (Python fallback)."""
-        from pasted._metrics import compute_ring_fraction
         from unittest.mock import patch
+
+        from pasted._metrics import compute_ring_fraction
 
         positions = [(float(i) * 1.5, 0.0, 0.0) for i in range(6)]
         dmat = self._dmat(positions)
@@ -630,8 +635,9 @@ class TestRingFractionRegression:
 
     def test_fused_bicyclic_all_atoms_in_ring(self):
         """Two fused triangles (4 atoms sharing one edge): all atoms are in a ring."""
-        from pasted._metrics import compute_ring_fraction
         from unittest.mock import patch
+
+        from pasted._metrics import compute_ring_fraction
 
         # Diamond / rhombus: A-B-C-D where A-B, B-C, C-D, D-A, and A-C are bonds
         # (two triangles sharing edge A-C)
@@ -649,9 +655,10 @@ class TestRingFractionRegression:
 
     def test_python_and_cpp_agree_on_ring_fraction(self):
         """Python and C++ ring_fraction must agree for a variety of structures."""
-        from pasted._metrics import compute_ring_fraction, compute_all_metrics
-        from pasted._ext import HAS_GRAPH
         from unittest.mock import patch
+
+        from pasted._ext import HAS_GRAPH
+        from pasted._metrics import compute_all_metrics, compute_ring_fraction
 
         if not HAS_GRAPH:
             pytest.skip("C++ path not available")

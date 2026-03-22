@@ -142,7 +142,7 @@ path has been removed entirely.
 | `Q4`, `Q6`, `Q8` | [0, 1] | Steinhardt bond-order parameters |
 | `graph_lcc` | [0, 1] | Largest connected-component fraction |
 | `graph_cc` | [0, 1] | Mean clustering coefficient |
-| `ring_fraction` | [0, 1] | Fraction of atoms in at least one cycle in the cutoff-adjacency graph |
+| `ring_fraction` | [0, 1] | Fraction of atoms in at least one cycle in the cutoff-adjacency graph (Tarjan bridge-finding) |
 | `charge_frustration` | ≥ 0 | Variance of \|Δχ\| across cutoff-adjacent pairs |
 | `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random |
 
@@ -156,6 +156,17 @@ Prior to v0.1.13, `ring_fraction` and `charge_frustration` used a
 never satisfied in relaxed structures (since `relax_positions` guarantees
 `d_ij ≥ cov_scale × (r_i + r_j)` on convergence), causing both metrics to
 return 0.0 for every PASTED output.
+
+Prior to the current release, `ring_fraction` used a Union-Find (DSU)
+algorithm that only marked the two direct endpoints of each detected
+back-edge, causing systematic undercounting: an N-atom ring was reported
+as 2/N instead of N/N (e.g. a benzene-like 6-cycle returned 0.33 instead of
+1.0).  Both the Python fallback (`compute_ring_fraction` in `_metrics.py`)
+and the C++ path (`graph_metrics_cpp` in `_graph_core.cpp`) had this bug.
+The fix replaces Union-Find with **Tarjan's iterative bridge-finding
+algorithm** (O(N + E)): a bond is a *bridge* if its removal disconnects the
+graph; every atom whose incident edges include at least one non-bridge is
+counted as a ring member.
 
 ---
 

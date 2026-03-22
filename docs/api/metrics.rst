@@ -62,7 +62,11 @@ therefore be used as ``--filter`` targets on the CLI and in the
        mutually bonded.
      - [0, 1]
    * - ``ring_fraction``
-     - Fraction of atoms that participate in at least one ring.
+     - Fraction of atoms that participate in at least one ring, determined
+       by Tarjan's iterative bridge-finding algorithm (O(N + E)).  A bond is
+       a *bridge* if its removal disconnects the graph; an atom is counted
+       as a ring member when at least one of its incident bonds is a
+       non-bridge.
      - [0, 1]
    * - ``charge_frustration``
      - Mean EN variance across bonded atom pairs (Pauling scale).
