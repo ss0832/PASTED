@@ -284,9 +284,7 @@ class Structure:
             if not p.exists():
                 raise FileNotFoundError(f"XYZ file not found: {p!s}")
             if not p.is_file():
-                raise IsADirectoryError(
-                    f"Expected a file path, but {p!s} is a directory."
-                )
+                raise IsADirectoryError(f"Expected a file path, but {p!s} is a directory.")
             text = p.read_text()
         else:
             text = str(source)
@@ -909,9 +907,7 @@ class StructureGenerator:
             return
         prefix = f"[{i + 1:>{width}}/{denom}:{flag}]"
         if metrics is not None:
-            self._log(
-                prefix + "  " + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items())
-            )
+            self._log(prefix + "  " + "  ".join(f"{k}={_fmt(v)}" for k, v in metrics.items()))
         elif msg is not None:
             self._log(f"{prefix} {msg}")
         else:
@@ -1202,9 +1198,7 @@ class StructureGenerator:
                 if do_add_h:
                     atoms_list = add_hydrogen(atoms_list, rng)
 
-                ok, val_msg = validate_charge_mult(
-                    atoms_list, self._cfg.charge, self._cfg.mult
-                )
+                ok, val_msg = validate_charge_mult(atoms_list, self._cfg.charge, self._cfg.mult)
                 if not ok:
                     n_invalid += 1
                     self._log_sample_result(i, width, denom, "invalid", msg=val_msg)
@@ -1243,8 +1237,7 @@ class StructureGenerator:
                         denom,
                         "warn",
                         msg=(
-                            f"relax_positions did not converge in "
-                            f"{self._cfg.relax_cycles} cycles."
+                            f"relax_positions did not converge in {self._cfg.relax_cycles} cycles."
                         ),
                     )
 

@@ -64,9 +64,7 @@ class TestRelaxPositionsFallback:
         from pasted._placement import relax_positions
 
         with _patch(**_RELAX_FLAGS):
-            return relax_positions(
-                atoms, positions, cov_scale, max_cycles=max_cycles, seed=seed
-            )
+            return relax_positions(atoms, positions, cov_scale, max_cycles=max_cycles, seed=seed)
 
     def test_single_atom_returns_immediately(self):
         """n < 2 must return immediately with converged=True."""
@@ -76,16 +74,12 @@ class TestRelaxPositionsFallback:
 
     def test_two_separated_atoms_already_converged(self):
         """Atoms far apart → converged=True on first iteration."""
-        _pos, converged = self._run(
-            ["C", "C"], [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)]
-        )
+        _pos, converged = self._run(["C", "C"], [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)])
         assert converged is True
 
     def test_overlapping_atoms_get_separated(self):
         """Two atoms placed at the same point must be pushed apart."""
-        pos, _converged = self._run(
-            ["C", "C"], [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)]
-        )
+        pos, _converged = self._run(["C", "C"], [(0.0, 0.0, 0.0), (0.0, 0.0, 0.0)])
         p0 = np.array(pos[0])
         p1 = np.array(pos[1])
         d = float(np.linalg.norm(p0 - p1))
@@ -95,7 +89,8 @@ class TestRelaxPositionsFallback:
     def test_very_close_atoms_converge(self):
         """Atoms slightly too close must reach convergence (not exhaust cycles)."""
         _pos, converged = self._run(
-            ["C", "N"], [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)],
+            ["C", "N"],
+            [(0.0, 0.0, 0.0), (0.5, 0.0, 0.0)],
             max_cycles=2000,
         )
         assert converged is True
@@ -151,6 +146,7 @@ class TestRelaxPositionsFallback:
         # Distances between pairs should be at least the covalent minimum
         # in both outputs (i.e. both implementations actually enforce the constraint).
         from pasted._atoms import _cov_radius_ang
+
         for out in (pos_cpp, pos_py):
             pts = np.array(out)
             for i in range(len(pts)):
@@ -160,7 +156,7 @@ class TestRelaxPositionsFallback:
                     rj = _cov_radius_ang(atoms[j])
                     assert d >= 0.9 * (ri + rj), (
                         f"Clash in {'cpp' if out is pos_cpp else 'py'} output: "
-                        f"atoms {i},{j} d={d:.3f} min={ri+rj:.3f}"
+                        f"atoms {i},{j} d={d:.3f} min={ri + rj:.3f}"
                     )
 
 
@@ -217,7 +213,10 @@ class TestAngularRepulsionGradientFallback:
         # expected.  A relative tolerance of 1e-3 verifies they compute the
         # same quantity without being fragile to FP reordering.
         np.testing.assert_allclose(
-            grad_py, grad_cpp, rtol=1e-3, atol=1e-6,
+            grad_py,
+            grad_cpp,
+            rtol=1e-3,
+            atol=1e-6,
             err_msg="Python and C++ angular gradient disagree",
         )
 
@@ -315,8 +314,13 @@ class TestComputeAllMetricsFallback:
 
         with _patch(**_ALL_METRICS_FLAGS):
             return compute_all_metrics(
-                atoms, positions, n_bins=10, w_atom=0.5, w_spatial=0.5,
-                cutoff=cutoff, cov_scale=1.0,
+                atoms,
+                positions,
+                n_bins=10,
+                w_atom=0.5,
+                w_spatial=0.5,
+                cutoff=cutoff,
+                cov_scale=1.0,
             )
 
     def test_returns_all_expected_keys(self):
@@ -364,19 +368,18 @@ class TestComputeAllMetricsFallback:
 
         atoms = ["C", "N", "O", "C", "N"]
         positions = [
-            (0.0, 0.0, 0.0), (1.8, 0.0, 0.0), (0.0, 1.8, 0.0),
-            (1.8, 1.8, 0.0), (0.9, 0.9, 1.5),
+            (0.0, 0.0, 0.0),
+            (1.8, 0.0, 0.0),
+            (0.0, 1.8, 0.0),
+            (1.8, 1.8, 0.0),
+            (0.9, 0.9, 1.5),
         ]
         radii = np.array([_cov_radius_ang(a) for a in atoms])
         cutoff = 1.5 * float(np.median(radii)) * 2.0
 
-        m_cpp = compute_all_metrics(
-            atoms, positions, 10, 0.5, 0.5, cutoff, 1.0
-        )
+        m_cpp = compute_all_metrics(atoms, positions, 10, 0.5, 0.5, cutoff, 1.0)
         with _patch(**_ALL_METRICS_FLAGS):
-            m_py = compute_all_metrics(
-                atoms, positions, 10, 0.5, 0.5, cutoff, 1.0
-            )
+            m_py = compute_all_metrics(atoms, positions, 10, 0.5, 0.5, cutoff, 1.0)
 
         for key in ("H_atom", "H_total", "graph_lcc", "graph_cc", "ring_fraction"):
             assert math.isclose(m_cpp[key], m_py[key], rel_tol=1e-4, abs_tol=1e-6), (
@@ -468,8 +471,10 @@ class TestGraphRingChargeFallback:
         from pasted._metrics import compute_graph_metrics
 
         positions = [
-            (0.0, 0.0, 0.0), (1.5, 0.0, 0.0),   # cluster A
-            (50.0, 0.0, 0.0), (51.5, 0.0, 0.0),  # cluster B
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),  # cluster A
+            (50.0, 0.0, 0.0),
+            (51.5, 0.0, 0.0),  # cluster B
         ]
         dmat = self._dmat(positions)
         result = compute_graph_metrics(dmat, cutoff=2.5)
@@ -551,6 +556,7 @@ class TestRingFractionRegression:
 
     def _dmat(self, positions):
         from scipy.spatial.distance import pdist, squareform
+
         return squareform(pdist(np.array(positions)))
 
     def _ring_positions(
@@ -577,12 +583,11 @@ class TestRingFractionRegression:
             10 % margin).
         """
         import math
+
         # chord = 2 * r * sin(π/n)  →  r = chord / (2 * sin(π/n))
         r = chord / (2 * math.sin(math.pi / n))
         positions = [
-            (r * math.cos(2 * math.pi * i / n),
-             r * math.sin(2 * math.pi * i / n),
-             0.0)
+            (r * math.cos(2 * math.pi * i / n), r * math.sin(2 * math.pi * i / n), 0.0)
             for i in range(n)
         ]
         return positions, chord * 1.1
@@ -614,8 +619,13 @@ class TestRingFractionRegression:
         positions, cutoff = self._ring_positions(ring_size)
         atoms = ["C"] * ring_size
         m = compute_all_metrics(
-            atoms, positions, n_bins=10, w_atom=0.5, w_spatial=0.5,
-            cutoff=cutoff, cov_scale=1.0,
+            atoms,
+            positions,
+            n_bins=10,
+            w_atom=0.5,
+            w_spatial=0.5,
+            cutoff=cutoff,
+            cov_scale=1.0,
         )
         assert m["ring_fraction"] == pytest.approx(1.0), (
             f"{ring_size}-cycle (C++): expected 1.0, got {m['ring_fraction']:.4f}"
@@ -643,10 +653,10 @@ class TestRingFractionRegression:
         # (two triangles sharing edge A-C)
         s = 1.5
         positions = [
-            (0.0,  0.0,  0.0),   # A
-            (s,    0.0,  0.0),   # B  — triangle A-B-C
-            (s/2,  s*0.866, 0.0),# C
-            (s*1.5, s*0.866, 0.0),# D  — triangle B-C-D
+            (0.0, 0.0, 0.0),  # A
+            (s, 0.0, 0.0),  # B  — triangle A-B-C
+            (s / 2, s * 0.866, 0.0),  # C
+            (s * 1.5, s * 0.866, 0.0),  # D  — triangle B-C-D
         ]
         dmat = self._dmat(positions)
         with patch("pasted._metrics._HAS_GRAPH", False):
@@ -682,8 +692,13 @@ class TestRingFractionRegression:
                 rf_py = compute_ring_fraction(atoms, dmat, cutoff=cutoff)
 
             m_cpp = compute_all_metrics(
-                atoms, positions, n_bins=10, w_atom=0.5, w_spatial=0.5,
-                cutoff=cutoff, cov_scale=1.0,
+                atoms,
+                positions,
+                n_bins=10,
+                w_atom=0.5,
+                w_spatial=0.5,
+                cutoff=cutoff,
+                cov_scale=1.0,
             )
             rf_cpp = m_cpp["ring_fraction"]
 

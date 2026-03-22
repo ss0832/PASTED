@@ -487,7 +487,7 @@ def parse_element_spec(spec: str | list[str]) -> list[str]:
             if sym not in _sym_to_z:
                 raise ValueError(
                     f"Unknown element symbol {sym!r}. "
-                    "Use atomic-number notation (e.g. \"6,7,8\") or a valid symbol list."
+                    'Use atomic-number notation (e.g. "6,7,8") or a valid symbol list.'
                 )
             z_set.add(_sym_to_z[sym])
         if not z_set:

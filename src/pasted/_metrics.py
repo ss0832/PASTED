@@ -442,9 +442,7 @@ def _tarjan_bridges(adj: list[list[int]], n: int) -> set[tuple[int, int]]:
         disc[start] = low[start] = timer
         timer += 1
         # Stack entries: (vertex, parent, iterator over its neighbours)
-        stack: list[tuple[int, int, Iterator[int]]] = [
-            (start, -1, iter(adj[start]))
-        ]
+        stack: list[tuple[int, int, Iterator[int]]] = [(start, -1, iter(adj[start]))]
         while stack:
             u, parent_v, it = stack[-1]
             try:

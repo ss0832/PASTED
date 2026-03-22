@@ -499,7 +499,6 @@ class TestComputeMoranIChi:
 
         assert cpp_result == pytest.approx(py_result, abs=1e-9)
 
-
     def test_moran_I_chi_never_exceeds_one(self) -> None:
         """Regression test for v0.3.8 bug: moran_I_chi must be <= 1.0.
 
@@ -508,15 +507,21 @@ class TestComputeMoranIChi:
         n/W prefactor is > 1.  Both the Python fallback and the C++ path
         must clamp the result to 1.0 from above.
         """
-        from pasted import generate
         import warnings
+
+        from pasted import generate
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result = generate(
-                n_atoms=12, charge=0, mult=1, mode="gas",
-                region="sphere:8", elements="6,7,8,16",
-                n_samples=30, seed=42,
+                n_atoms=12,
+                charge=0,
+                mult=1,
+                mode="gas",
+                region="sphere:8",
+                elements="6,7,8,16",
+                n_samples=30,
+                seed=42,
             )
 
         for s in result:
@@ -531,14 +536,16 @@ class TestComputeMoranIChi:
         # Two isolated atoms of very different EN, cutoff just large enough
         # to connect them: W=2, N=2 → n/W=1 (no inflation here).
         # Force W < N by using 3 atoms but a cutoff that only connects 2 of them.
-        atoms = ["C", "N", "O"]          # EN: 2.55, 3.04, 3.44
-        pts = np.array([[0, 0, 0],
-                        [1.0, 0, 0],     # C-N: 1.0 Å — within cutoff
-                        [9.9, 0, 0]],    # O far away — outside cutoff
-                       dtype=float)
+        atoms = ["C", "N", "O"]  # EN: 2.55, 3.04, 3.44
+        pts = np.array(
+            [
+                [0, 0, 0],
+                [1.0, 0, 0],  # C-N: 1.0 Å — within cutoff
+                [9.9, 0, 0],
+            ],  # O far away — outside cutoff
+            dtype=float,
+        )
         en_vals = np.array([pauling_electronegativity(a) for a in atoms])
         # W=2 (one directed edge each way), N=3 → n/W=1.5 → raw may exceed 1
         result = _ext.moran_I_chi_cpp(pts, en_vals, cutoff=2.0)
-        assert result <= 1.0 + 1e-12, (
-            f"C++ moran_I_chi={result:.6f} > 1.0 after v0.3.8 clamp"
-        )
+        assert result <= 1.0 + 1e-12, f"C++ moran_I_chi={result:.6f} > 1.0 after v0.3.8 clamp"
