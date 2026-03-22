@@ -1,7 +1,30 @@
 """
 pasted._io
 ==========
-XYZ format serialization helpers.
+XYZ format serialization and deserialization helpers.
+
+Public API
+----------
+format_xyz(atoms, positions, charge, mult, metrics, prefix="") → str
+    Serialize a structure to an extended-XYZ string.  The second line
+    (the XYZ comment line) includes charge, multiplicity, and all metric
+    values as ``key=value`` pairs.
+
+parse_xyz(text) → list[dict]
+    Parse one or more XYZ frames from *text*.  Each frame is returned as
+    a dict with keys ``atoms``, ``positions``, ``charge``, ``mult``,
+    ``metrics``, and ``prefix``.  Blank lines between frames are silently
+    skipped.
+
+Notes
+-----
+*  The extended-XYZ comment line written by :func:`format_xyz` is
+   machine-readable: all fields use ``=`` as a separator with no spaces,
+   allowing downstream tools to extract metrics without regex.
+*  :func:`parse_xyz` accepts files produced by any tool that writes
+   standard XYZ (atom-count line, then free-form comment line, then N
+   coordinate lines).  Unrecognized comment-line content is stored as
+   ``prefix`` and does not raise an error.
 """
 
 from __future__ import annotations

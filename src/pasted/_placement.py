@@ -1,8 +1,44 @@
 """
 pasted._placement
 =================
-Atom-placement algorithms (gas / chain / shell) and post-placement
-repulsion relaxation.  No file I/O; no metrics.
+Atom-placement algorithms and post-placement repulsion relaxation.
+
+No file I/O; no metrics.  All placement functions return a
+``list[tuple[float, float, float]]`` of Cartesian coordinates.
+
+Placement modes
+---------------
+``place_gas``
+    Uniform random placement inside a sphere or axis-aligned box, followed
+    by :func:`relax_positions` to resolve any steric clashes.
+``place_chain``
+    Random-walk chain grown from the origin with optional directional bias
+    (``chain_persist``) and global axis drift (``chain_bias``).
+``place_shell``
+    Central atom at the origin surrounded by shell atoms at a uniform
+    radial distance, with optional tail atoms attached via short random
+    walks.
+``place_maxent``
+    Maximum-entropy placement via L-BFGS minimization of an angular
+    repulsion potential.  Requires a ``region`` spec.  The full C++
+    L-BFGS loop (``HAS_MAXENT_LOOP = True``) is ~10–22× faster than the
+    Python steepest-descent fallback.
+
+Affine transform
+----------------
+``_affine_move`` applies an optional affine transform (stretch/compress one
+axis, shear one axis pair, optional per-atom jitter) to a position array.
+It is shared between :class:`~pasted._generator.StructureGenerator` (applied
+once per structure before ``relax_positions``) and
+:class:`~pasted._optimizer.StructureOptimizer` (applied per MC step when
+``allow_affine_moves=True``).
+
+Relaxation
+----------
+``relax_positions`` resolves steric clashes by L-BFGS minimization of the
+harmonic penalty energy
+:math:`E = \\sum_{i<j} \\frac{1}{2} \\max(0, r_{ij}^{\\min} - d_{ij})^2`,
+where :math:`r_{ij}^{\\min} = \\text{cov\\_scale} \\cdot (r_i + r_j)`.
 """
 
 from __future__ import annotations

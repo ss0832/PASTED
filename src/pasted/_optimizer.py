@@ -1,56 +1,81 @@
 """
 pasted._optimizer
 =================
-Objective-based structure optimization.
+Objective-based structure optimization via Markov Chain Monte Carlo.
 
-Three methods
--------------
-``"annealing"``
-    Simulated Annealing with exponential cooling from *T_start* to *T_end*.
-``"basin_hopping"``
-    Basin-Hopping: each step applies a more thorough relaxation (3x relax
-    cycles) before the Metropolis acceptance test.  Temperature is held
-    constant at *T_start*.
-``"parallel_tempering"``
-    Parallel Tempering (replica exchange): *n_replicas* independent Markov
-    chains run at geometrically spaced temperatures between *T_start* and
-    *T_pt_high*.  Every *swap_interval* steps, adjacent replicas attempt a
-    swap via the Metropolis exchange criterion.  The lowest-temperature
-    replica benefits from high-temperature replicas crossing energy barriers.
-    All replicas final structures are returned in ``OptimizationResult``.
+Three methods are provided:
+
+``"annealing"`` — Simulated Annealing
+    Exponential temperature cooling from *T_start* to *T_end* over
+    *max_steps*.  Accepts moves via the Metropolis criterion.
+
+``"basin_hopping"`` — Basin-Hopping
+    Constant temperature (*T_start*) with 3× relax cycles per step for
+    stronger local minimization before each Metropolis test.
+
+``"parallel_tempering"`` — Replica-Exchange MC
+    *n_replicas* independent chains at geometrically spaced temperatures
+    between *T_end* (coldest) and *T_start* (hottest).  Adjacent replicas
+    attempt a state exchange every *pt_swap_interval* steps, tunneling
+    good states from hot replicas to cold ones.  At equal wall time, PT
+    typically outperforms SA and BH on rugged objective landscapes.
 
 Move types (chosen with equal probability each step)
-----------------------------------------------------
+-----------------------------------------------------
 Fragment coordinate move
-    Compute per-atom Q6.  Atoms whose local Q6 exceeds *frag_threshold*
-    are considered "accidentally ordered" and are displaced by a random
-    vector of magnitude <= *move_step* Ang.  If no atom exceeds the threshold
-    (structure is already fully disordered), a single random atom is moved.
-Composition move
-    Parity-preserving composition change: select a random atom and replace
-    it with a different element drawn from *element_pool* whose atomic number
-    has the same parity (Z mod 2) as the original, so the total electron
-    count parity is preserved and charge/multiplicity validity is maintained.
-    When no same-parity candidate exists in the pool, two atoms are replaced
-    simultaneously so the combined ΔZ is even (parity-preserving fallback).
+    Atoms whose local Q6 exceeds *frag_threshold* are displaced by a
+    random vector of magnitude ≤ *move_step* Å.  If no atom exceeds the
+    threshold, a single random atom is moved.
 
-    If the initial structure supplied to :meth:`StructureOptimizer.run`
-    contains atoms outside the element pool, they are replaced by
-    parity-compatible pool elements before the MC loop starts.
-    This sanitization is applied in all three methods (SA, BH, and PT)
-    via :func:`_sanitize_atoms_to_pool`.
+Affine coordinate move (when ``allow_affine_moves=True``)
+    Random stretch/compress along one axis, shear of one axis pair, and
+    optional per-atom jitter.  The center of mass is pinned.  Controlled
+    by ``affine_strength`` (and the optional ``affine_stretch``,
+    ``affine_shear``, ``affine_jitter`` overrides).
+
+Composition move
+    Parity-preserving element replacement: a random atom is replaced with
+    an element from *element_pool* whose atomic number has the same parity
+    (Z mod 2) as the original, preserving the total electron-count parity
+    and therefore charge/multiplicity validity.  When no same-parity
+    candidate exists, two atoms are replaced simultaneously so that the
+    combined ΔZ is even (fallback path).
+
+    If the initial structure passed to :meth:`StructureOptimizer.run`
+    contains atoms outside the pool, each foreign atom is replaced by a
+    parity-compatible pool element via :func:`_sanitize_atoms_to_pool`
+    before the MC loop begins.  This sanitization applies to SA, BH, and PT.
 
 Objective function
 ------------------
 The objective is **maximized**.  Pass a weight dict or any callable::
 
-    # dict: f = sum(w * metric)
+    # Dict form: f = sum(w * metric)
     objective = {"H_atom": 1.0, "H_spatial": 1.0, "Q6": -2.0}
 
-    # callable
+    # 1-arg callable
     objective = lambda m: m["H_spatial"] - 2.0 * m["Q6"]
 
-Use negative weights to penalise a metric.
+    # 2-arg callable with EvalContext (full structure + optimizer state)
+    def my_obj(m, ctx):
+        pos = np.array(ctx.positions)
+        return float(m["H_total"]) - float(np.max(ctx.per_atom_q6))
+
+Use negative weights to penalize a metric.
+
+Public API
+----------
+:class:`StructureOptimizer`
+    Main entry point.  Build, then call ``.run()`` to get an
+    :class:`OptimizationResult`.
+:class:`OptimizationResult`
+    List-compatible container of per-restart structures, sorted
+    best-first.  ``result.best`` is the highest-scoring structure.
+:class:`EvalContext`
+    Frozen snapshot of the current candidate structure and live optimizer
+    state, passed as the second argument to 2-parameter objective callables.
+:func:`parse_objective_spec`
+    Convert a list of ``"METRIC:WEIGHT"`` strings to an objective dict.
 """
 
 from __future__ import annotations

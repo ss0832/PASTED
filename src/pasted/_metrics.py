@@ -1,21 +1,60 @@
 """
 pasted._metrics
 ===============
-Disorder-metric computations.
+Disorder-metric computations for PASTED structures.
 
-All public metric functions accept ``pts`` (position array) plus a ``cutoff``
-parameter and build their own neighbor lists internally.
+All public metric functions accept *pts* (an (N, 3) position array) and a
+*cutoff* distance in Ångströms, then build their own neighbor lists
+internally using the local-pair approximation (O(N·k), k = mean neighbor
+count within *cutoff*).
 
-**C++ path** (``HAS_GRAPH = True``): ``rdf_h_cpp`` and ``graph_metrics_cpp``
-use a single ``FlatCellList`` pass for O(N*k) pair enumeration.
-``scipy.spatial.distance.pdist`` / ``squareform`` are **not called** on this
-path.
+Acceleration paths
+------------------
+**C++ path** (``HAS_GRAPH = True``): :func:`compute_all_metrics` calls
+``rdf_h_cpp`` and ``graph_metrics_cpp``, each of which uses a single
+``FlatCellList`` O(N·k) traversal.  A shared adjacency list is built once
+and reused for all five graph/ring/charge/Moran metrics.
+``scipy.spatial.distance.pdist`` / ``squareform`` are **never called** on
+this path.
 
-**Pure-Python fallback** (``HAS_GRAPH = False``): ``_compute_graph_ring_charge``
-falls back to ``_squareform(_pdist(pts))`` — an O(N²) operation.  This path
-is active when the C++17 extensions did not compile at install time (e.g. no
-compiler available).  For N ≳ 500 the O(N²) cost becomes significant; see
-the *Installation* section of the quickstart for performance guidance.
+**Pure-Python fallback** (``HAS_GRAPH = False``): :func:`compute_h_spatial`
+and :func:`compute_rdf_deviation` use ``scipy.spatial.cKDTree`` (O(N·k)),
+but ``_compute_graph_ring_charge`` falls back to a full O(N²)
+``pdist`` / ``squareform`` matrix.  For N ≳ 500 this path becomes
+significantly slower; reinstall with a C++17 compiler to enable
+``HAS_GRAPH = True``.
+
+Metrics catalog
+---------------
+All 13 metrics returned by :func:`compute_all_metrics`:
+
+===================  ========  ================================================
+Metric               Range     Description
+===================  ========  ================================================
+``H_atom``           ≥ 0       Shannon entropy of element composition
+``H_spatial``        ≥ 0       Shannon entropy of pair-distance histogram
+``H_total``          ≥ 0       ``w_atom*H_atom + w_spatial*H_spatial``
+``RDF_dev``          ≥ 0       RMS deviation of empirical g(r) from ideal gas
+``shape_aniso``      [0, 1]    Relative shape anisotropy (0=sphere, 1=rod)
+``Q4``, ``Q6``,      [0, 1]    Steinhardt bond-order parameters
+``Q8``
+``graph_lcc``        [0, 1]    Largest connected-component fraction
+``graph_cc``         [0, 1]    Mean clustering coefficient
+``ring_fraction``    [0, 1]    Fraction of atoms in at least one cycle
+``charge_frustration`` ≥ 0     Variance of |Δχ| across cutoff-adjacent pairs
+``moran_I_chi``      (-∞, 1]   Moran's I spatial autocorrelation for Pauling EN
+===================  ========  ================================================
+
+Changelog highlights
+--------------------
+* **v0.3.10**: ``compute_shape_anisotropy`` guard tightened from ``tr == 0``
+  to ``tr < 1e-30``, fixing a ``ZeroDivisionError`` on subnormal coordinate
+  differences.
+* **v0.3.9**: ``_steinhardt_per_atom_sparse`` masks bonds with d < 1e-10 Å,
+  matching the C++ threshold and fixing a C++/Python consistency bug.
+* **v0.3.8**: ``moran_I_chi`` clamped to 1.0 to fix sparse-graph artefact.
+* **v0.3.6**: Tarjan bridge-finding replaces Union-Find in
+  ``compute_ring_fraction``, fixing systematic undercounting of ring members.
 """
 
 from __future__ import annotations

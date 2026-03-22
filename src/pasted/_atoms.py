@@ -1,8 +1,34 @@
 """
 pasted._atoms
 =============
-Atomic data (Z → symbol mapping, Pyykkö covalent radii) and all
-input-parsing / validation helpers that do not depend on numpy.
+Atomic data (Z → symbol mapping, Pyykkö covalent radii, Pauling
+electronegativities) and all input-parsing / validation helpers that do not
+depend on NumPy.
+
+Public names
+------------
+ATOMIC_NUMBERS : dict[str, int]
+    Element symbol → atomic number, Z = 1–106.
+ALL_METRICS : tuple[str, ...]
+    Names of all 13 disorder metrics returned by
+    :func:`~pasted._metrics.compute_all_metrics`.
+PAULING_EN_FALLBACK : float
+    Default electronegativity value (1.0) used for elements without a
+    tabulated Pauling value (noble gases, etc.).
+cov_radius_ang(sym) → float
+    Pyykkö covalent radius in Ångströms.
+pauling_electronegativity(sym) → float
+    Pauling electronegativity (1960 / IUPAC 2016 scale).
+parse_element_spec(spec) → list[str]
+    Accept a numeric string (``"6,7,8"`` or ``"1-30"``), a list of symbols
+    (``["C","N","O"]``), or ``None`` (all Z = 1–106).
+validate_charge_mult(atoms, charge, mult) → tuple[bool, str]
+    Return ``(True, "")`` when the electron count parity is consistent with
+    the requested charge and multiplicity.
+default_element_pool() → list[str]
+    All 106 elements ordered by atomic number.
+parse_filter(spec) → tuple[str, float, float]
+    Parse a ``"METRIC:MIN:MAX"`` filter string.
 """
 
 from __future__ import annotations
