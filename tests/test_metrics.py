@@ -245,9 +245,13 @@ class TestComputeRingFraction:
         return squareform(pdist(np.array(pos)))
 
     def test_triangle_all_in_ring(self) -> None:
+        # All 3 atoms of a triangle must be ring members.
+        # The old Union-Find implementation returned 2/3 (only back-edge
+        # endpoints were marked).  The Tarjan bridge-finding fix correctly
+        # returns 1.0 for all ring sizes.
         dmat = self._dmat(_RING_POS)
         result = compute_ring_fraction(_RING_ATOMS, dmat, cutoff=2.13)
-        assert result == pytest.approx(2 / 3, rel=1e-6)
+        assert result == pytest.approx(1.0)
 
     def test_linear_chain_no_ring(self) -> None:
         pos = [(0.0, 0.0, 0.0), (1.4, 0.0, 0.0), (2.8, 0.0, 0.0)]

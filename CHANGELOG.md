@@ -8,7 +8,57 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
+### Bug Fixes
+
+#### BUG — `ring_fraction` undercounted ring membership for all cycle sizes (`_metrics.py`, `_graph_core.cpp`)
+
+The previous implementation used a Union-Find (Disjoint Set Union) algorithm to
+detect rings: when processing the bond graph edge-by-edge, any edge that
+connected two vertices already in the same component was a "back-edge" and its
+two endpoints were marked as ring members.
+
+This approach is fundamentally incorrect for identifying ring membership.
+Union-Find can determine *whether* a cycle exists, but it cannot identify
+*all vertices* that belong to a cycle.  Only the two direct endpoints of the
+detected back-edge were ever marked, leaving every other atom in the ring
+unmarked.  For a ring of N atoms, the back-edge connects the last two atoms to
+close the cycle, so only 2 out of N atoms were counted:
+
+| Ring size | Old result | Correct result |
+|-----------|-----------|----------------|
+| 3-cycle   | 2/3       | 3/3            |
+| 5-cycle   | 2/5       | 5/5            |
+| 6-cycle   | 2/6       | 6/6            |
+| N-cycle   | 2/N       | N/N            |
+
+This affected both the pure-Python path (`compute_ring_fraction` in
+`_metrics.py`) and the C++ path (`graph_metrics_cpp` in `_graph_core.cpp`),
+which used an identical Union-Find implementation.
+
+**Impact:** Any filter using `ring_fraction` (e.g. `ring_fraction:0.5:-`) would
+silently reject structures that are genuinely ring-rich, because the reported
+value was always ≤ 2/N regardless of the actual ring composition.
+
+**Fix:** Replaced Union-Find with **Tarjan's iterative bridge-finding algorithm**
+(O(N + E)).  A bridge is an edge whose removal disconnects the graph — i.e. an
+edge that is *not* part of any cycle.  An atom is in a ring if and only if at
+least one of its incident edges is a non-bridge.  The iterative DFS
+implementation avoids Python's recursion limit for large structures.
+
+Helper functions `_build_adj` and `_tarjan_bridges` were extracted to keep
+`compute_ring_fraction` readable.  The C++ path received the same algorithm
+using `std::unordered_set` for O(1) bridge lookups.
+
+**Affected files:**
+- `src/pasted/_metrics.py` — `compute_ring_fraction` rewritten; `_build_adj`
+  and `_tarjan_bridges` added; `Iterator` import added
+- `src/pasted/_ext/_graph_core.cpp` — `ring_fraction` block replaced with
+  iterative Tarjan; `#include <unordered_set>` added; header comment updated
+- `tests/test_metrics.py` — `test_triangle_all_in_ring` updated from `2/3`
+  to `1.0`
+- `tests/test_fallback_paths.py` — `TestRingFractionRegression` class added
+
+---
 
 #### REFACTOR — Decouple `stream()` / `generate()` via `_stream_with_stats()` (`_generator.py`)
 

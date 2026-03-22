@@ -5,7 +5,7 @@
  * distance-histogram metrics, all sharing a FlatCellList spatial index.
  *
  * Graph / bond metrics (graph_metrics_cpp, single FlatCellList pass):
- *   ring_fraction      — O(N·alpha(N))  Union-Find ring detection
+ *   ring_fraction      — O(N+E)          Tarjan iterative bridge-finding
  *   charge_frustration — O(N·k)         variance of |delta-chi| over pairs
  *   graph_lcc          — O(N·k)         largest-connected-component fraction
  *   graph_cc           — O(N·k^2)       mean clustering coefficient (k small)
@@ -50,6 +50,7 @@
 #include <numeric>
 #include <tuple>
 #include <vector>
+#include <unordered_set>
 
 namespace py = pybind11;
 using F64Array = py::array_t<double, py::array::c_style | py::array::forcecast>;
@@ -212,20 +213,68 @@ py::dict graph_metrics_cpp(
                 accumulate(i, j);
     }
 
-    // ring_fraction: Union-Find on bond graph
+    // ring_fraction: Tarjan iterative bridge-finding O(N+E)
+    // An atom is in a ring iff at least one of its incident edges is a
+    // non-bridge.  Union-Find only marked back-edge endpoints, systematically
+    // undercounting ring membership (e.g. 2/3 for a triangle instead of 3/3).
     double ring_fraction = 0.0;
     if (n >= 3) {
-        UnionFind uf(n);
+        std::vector<int>  disc(n, -1), low(n, 0);
         std::vector<bool> in_ring(n, false);
-        for (int i = 0; i < n; ++i) {
-            for (int j : bond_adj[i]) {
-                if (j <= i) continue;
-                if (!uf.unite(i, j)) {
-                    in_ring[i] = true;
-                    in_ring[j] = true;
+        // Bridge set: stored as sorted pair (min,max) packed into int64
+        std::unordered_set<int64_t> bridges;
+        int timer = 0;
+
+        // Iterative DFS — avoids stack overflow for large n
+        // Stack entry: {vertex, parent, next_neighbour_index}
+        struct Frame { int u, parent, idx; };
+        std::vector<Frame> stk;
+        stk.reserve(n);
+
+        for (int start = 0; start < n; ++start) {
+            if (disc[start] != -1) continue;
+            disc[start] = low[start] = timer++;
+            stk.push_back({start, -1, 0});
+
+            while (!stk.empty()) {
+                auto& [u, par, idx] = stk.back();
+                if (idx < static_cast<int>(bond_adj[u].size())) {
+                    int v = bond_adj[u][idx++];
+                    if (disc[v] == -1) {
+                        // Tree edge
+                        disc[v] = low[v] = timer++;
+                        stk.push_back({v, u, 0});
+                    } else if (v != par) {
+                        // Back edge: tighten low[u]
+                        if (disc[v] < low[u]) low[u] = disc[v];
+                    }
+                } else {
+                    // All neighbours exhausted; propagate low upward
+                    stk.pop_back();
+                    if (!stk.empty()) {
+                        int pu = stk.back().u;
+                        if (low[u] < low[pu]) low[pu] = low[u];
+                        if (low[u] > disc[pu]) {
+                            // (pu, u) is a bridge
+                            int a = std::min(pu, u), b = std::max(pu, u);
+                            bridges.insert((int64_t)a << 32 | (uint32_t)b);
+                        }
+                    }
                 }
             }
         }
+
+        // Mark atoms that have at least one non-bridge incident edge
+        for (int i = 0; i < n; ++i) {
+            for (int j : bond_adj[i]) {
+                int a = std::min(i, j), b = std::max(i, j);
+                if (bridges.find((int64_t)a << 32 | (uint32_t)b) == bridges.end()) {
+                    in_ring[i] = true;
+                    break;
+                }
+            }
+        }
+
         int ring_count = 0;
         for (int i = 0; i < n; ++i) if (in_ring[i]) ++ring_count;
         ring_fraction = static_cast<double>(ring_count) / n;

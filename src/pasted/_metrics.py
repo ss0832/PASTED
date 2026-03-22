@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -352,6 +353,97 @@ def compute_graph_metrics(dmat: np.ndarray, cutoff: float) -> dict[str, float]:
 # ---------------------------------------------------------------------------
 
 
+def _build_adj(n: int, dmat: np.ndarray, cutoff: float) -> list[list[int]]:
+    """Build an undirected adjacency list from a distance matrix.
+
+    Parameters
+    ----------
+    n:
+        Number of atoms.
+    dmat:
+        Full n x n pairwise distance matrix (Å).
+    cutoff:
+        Distance threshold; a pair (i, j) is bonded when
+        ``1e-6 < dmat[i, j] <= cutoff``.
+
+    Returns
+    -------
+    list[list[int]]
+        ``adj[i]`` is the list of atom indices bonded to atom *i*.
+    """
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1, n):
+            if 1e-6 < dmat[i, j] <= cutoff:
+                adj[i].append(j)
+                adj[j].append(i)
+    return adj
+
+
+def _tarjan_bridges(adj: list[list[int]], n: int) -> set[tuple[int, int]]:
+    """Find all bridge edges using Tarjan's iterative DFS algorithm.
+
+    A *bridge* is an edge whose removal disconnects the graph (i.e. it is
+    not part of any cycle).  An atom is in at least one ring if and only if
+    at least one of its incident edges is a non-bridge.
+
+    This iterative implementation avoids Python's recursion limit, which
+    can be hit for large or deeply connected structures.
+
+    Time complexity
+    ---------------
+    O(N + E) where E is the number of edges (O(N · k) for sparse graphs).
+
+    Parameters
+    ----------
+    adj:
+        Undirected adjacency list (output of :func:`_build_adj`).
+    n:
+        Number of vertices.
+
+    Returns
+    -------
+    set of (int, int)
+        Each bridge is stored as ``(min(u, v), max(u, v))``.
+    """
+    disc: list[int] = [-1] * n
+    low: list[int] = [0] * n
+    bridges: set[tuple[int, int]] = set()
+    timer = 0
+
+    for start in range(n):
+        if disc[start] != -1:
+            continue
+        disc[start] = low[start] = timer
+        timer += 1
+        # Stack entries: (vertex, parent, iterator over its neighbours)
+        stack: list[tuple[int, int, Iterator[int]]] = [
+            (start, -1, iter(adj[start]))
+        ]
+        while stack:
+            u, parent_v, it = stack[-1]
+            try:
+                v = next(it)
+                if disc[v] == -1:
+                    # Tree edge: discover v
+                    disc[v] = low[v] = timer
+                    timer += 1
+                    stack.append((v, u, iter(adj[v])))
+                elif v != parent_v:
+                    # Back edge: tighten low[u]
+                    low[u] = min(low[u], disc[v])
+            except StopIteration:
+                # All neighbours of u exhausted; propagate low upward
+                stack.pop()
+                if stack:
+                    pu = stack[-1][0]
+                    low[pu] = min(low[pu], low[u])
+                    if low[u] > disc[pu]:
+                        bridges.add((min(u, pu), max(u, pu)))
+
+    return bridges
+
+
 def compute_ring_fraction(
     atoms: list[str],
     dmat: np.ndarray,
@@ -359,11 +451,22 @@ def compute_ring_fraction(
 ) -> float:
     """Fraction of atoms that belong to at least one ring.
 
-    Builds a neighbor graph using the *cutoff* distance threshold, then
-    detects rings via a Union-Find spanning-tree construction: every
-    back-edge (i.e. an edge between two vertices already in the same
-    component) indicates a cycle, and both its endpoints are marked as
-    ring members.
+    Builds a neighbour graph from the distance matrix and finds all bridge
+    edges using Tarjan's iterative DFS algorithm (O(N + E)).  An atom is
+    considered to be *in a ring* if and only if at least one of its incident
+    edges is a non-bridge — that is, it participates in a cycle.
+
+    This correctly identifies **all** members of every cycle, including
+    atoms reached only via tree edges that connect into a cycle.  The
+    previous Union-Find implementation only marked the two direct endpoints
+    of each detected back-edge, which systematically undercounted ring
+    membership (e.g. a 3-cycle was reported as 2/3 instead of 3/3, a
+    6-cycle as 2/6 instead of 6/6).
+
+    .. note::
+        The C++ ``graph_metrics_cpp`` path (``HAS_GRAPH = True``) has been
+        updated in the same release to use the same Tarjan algorithm, so
+        both paths now return consistent values.
 
     Parameters
     ----------
@@ -372,7 +475,7 @@ def compute_ring_fraction(
     dmat:
         Full n x n pairwise distance matrix (Å).
     cutoff:
-        Distance cutoff (Å).  A pair is counted as connected when
+        Distance cutoff (Å).  A pair is counted as bonded when
         ``d_ij <= cutoff``.
 
     Returns
@@ -385,34 +488,15 @@ def compute_ring_fraction(
     if n < 3:
         return 0.0
 
-    parent = list(range(n))
-    rank = [0] * n
-
-    def _find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]  # path compression
-            x = parent[x]
-        return x
-
-    def _union(a: int, b: int) -> bool:
-        """Union by rank.  Returns False (back-edge) when already in same set."""
-        ra, rb = _find(a), _find(b)
-        if ra == rb:
-            return False
-        if rank[ra] < rank[rb]:
-            ra, rb = rb, ra
-        parent[rb] = ra
-        if rank[ra] == rank[rb]:
-            rank[ra] += 1
-        return True
+    adj = _build_adj(n, dmat, cutoff)
+    bridges = _tarjan_bridges(adj, n)
 
     in_ring = [False] * n
     for i in range(n):
-        for j in range(i + 1, n):
-            if 1e-6 < dmat[i, j] <= cutoff:
-                if not _union(i, j):  # back-edge -> cycle detected
-                    in_ring[i] = True
-                    in_ring[j] = True
+        for j in adj[i]:
+            if (min(i, j), max(i, j)) not in bridges:
+                in_ring[i] = True
+                break  # one non-bridge edge is enough
 
     return float(sum(in_ring) / n)
 
