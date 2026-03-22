@@ -1,5 +1,5 @@
 /**
- * pasted._ext._graph_core  (v0.2.9)
+ * pasted._ext._graph_core  (v0.2.10)
  * ====================================
  * C++17 O(N·k) implementations of five graph-based disorder metrics and two
  * distance-histogram metrics, all sharing a FlatCellList spatial index.
@@ -8,10 +8,10 @@
  *   ring_fraction      — O(N+E)          Tarjan iterative bridge-finding
  *   charge_frustration — O(N·k)         variance of |delta-chi| over pairs
  *   graph_lcc          — O(N·k)         largest-connected-component fraction
- *   graph_cc           — O(N·k^2)       mean clustering coefficient (k small)
+ *   graph_cc           — O(N·k²·log k)  mean clustering coefficient (sorted adj)
  *   moran_I_chi        — O(N·k)         Moran's I spatial autocorrelation
  *
- * Distance-histogram metrics (rdf_h_cpp, one FlatCellList pass):
+ * Distance-histogram metrics (rdf_h_cpp, one FlatCellList pass, streaming):
  *   h_spatial          — O(N·k)  Shannon entropy of distance histogram
  *   rdf_dev            — O(N·k)  RMS deviation of g(r) from ideal gas
  *
@@ -188,7 +188,7 @@ py::dict graph_metrics_cpp(
     // covalent diameter) captures genuine nearest-neighbor contacts in the
     // relaxed structure and produces informative non-zero values for
     // ring_fraction and charge_frustration.
-    std::vector<std::vector<int>> bond_adj(n), graph_adj(n);
+    std::vector<std::vector<int>> bond_adj(n);
 
     auto accumulate = [&](int i, int j) {
         const double dx = pts[3*i  ]-pts[3*j  ];
@@ -198,8 +198,6 @@ py::dict graph_metrics_cpp(
         if (d <= cutoff && d > 1e-6) {
             bond_adj[i].push_back(j);
             bond_adj[j].push_back(i);
-            graph_adj[i].push_back(j);
-            graph_adj[j].push_back(i);
         }
     };
 
@@ -212,6 +210,11 @@ py::dict graph_metrics_cpp(
             for (int j = i+1; j < n; ++j)
                 accumulate(i, j);
     }
+    // Sort adjacency lists once so graph_cc can use binary_search (O(log k))
+    // instead of std::find (O(k)), reducing triangle-counting from O(N·k³)
+    // to O(N·k²·log k).
+    for (int i = 0; i < n; ++i)
+        std::sort(bond_adj[i].begin(), bond_adj[i].end());
 
     // ring_fraction: Tarjan iterative bridge-finding O(N+E)
     // An atom is in a ring iff at least one of its incident edges is a
@@ -307,7 +310,7 @@ py::dict graph_metrics_cpp(
     {
         UnionFind uf(n);
         for (int i = 0; i < n; ++i)
-            for (int j : graph_adj[i])
+            for (int j : bond_adj[i])
                 if (j > i) uf.unite(i, j);
 
         std::vector<int> comp_size(n, 0);
@@ -318,14 +321,14 @@ py::dict graph_metrics_cpp(
         double cc_sum = 0.0;
         int    cc_cnt = 0;
         for (int i = 0; i < n; ++i) {
-            const auto& nb = graph_adj[i];
+            const auto& nb = bond_adj[i];
             const int   k  = static_cast<int>(nb.size());
             if (k < 2) continue;
             int tri = 0;
             for (int a = 0; a < k; ++a)
                 for (int b = a + 1; b < k; ++b) {
-                    const auto& nb_a = graph_adj[nb[a]];
-                    if (std::find(nb_a.begin(), nb_a.end(), nb[b]) != nb_a.end())
+                    const auto& nb_a = bond_adj[nb[a]];
+                    if (std::binary_search(nb_a.begin(), nb_a.end(), nb[b]))
                         ++tri;
                 }
             cc_sum += static_cast<double>(tri) / (k * (k - 1) / 2);
@@ -335,7 +338,7 @@ py::dict graph_metrics_cpp(
     }
 
     // moran_I_chi: spatial autocorrelation for electronegativity
-    // Reuses graph_adj (same cutoff adjacency) — no extra FlatCellList build.
+    // Reuses bond_adj (same cutoff adjacency) — no extra FlatCellList build.
     double moran_I = 0.0;
     {
         double chi_bar = 0.0;
@@ -351,7 +354,7 @@ py::dict graph_metrics_cpp(
         if (denom_m > 1e-30) {
             double numer_m = 0.0, W_sum_m = 0.0;
             for (int i = 0; i < n; ++i) {
-                for (int j : graph_adj[i]) {
+                for (int j : bond_adj[i]) {
                     if (j > i) {
                         numer_m += 2.0 * dev_v[i] * dev_v[j];
                         W_sum_m += 2.0;
@@ -400,21 +403,27 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
 
     if (n < 2 || cutoff <= 0.0 || n_bins < 1) return result;
 
-    // Enumerate pairs and compute distances in a single FlatCellList pass.
-    const double cutoff2 = cutoff * cutoff;
-    std::vector<double> pair_dists;
+    // Enumerate pairs and stream directly into histogram — no intermediate
+    // distance vector.  Avoids O(N·k) heap allocation for pair_dists.
+    const double cutoff2   = cutoff * cutoff;
+    const double bin_width = cutoff / n_bins;
+    std::vector<int> hist(static_cast<std::size_t>(n_bins), 0);
+    int pair_count = 0;
 
     auto collect = [&](int i, int j) {
         const double dx = pts[3*i  ] - pts[3*j  ];
         const double dy = pts[3*i+1] - pts[3*j+1];
         const double dz = pts[3*i+2] - pts[3*j+2];
         const double d2 = dx*dx + dy*dy + dz*dz;
-        if (d2 <= cutoff2 && d2 > 1e-20)
-            pair_dists.push_back(std::sqrt(d2));
+        if (d2 <= cutoff2 && d2 > 1e-20) {
+            int b = static_cast<int>(std::sqrt(d2) / bin_width);
+            if (b >= n_bins) b = n_bins - 1;
+            ++hist[static_cast<std::size_t>(b)];
+            ++pair_count;
+        }
     };
 
     if (n >= CELL_LIST_THRESHOLD) {
-        pair_dists.reserve(static_cast<std::size_t>(n) * 10);
         FlatCellList cl;
         cl.build(pts, n, cutoff);
         cl.for_each_pair(n, collect);
@@ -424,19 +433,10 @@ py::dict rdf_h_cpp(F64Array pts_in, double cutoff, int n_bins) {
                 collect(i, j);
     }
 
-    if (pair_dists.empty()) return result;
-
-    // Build histogram over [0, cutoff]
-    const double bin_width = cutoff / n_bins;
-    std::vector<int> hist(static_cast<std::size_t>(n_bins), 0);
-    for (double d : pair_dists) {
-        int b = static_cast<int>(d / bin_width);
-        if (b >= n_bins) b = n_bins - 1;
-        ++hist[static_cast<std::size_t>(b)];
-    }
+    if (pair_count == 0) return result;
 
     // h_spatial: Shannon entropy of the histogram
-    const double total = static_cast<double>(pair_dists.size());
+    const double total = static_cast<double>(pair_count);
     double h_spatial = 0.0;
     for (int c : hist) {
         if (c > 0) {
@@ -541,7 +541,7 @@ double moran_I_chi_cpp(F64Array pts_in, F64Array en_in, double cutoff) {
 
 PYBIND11_MODULE(_graph_core, m) {
     m.doc() =
-        "pasted._ext._graph_core (v0.2.9)\n"
+        "pasted._ext._graph_core (v0.2.10)\n"
         "O(N*k) graph and distance-histogram metrics via FlatCellList.\n"
         "FlatCellList spatial index for N >= 64; O(N^2) full-pair for N < 64.\n"
         "All computation is single-threaded (no OpenMP).\n"

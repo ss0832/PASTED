@@ -619,18 +619,24 @@ def _compute_graph_ring_charge(
 
     Uses the C++ ``graph_metrics_cpp`` (``HAS_GRAPH = True``) when available;
     this path builds a ``FlatCellList`` once and computes all five metrics in
-    O(N*k).
+    O(N·k) with a single adjacency list (no intermediate distance matrix).
 
     When ``HAS_GRAPH = False`` (C++ extension unavailable), falls back to the
-    pure-Python implementations in this module.  The fallback constructs a
-    full N×N distance matrix via ``scipy.spatial.distance.pdist`` /
-    ``squareform`` — an **O(N²) operation** — and passes it to
-    :func:`compute_graph_metrics`, :func:`compute_ring_fraction`,
-    :func:`compute_charge_frustration`, and :func:`compute_moran_I_chi`.
+    pure-Python implementations in this module.
 
-    .. note::
-        The O(N²) fallback can be slow for N ≳ 500.  Install with a C++17
-        compiler to enable the O(N*k) C++ path (``HAS_GRAPH = True``).
+    .. warning:: **O(N²) Python fallback — emergency use only.**
+
+        This path constructs a full N×N distance matrix via
+        ``scipy.spatial.distance.pdist`` / ``squareform``, which is an
+        **O(N²) memory and time operation**.  At N=500 the matrix alone
+        occupies ~2 MB and the wall time is ~100× slower than the C++ path
+        (~100 ms vs ~1 ms).  At N=2000 the matrix is ~32 MB and the call
+        takes several seconds.
+
+        This fallback exists only for environments where the C++ extension
+        cannot be compiled.  **It is not intended for production use.**
+        Install with a C++17 compiler (``pip install -e .`` after
+        ``pip install pybind11``) to enable ``HAS_GRAPH = True``.
     """
     if _HAS_GRAPH:
         # Single C++ call: FlatCellList built once, all 5 metrics computed.
@@ -660,18 +666,21 @@ def compute_all_metrics(
     :data:`~pasted._atoms.ALL_METRICS`).
 
     **C++ path** (``HAS_GRAPH = True``): all pair-enumeration uses a single
-    ``FlatCellList`` built in C++, giving O(N*k) complexity throughout.
-    All computation is single-threaded.  The two-pass pair-collection with
-    dead OpenMP scaffolding that existed in v0.2.3–v0.2.8 was reverted in
-    v0.2.9 to the original single-pass lambda pattern, restoring the
-    performance level of v0.1.x.
-    ``scipy.spatial.distance.pdist`` / ``squareform`` are not called.
+    shared adjacency list built via ``FlatCellList`` (O(N·k)).  The adjacency
+    list is constructed once and reused for all five graph/ring/charge/Moran
+    metrics.  ``graph_cc`` triangle counting uses sorted adjacency lists with
+    ``binary_search`` for O(N·k²·log k) rather than the former O(N·k³)
+    ``std::find`` scan.  ``rdf_h_cpp`` streams distances directly into the
+    histogram without materialising an intermediate ``pair_dists`` vector.
+    ``scipy.spatial.distance.pdist`` / ``squareform`` are **never called**.
 
     **Pure-Python fallback** (``HAS_GRAPH = False``): :func:`compute_h_spatial`
-    and :func:`compute_rdf_deviation` use ``scipy.spatial.cKDTree`` (O(N*k)),
+    and :func:`compute_rdf_deviation` use ``scipy.spatial.cKDTree`` (O(N·k)),
     but the five graph/ring/charge/Moran metrics are computed via
     :func:`_compute_graph_ring_charge`, which builds a full N×N distance
-    matrix with ``pdist`` / ``squareform`` — an **O(N²) operation**.
+    matrix with ``pdist`` / ``squareform`` — an **O(N²) operation** that is
+    ~100× slower than the C++ path at N=500.  This fallback is intended only
+    for environments where the C++ extension cannot be compiled.
 
     Parameters
     ----------

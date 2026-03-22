@@ -82,17 +82,24 @@ therefore be used as ``--filter`` targets on the CLI and in the
 
    :data:`~pasted._ext.HAS_GRAPH` enables O(N·k) pair enumeration for
    ``graph_lcc``, ``graph_cc``, ``ring_fraction``, ``charge_frustration``,
-   ``moran_I_chi``, ``H_spatial``, and ``RDF_dev`` (~25× vs. the O(N²)
-   ``scipy`` fallback).
+   ``moran_I_chi``, ``H_spatial``, and ``RDF_dev``.  The C++ implementation
+   uses a single shared adjacency list (no duplicate allocations), sorted
+   adjacency for O(log k) triangle lookup in ``graph_cc``, and streaming
+   histogram construction in ``rdf_h_cpp`` (no intermediate distance vector).
 
    :data:`~pasted._ext.HAS_STEINHARDT` enables sparse per-atom Steinhardt
    computation for ``Q4``, ``Q6``, and ``Q8`` (~2000× vs. the dense Python
    fallback).
 
-   When ``HAS_GRAPH = False``, the five graph/ring/charge/Moran metrics are
-   computed via a full N×N distance matrix — significantly slower for
-   N ≳ 500 (e.g. ~3 s at N=1000 vs. ~17 ms with ``HAS_GRAPH=True``).
-   Reinstall with a C++17 compiler to enable all extensions.
+   .. warning::
+
+      When ``HAS_GRAPH = False``, the five graph/ring/charge/Moran metrics
+      fall back to a pure-Python path that builds a full **N×N distance
+      matrix** (O(N²) memory and time).  This is **~100× slower** than the
+      C++ path at N=500 (~100 ms vs. ~1 ms) and is intended only for
+      environments where the C++ extension cannot be compiled.  Reinstall
+      with a C++17 compiler (``pip install pybind11 && pip install -e .``)
+      to enable ``HAS_GRAPH = True``.
 
 .. note::
 

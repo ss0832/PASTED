@@ -204,10 +204,27 @@ Exposes two functions, each performing a single O(N·k) `FlatCellList` pass
 returns `{graph_lcc, graph_cc, ring_fraction, charge_frustration,
 moran_I_chi}` — all five cutoff-based graph metrics in one call.
 
+Internal design (v0.2.10):
+
+- A **single shared adjacency list** (`bond_adj`) is built from the
+  `FlatCellList` pass and reused for all five metrics.  The previous
+  implementation maintained two identical lists (`bond_adj` and `graph_adj`)
+  — a redundant O(N·k) allocation that has been removed.
+- `graph_cc` triangle counting now uses **sorted adjacency lists +
+  `std::binary_search`** (O(N·k²·log k)) rather than `std::find`
+  (O(N·k³)).  For realistic k ≈ 2–16 this is 2–4× faster.
+- `ring_fraction` uses **Tarjan's iterative bridge-finding** (O(N+E)) as of
+  the `ring_fraction` bug-fix release.  See the Unified adjacency section.
+
 **`rdf_h_cpp(pts, cutoff, n_bins)`** (added in v0.1.14)
 returns `{h_spatial, rdf_dev}` — Shannon entropy and RDF deviation of the
 pair-distance histogram within *cutoff*, replacing the former O(N²)
 `scipy.spatial.distance.pdist` path.
+
+Internal design (v0.2.10): distances are **streamed directly into the
+histogram** inside the `FlatCellList` `collect` lambda.  The previous
+implementation first collected all pair distances into a `std::vector<double>`
+before binning — an unnecessary O(N·k) heap allocation that has been removed.
 
 All metrics share the unified adjacency `d_ij ≤ cutoff`.
 All computation is **single-threaded** (no OpenMP dependency).
