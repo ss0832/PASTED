@@ -556,7 +556,7 @@ def _objective_needs_ctx(objective: ObjectiveType) -> bool:
 
 def _make_ctx(
     atoms: list[str],
-    positions: list,
+    positions: list[tuple[float, float, float]],
     metrics: dict[str, float],
     charge: int,
     mult: int,
@@ -633,7 +633,7 @@ def _make_ctx(
     """
     return EvalContext(
         atoms=tuple(atoms),
-        positions=tuple(tuple(p) for p in positions),
+        positions=tuple((float(p[0]), float(p[1]), float(p[2])) for p in positions),
         charge=charge,
         mult=mult,
         n_atoms=len(atoms),

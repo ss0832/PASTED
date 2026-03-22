@@ -550,7 +550,7 @@ def _angular_repulsion_gradient(pts: np.ndarray, cutoff: float) -> np.ndarray:
     """
     # ── C++ fast path ────────────────────────────────────────────────────
     if HAS_MAXENT:
-        return _cpp_angular_gradient(pts, cutoff)
+        return np.asarray(_cpp_angular_gradient(pts, cutoff))
 
     # ── Pure-Python / NumPy fallback ─────────────────────────────────────
     n = len(pts)

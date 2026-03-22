@@ -172,9 +172,21 @@ struct FlatCellList {
             zmin = std::min(zmin, pts[i * 3 + 2]); zmax = std::max(zmax, pts[i * 3 + 2]);
         }
         ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
-        nx = static_cast<int>((xmax - ox) * inv_cell) + 2;
-        ny = static_cast<int>((ymax - oy) * inv_cell) + 2;
-        nz = static_cast<int>((zmax - oz) * inv_cell) + 2;
+        // Guard: coarsen the grid if nx*ny*nz would overflow int or
+        // exceed the cell-count cap (1<<22 ≈ 4M cells, ~16 MB).
+        // Double cell_size until it fits; hot-loop stays int throughout.
+        {
+            static constexpr std::int64_t MAX_CELLS = 1LL << 22;
+            auto tent_nx = [&]{ return static_cast<int>((xmax - ox) * inv_cell) + 2; };
+            auto tent_ny = [&]{ return static_cast<int>((ymax - oy) * inv_cell) + 2; };
+            auto tent_nz = [&]{ return static_cast<int>((zmax - oz) * inv_cell) + 2; };
+            while (static_cast<std::int64_t>(tent_nx()) *
+                   tent_ny() * tent_nz() > MAX_CELLS) {
+                cell_size *= 2.0; inv_cell = 1.0 / cell_size;
+                ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
+            }
+            nx = tent_nx(); ny = tent_ny(); nz = tent_nz();
+        }
         cell_head.assign(static_cast<std::size_t>(nx * ny * nz), -1);
         next.resize(static_cast<std::size_t>(n));
         for (int i = 0; i < n; ++i) {

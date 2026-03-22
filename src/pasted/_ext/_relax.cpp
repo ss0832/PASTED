@@ -147,9 +147,18 @@ struct FlatCellList {
         ox = xmin - cell_size;
         oy = ymin - cell_size;
         oz = zmin - cell_size;
-        nx = static_cast<int>((xmax - ox) * inv_cell) + 2;
-        ny = static_cast<int>((ymax - oy) * inv_cell) + 2;
-        nz = static_cast<int>((zmax - oz) * inv_cell) + 2;
+        // Guard: coarsen grid until nx*ny*nz ≤ 1<<22 (4M cells).
+        {
+            static constexpr std::int64_t MAX_CELLS = 1LL << 22;
+            auto tnx=[&]{return static_cast<int>((xmax-ox)*inv_cell)+2;};
+            auto tny=[&]{return static_cast<int>((ymax-oy)*inv_cell)+2;};
+            auto tnz=[&]{return static_cast<int>((zmax-oz)*inv_cell)+2;};
+            while (static_cast<std::int64_t>(tnx())*tny()*tnz() > MAX_CELLS) {
+                cell_size *= 2.0; inv_cell = 1.0 / cell_size;
+                ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
+            }
+            nx = tnx(); ny = tny(); nz = tnz();
+        }
         const int total = nx * ny * nz;
         cell_head.assign(static_cast<std::size_t>(total), -1);
         next.resize(static_cast<std::size_t>(n));

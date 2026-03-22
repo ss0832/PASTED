@@ -2,10 +2,120 @@
 
 All notable changes to PASTED are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
 ## [Unreleased]
+
+---
+
+## [0.3.9] — 2026-03-22
+
+### Fixed
+
+#### BUG — `_steinhardt_per_atom_sparse`: 重複座標で Q=1 を返す（C++ は Q=0）
+
+*発見方法: `hypothesis` プロパティベーステスト*
+
+`scipy.spatial.cKDTree.query_pairs(cutoff)` は `d=0`（重複座標）のペアも返すが、
+Python 側が `safe_r_nb = where(r_nb>0, r_nb, 1.0)` でゼロ除算を回避しつつも
+そのペアを有効な結合として累積していた。C++ は `d < 1e-10` で完全スキップするため
+両パスに矛盾があった。修正: `r_nb < 1e-10` のボンドをマスクアウト。
+
+#### BUG — `parse_xyz`: 座標ブロック内の空白行で `ValueError` クラッシュ
+
+*発見方法: カバレッジ計測（未実行パス調査）*
+
+XYZ フォーマットでは空白行は合法なセパレータだが、座標ループ内で空白行を
+`len(parts) < 4` チェック前に `split()` した結果が空リストになり、
+`ValueError: Malformed coordinate line: ''` が発生していた。
+修正: 座標ループ内で空白行をスキップ。
+
+#### BUG — `FlatCellList::build()` で `int` 符号付き整数オーバーフロー
+
+*発見方法: UBSan（Undefined Behaviour Sanitizer）*
+*影響ファイル: `_steinhardt.cpp`, `_graph_core.cpp`, `_relax.cpp` の全 3 ファイル*
+
+`cutoff` が大きい（例: 1000 Å）とき、セル数 `nx * ny * nz` の計算が
+`int` をオーバーフローし、`cell_head.assign()` に不正なサイズが渡っていた
+（C++ 未定義動作）。
+
+**修正方針（案A）**: `int64_t` で積を監視し、`1<<22`（4M セル、約 16 MB）を
+超えたら `cell_size` を 2 倍にして再計算するループを追加。
+上限に収まった時点で `int` にキャストし、以降のホットループ
+（`for_each_neighbor`）は `int` 算術のまま — 実行時パフォーマンスに影響なし。
+
+### Added
+
+#### TEST — プロパティベーステスト群 (`tests/test_property_based.py`)
+
+`hypothesis` を使った 23 テスト（9 クラス）を追加:
+
+- `TestMetricRangeInvariants` — 全メトリクスの値域不変条件
+- `TestTranslationInvariance` — 平行移動不変性
+- `TestRotationInvariance` — 回転不変性
+- `TestCppVsPythonConsistency` — C++ ↔ Python sparse パス一致（atol=1e-10）
+- `TestFastPathVsGeneric` — ④ fast-path ↔ ①②③ generic 一致（atol=1e-10）
+- `TestGenerateInvariants` — `generate()` の原子数・パリティ・メトリクス完全性
+- `TestComputeAllMetricsCompleteness` — 全 13 キー存在・有限値・dict[str,float]
+- `TestPerAtomRanges` — per-atom Q_l も [0, 1] 内
+- `TestIdempotency` — 同一入力で同一出力（冪等性）
+
+### Changed (type annotations — mypy strict)
+
+- `_placement.py`: `angular_repulsion_gradient` の戻り値を `np.asarray()` でラップ（`Any` → `ndarray`）
+- `_optimizer.py`: `_make_ctx` の `positions: list` を `list[tuple[float, float, float]]` に明示化
+- `_optimizer.py`: `tuple(tuple(p) for p in positions)` を `(float(p[0]), float(p[1]), float(p[2]))` に修正（型不一致解消）
+
+---
+
+## [0.3.8]
+
+**Affected versions:** all releases prior to v0.3.9.
+**Affected code path:** Python fallback `_steinhardt_per_atom_sparse`
+in `src/pasted/_metrics.py`.
+
+**Root cause.**  `scipy.spatial.cKDTree.query_pairs(cutoff)` returns all
+pairs with `d ≤ cutoff`, including pairs where `d = 0` (coincident atoms).
+The fallback divided by `safe_r_nb = where(r_nb > 0, r_nb, 1.0)` to avoid
+division by zero, but kept the zero-distance bond in the accumulator.
+This inflated `deg[i]` and then produced `Q_l = 1.0` (the value for a
+perfectly ordered collinear structure) for every coincident atom, while the
+C++ path correctly skips bonds with `d < 1e-10` and returns `Q_l = 0.0`
+(isolated, no valid bond direction).
+
+**Example:**  Two atoms both placed at the origin with `cutoff=1.0`:
+```
+C++ path:    Q6 = [0.0, 0.0]   ← correct (undefined direction → skip)
+Python path: Q6 = [1.0, 1.0]   ← wrong (was accumulating d=0 bond)
+```
+
+**Fix.**  After building the directed bond array, bonds with `r_nb < 1e-10`
+are masked out before the unit-vector division and the `bincount`
+accumulation, matching the C++ threshold exactly.
+
+**Discovered by:** `hypothesis` property-based test
+`TestCppVsPythonConsistency::test_cpp_vs_python_sparse_l468`.
+
+### Added
+
+#### TEST — Property-based test suite (`tests/test_property_based.py`)
+
+Added `tests/test_property_based.py` — 23 `hypothesis`-driven tests covering
+9 property classes:
+
+| Class | Properties verified |
+|---|---|
+| `TestMetricRangeInvariants` | Q ∈ [0,1]; graph metrics ∈ [0,1]; charge_frustration ≥ 0; moran ≤ 1; H ≥ 0; shape_aniso ∈ [0,1]; RDF_dev ≥ 0 |
+| `TestTranslationInvariance` | Steinhardt + graph metrics unchanged after arbitrary shift |
+| `TestRotationInvariance` | Steinhardt + graph metrics unchanged after arbitrary 3-D rotation |
+| `TestCppVsPythonConsistency` | C++ and Python sparse paths agree to atol=1e-10 for any input |
+| `TestFastPathVsGeneric` | ④ fast-path and ①②③ generic path agree to atol=1e-10 for any input |
+| `TestGenerateInvariants` | `generate()` always produces correct atom count, valid parity, finite metrics |
+| `TestComputeAllMetricsCompleteness` | All 13 metric keys present; all values finite; result is dict of floats |
+| `TestPerAtomRanges` | Per-atom Q_l values also in [0, 1] |
+| `TestIdempotency` | Same input → same output (no hidden state mutation) |
 
 ---
 

@@ -134,6 +134,9 @@ def parse_xyz(text: str) -> list[tuple[list[str], list[Vec3], int, int, dict[str
         atoms: list[str] = []
         positions: list[tuple[float, float, float]] = []
         for _ in range(n_atoms):
+            # Skip blank lines inside the coordinate block (some tools emit them)
+            while i < len(lines) and not lines[i].strip():
+                i += 1
             if i >= len(lines):
                 raise ValueError(f"Unexpected end of file: expected {n_atoms} coordinate lines.")
             parts = lines[i].split()

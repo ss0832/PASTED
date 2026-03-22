@@ -234,8 +234,22 @@ def _steinhardt_per_atom_sparse(
 
     diff_nb = pts[rows] - pts[cols]  # (n_bonds, 3)
     r_nb = np.linalg.norm(diff_nb, axis=1)
-    safe_r_nb = np.where(r_nb > 0, r_nb, 1.0)
-    d_hat_nb = diff_nb / safe_r_nb[:, np.newaxis]  # (n_bonds, 3)
+
+    # Exclude coincident pairs (d < 1e-10): bond direction is undefined.
+    # The C++ path skips these with the same threshold; both paths must agree.
+    valid = r_nb >= 1e-10
+    if not np.all(valid):
+        rows = rows[valid]
+        cols = cols[valid]
+        diff_nb = diff_nb[valid]
+        r_nb = r_nb[valid]
+
+    if len(rows) == 0:
+        for lv in l_values:
+            result[f"Q{lv}"] = np.zeros(n, dtype=float)
+        return result
+
+    d_hat_nb = diff_nb / r_nb[:, np.newaxis]  # (n_bonds, 3)
     theta_nb = np.arccos(np.clip(d_hat_nb[:, 2], -1.0, 1.0))  # (n_bonds,)
     phi_nb = np.arctan2(d_hat_nb[:, 1], d_hat_nb[:, 0])  # (n_bonds,)
 
