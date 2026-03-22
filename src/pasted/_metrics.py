@@ -3,10 +3,12 @@ pasted._metrics
 ===============
 Disorder-metric computations for PASTED structures.
 
-All public metric functions accept *pts* (an (N, 3) position array) and a
-*cutoff* distance in Ångströms, then build their own neighbor lists
-internally using the local-pair approximation (O(N·k), k = mean neighbor
-count within *cutoff*).
+The primary entry point is :func:`compute_all_metrics`, which accepts an
+atom list and a position array and dispatches internally to the per-metric
+helpers.  Lower-level helpers have varying signatures: some take ``pts``
+(an (N, 3) NumPy array), others take ``dmat`` (a full N×N distance matrix),
+and :func:`compute_h_atom` takes only an element-symbol list.  All
+cutoff-based metrics share the same *cutoff* distance threshold (Å).
 
 Acceleration paths
 ------------------
