@@ -53,6 +53,7 @@ pip install pasted
 or from source:
 
 ```bash
+# Building from source requires pybind11 >= 2.12
 git clone https://github.com/ss0832/pasted.git
 cd pasted
 pip install -e .
