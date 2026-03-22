@@ -67,6 +67,7 @@ jobs:
         uses: codecov/codecov-action@v5
         if: ${{ !cancelled() }}
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: junit.xml
           report_type: test_results
           flags: py${{ matrix.python-version }}
