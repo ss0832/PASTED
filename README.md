@@ -1,7 +1,6 @@
 # PASTED
 
 [![CI](https://github.com/ss0832/PASTED/actions/workflows/ci.yml/badge.svg)](https://github.com/ss0832/PASTED/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/github/ss0832/PASTED/graph/badge.svg?token=PG3CHWC91T)](https://codecov.io/github/ss0832/PASTED)
 [![PyPI version](https://img.shields.io/pypi/v/pasted.svg)](https://img.shields.io/pypi/v/pasted.svg)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pasted.svg)](https://img.shields.io/pypi/pyversions/pasted.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://img.shields.io/badge/License-MIT-yellow.svg)
