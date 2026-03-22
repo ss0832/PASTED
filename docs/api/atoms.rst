@@ -49,7 +49,7 @@ in :attr:`Structure.metrics <pasted._generator.Structure.metrics>` and
    * - ``ring_fraction``
      - Fraction of atoms participating in at least one ring
    * - ``charge_frustration``
-     - Mean EN variance across bonded atom pairs (Pauling scale)
+     - Population variance of |Δχ| (Pauling electronegativity difference) across cutoff-adjacent atom pairs
    * - ``moran_I_chi``
      - Moran's spatial autocorrelation of electronegativity on the bond graph
 

@@ -8,10 +8,12 @@ Metric functions
 MM-level structural descriptors
 ---------------------------------
 
-The following two functions were added in v0.1.9 and revised in v0.1.13.
-They use the same *cutoff* distance threshold as ``graph_lcc``,
-``graph_cc``, and ``moran_I_chi``, so all five cutoff-based metrics share
-a single unified adjacency definition.
+The following three functions document the MM-level structural descriptors
+in ``ALL_METRICS``.  ``ring_fraction`` and ``charge_frustration`` were added
+in v0.1.9 and revised in v0.1.13; ``moran_I_chi`` was added in v0.1.12.
+All three use the same *cutoff* distance threshold as ``graph_lcc`` and
+``graph_cc``, so all five cutoff-based metrics share a single unified
+adjacency definition.
 
 All metrics are included in :data:`~pasted._atoms.ALL_METRICS` and can
 therefore be used as ``--filter`` targets on the CLI and in the
