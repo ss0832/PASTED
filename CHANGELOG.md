@@ -2,7 +2,7 @@
 
 All notable changes to PASTED are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 
 ---
 
