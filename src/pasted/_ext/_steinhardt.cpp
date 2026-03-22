@@ -243,13 +243,17 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
             norms[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)] = norm_lm(l, m);
     }
 
-    // Per-atom accumulators: re[l_idx][m][i], im[l_idx][m][i]
-    // Flattened for cache efficiency: re_buf[l_idx * (l_max+1) * n + m * n + i]
-    // Use (l_idx, m, i) layout with m in 0..l_values[l_idx]
-    // For simplicity, allocate (n_l, l_max+1, n) buffers.
+    // Per-atom accumulators — layout (n, n_l, lm1), atom index OUTERMOST.
+    // Index formula:  i * n_l * lm1  +  li * lm1  +  m
+    //
+    // The former layout was (n_l, lm1, n) with index li*lm1*n + m*n + i.
+    // That placed consecutive m-writes N*8 bytes apart, causing L2→L3 cache
+    // spill for N ≥ ~1000 and superlinear wall-time growth.  With the new
+    // layout all (li, m) writes for a given atom i are contiguous (stride 8 B),
+    // so every bond's accumulation touches a single cache line regardless of N.
     const int lm1 = l_max + 1;
-    std::vector<double> re_buf(static_cast<std::size_t>(n_l * lm1 * n), 0.0);
-    std::vector<double> im_buf(static_cast<std::size_t>(n_l * lm1 * n), 0.0);
+    std::vector<double> re_buf(static_cast<std::size_t>(n * n_l * lm1), 0.0);
+    std::vector<double> im_buf(static_cast<std::size_t>(n * n_l * lm1), 0.0);
     std::vector<double> deg(static_cast<std::size_t>(n), 0.0);
 
     // Reusable per-atom P_lm table (allocated once, resized inside accumulate)
@@ -269,15 +273,21 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
         deg[static_cast<std::size_t>(i)] += 1.0;
         compute_plm(cos_t, sin_t, l_max, plm);
 
+        // Base offset for atom i — all writes for this bond stay within
+        // n_l * lm1 doubles from here (one cache line for typical n_l=3, lm1=9).
+        const std::size_t base_i = static_cast<std::size_t>(i) *
+                                   static_cast<std::size_t>(n_l * lm1);
         for (int li = 0; li < n_l; ++li) {
             const int l = l_values[static_cast<std::size_t>(li)];
+            const std::size_t base_li = base_i +
+                                        static_cast<std::size_t>(li * lm1);
             for (int m = 0; m <= l; ++m) {
                 const double Nlm_Plm =
                     norms[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)] *
                     plm[static_cast<std::size_t>(l)][static_cast<std::size_t>(m)];
                 const double cos_mp = std::cos(m * phi);
                 const double sin_mp = std::sin(m * phi);
-                const std::size_t idx = static_cast<std::size_t>(li * lm1 * n + m * n + i);
+                const std::size_t idx = base_li + static_cast<std::size_t>(m);
                 re_buf[idx] += Nlm_Plm * cos_mp;
                 im_buf[idx] += Nlm_Plm * sin_mp;
             }
@@ -305,18 +315,17 @@ py::dict steinhardt_per_atom_cpp(F64Array pts_in, double cutoff,
             if (d == 0.0) { ql[i] = 0.0; continue; }
             const double inv_d = 1.0 / d;
 
+            const std::size_t base = static_cast<std::size_t>(i * n_l * lm1 + li * lm1);
             double qlm_sq = 0.0;
             // m = 0: only real part (sin(0)=0)
             {
-                const std::size_t idx = static_cast<std::size_t>(li * lm1 * n + 0 * n + i);
-                const double r = re_buf[idx] * inv_d;
+                const double r = re_buf[base] * inv_d;
                 qlm_sq += r * r;
             }
             // m = 1..l: both real and imaginary, weight 2
             for (int m = 1; m <= l; ++m) {
-                const std::size_t idx = static_cast<std::size_t>(li * lm1 * n + m * n + i);
-                const double r = re_buf[idx] * inv_d;
-                const double k = im_buf[idx] * inv_d;
+                const double r = re_buf[base + static_cast<std::size_t>(m)] * inv_d;
+                const double k = im_buf[base + static_cast<std::size_t>(m)] * inv_d;
                 qlm_sq += 2.0 * (r * r + k * k);
             }
             ql[i] = std::sqrt(factor * qlm_sq);
@@ -332,7 +341,11 @@ PYBIND11_MODULE(_steinhardt_core, m) {
     m.doc() =
         "pasted._ext._steinhardt_core: sparse Steinhardt Q_l (C++17).\n"
         "Uses an explicit neighbor list (FlatCellList for N>=64) to avoid\n"
-        "the O(N^2) dense matrix built by the Python/scipy path.";
+        "the O(N^2) dense matrix built by the Python/scipy path.\n"
+        "\n"
+        "Accumulator layout (v0.3.6+): (N, n_l, lm1) — atom index outermost.\n"
+        "All (l_idx, m) writes for a given atom are contiguous (stride 8 B),\n"
+        "eliminating the L2-to-L3 cache-thrash of the former (n_l, lm1, N) layout.";
     m.def(
         "steinhardt_per_atom", &steinhardt_per_atom_cpp,
         py::arg("pts"), py::arg("cutoff"), py::arg("l_values"),
@@ -349,6 +362,12 @@ Returns
 -------
 dict  mapping "Q{l}" -> (n,) float64 array of per-atom Q_l values.
 Atoms with no neighbors within cutoff are assigned Q_l = 0.
+
+Notes
+-----
+Accumulator buffer layout is (N, n_l, lm1) with atom index outermost
+(v0.3.6+).  Each bond's writes are contiguous regardless of N, avoiding
+the superlinear cache-pressure effect of the former (n_l, lm1, N) layout.
         )"
     );
 }

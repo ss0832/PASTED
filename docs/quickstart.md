@@ -47,37 +47,30 @@ Measured on a single CPU core with all five C++ extensions compiled
 `mode="gas"`, uniform random positions scaled so density is constant across N.
 Each value is the median of ≥ 3 repeats filling a 1.5 s budget.
 
-| N atoms | `shape_aniso` | `validate` ok=True | `rdf_h_cpp` | `graph_cpp` | `steinhardt` | **`all_metrics` total** |
+| N atoms | `shape_aniso` | `validate` ok=True | `rdf_h_cpp` | `graph_cpp` | `steinhardt` (v0.3.6) | **`all_metrics` total** |
 |--------:|------:|------:|------:|------:|------:|------:|
 | 5 | 18 µs | 0.6 µs | 0.002 ms | 0.004 ms | 0.020 ms | **0.33 ms** |
 | 10 | 17 µs | 0.7 µs | 0.002 ms | 0.004 ms | 0.020 ms | **0.31 ms** |
 | 20 | 17 µs | 1.1 µs | 0.002 ms | 0.004 ms | 0.020 ms | **0.32 ms** |
-| 50 | 19 µs | 2.2 µs | 0.011 ms | 0.020 ms | 0.132 ms | **0.37 ms** |
-| 100 | 21 µs | 4.1 µs | 0.011 ms | 0.020 ms | 0.132 ms | **0.49 ms** |
-| 200 | 23 µs | 6.9 µs | 0.053 ms | 0.099 ms | 0.330 ms | **0.72 ms** |
-| 500 | 32 µs | 16.7 µs | 0.053 ms | 0.099 ms | 0.330 ms | **1.21 ms** |
-| 1 000 | 63 µs | 32.8 µs | 0.115 ms | 0.287 ms | 0.716 ms | **1.94 ms** |
-| 2 000 | 80 µs | 63.7 µs | 0.264 ms | 0.576 ms | 2.438 ms | **5.12 ms** |
-| 5 000 | 184 µs | 177 µs | 0.678 ms | 1.524 ms | 6.383 ms | **13.3 ms** |
+| 50 | 19 µs | 2.2 µs | 0.011 ms | 0.020 ms | 0.076 ms | **0.37 ms** |
+| 100 | 21 µs | 4.1 µs | 0.011 ms | 0.020 ms | 0.076 ms | **0.26 ms** |
+| 200 | 23 µs | 6.9 µs | 0.053 ms | 0.099 ms | 0.180 ms | **0.55 ms** |
+| 500 | 32 µs | 16.7 µs | 0.053 ms | 0.099 ms | 0.306 ms | **0.92 ms** |
+| 1 000 | 63 µs | 32.8 µs | 0.115 ms | 0.287 ms | 0.654 ms | **1.68 ms** |
+| 2 000 | 80 µs | 63.7 µs | 0.264 ms | 0.576 ms | 2.307 ms | **3.99 ms** |
+| 5 000 | 184 µs | 177 µs | 0.678 ms | 1.524 ms | 5.605 ms | **9.72 ms** |
 
 Peak RSS across the full N = 5–5 000 sweep: **152 MB** (growth < 3 MB total;
 no memory leak detected over 500 repeated calls at each size).
 
-**Why `compute_all_metrics` scales superlinearly in N** — every sub-metric
-runs in O(N·k) (k ≈ 0.7 neighbors/atom at the default cutoff), so in theory
-wall time should be linear.  In practice, the `compute_steinhardt` step —
-which dominates from N ≈ 200 onwards — shows clear superlinear growth.  The
-cause is a **CPU cache pressure effect** in the C++ accumulator, not an
-algorithmic one:
-
-The Steinhardt accumulator buffer has layout `(n_l, l_max+1, N)` with the
-atom index as the innermost dimension.  Each bond's m-loop writes to addresses
-that are `N × 8 bytes` apart.  At N ≤ 500 those strides fit in L2 cache
-(< 256 KB total); at N ≥ 1 000 the two buffers exceed L2 and spill into L3,
-inflating write latency ~5–10×.  The effective complexity is therefore
-O(N · k · l² · cache_factor(N)), where `cache_factor` steps from 1 to ~5 at
-the L2 → L3 boundary.  Transposing the buffer to `(N, n_l, l_max+1)` (atom
-index outermost) would resolve this; see `docs/architecture.md` for details.
+**`compute_all_metrics` latency is roughly linear in N** (k ≈ 0.7 at the
+default cutoff, so each sub-metric is O(N·k)).  Prior to v0.3.6 the
+`compute_steinhardt` step showed superlinear growth due to a CPU cache
+pressure effect in the C++ accumulator buffer (former layout `(n_l, l_max+1,
+N)` — atom index innermost, stride N×8 B per m-step, causing L2→L3 spill at
+N ≈ 1 000).  The buffer has been transposed to `(N, n_l, l_max+1)` in
+v0.3.6, making every bond's writes contiguous (stride 8 B).  See
+`docs/architecture.md` → *Accumulator buffer layout* for the full analysis.
 
 ---
 

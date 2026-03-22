@@ -10,41 +10,55 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
-#### DOC — `compute_all_metrics` N=5–5000 benchmark and superlinear-scaling root-cause analysis
+#### DOC — `compute_all_metrics` N=5–5000 benchmark and Steinhardt buffer-layout analysis
 
 Added a performance benchmark table to `docs/quickstart.md` covering all
 sub-components of `compute_all_metrics` (C++ extensions active) from N = 5
-to N = 5 000.  Key findings:
+to N = 5 000.  Key findings (pre-fix baseline):
 
-- Peak RSS across the full sweep is **152 MB** (< 3 MB growth; no memory
+- Peak RSS across the full sweep: **152 MB** (< 3 MB growth; no memory
   leak detected over 500 repeated calls at each size).
-- Wall time is dominated by `compute_steinhardt` from N ≈ 200 onwards;
-  at N = 5 000 it accounts for **6.4 ms** of the **13.3 ms** total.
-- Despite an algorithmic complexity of O(N·k·l²), `compute_steinhardt`
-  exhibits **superlinear scaling** — a CPU cache pressure effect, not an
-  algorithmic one.
+- Wall time dominated by `compute_steinhardt` from N ≈ 200 onwards.
+- Superlinear growth traced to a CPU cache pressure effect in the former
+  `(n_l, l_max+1, N)` accumulator layout (see PERF entry below).
 
-**Root cause of superlinear scaling** (`docs/architecture.md` updated with
-full analysis): the C++ Steinhardt accumulator uses layout
-`(n_l, l_max+1, N)` with the atom index as the *innermost* dimension.
-Each bond's inner `m`-loop writes to addresses `N × 8 bytes` apart.  At
-N ≤ 500 these strides fit in L2 cache (< 256 KB total); at N ≥ 1 000 the
-two buffers spill into L3, inflating each write latency ~5–10×:
-
-| N | stride/m-step | 2 × buffer | cache tier |
-|--:|--:|--:|:--|
-| 100 | 0.8 KB | 42 KB | L2 |
-| 500 | 3.9 KB | 211 KB | L2 |
-| 1 000 | 7.8 KB | 422 KB | **L3** |
-| 2 000 | 15.6 KB | 844 KB | L3 |
-| 5 000 | 39.1 KB | 2.1 MB | L3 |
-
-**Known fix (not yet applied):** transposing the buffer to `(N, n_l,
-l_max+1)` (atom index outermost) would keep the m-loop stride at 8 bytes
-and is expected to reduce `compute_steinhardt` wall time by ~3–5× at
-N = 2 000–5 000.
+`docs/architecture.md` → *Accumulator buffer layout* and `docs/api/metrics.rst`
+updated with root-cause analysis and post-fix benchmark table.
 
 ### Performance
+
+#### PERF — `_steinhardt_core`: transpose accumulator buffer to (N, n_l, l_max+1) (`_steinhardt.cpp`)
+
+The C++ Steinhardt accumulator previously used layout `(n_l, l_max+1, N)` —
+atom index as the innermost dimension — with index formula
+`li * lm1 * n + m * n + i`.  Each bond's inner `m`-loop (m = 0 … 8) wrote
+to addresses `N × 8 bytes` apart, causing L2→L3 cache spill at N ≈ 1 000
+and superlinear wall-time growth despite an O(N·k·l²) algorithm.
+
+**Fix:** the buffer is now laid out as `(N, n_l, l_max+1)` with index
+`i * n_l * lm1 + li * lm1 + m`.  Every bond's `(l_idx, m)` writes for
+atom `i` are contiguous (stride 8 B, ≤ 216 bytes per atom — fits in a single
+cache line regardless of N).
+
+Measured speedup on PASTED default gas structures (k ≈ 0.7 neighbours/atom;
+all C++ extensions active; single CPU core):
+
+| N | `compute_steinhardt` | `compute_all_metrics` |
+|--:|:--:|:--:|
+| 100 | 0.132 ms → 0.076 ms (**1.7×**) | 0.49 ms → 0.26 ms (**1.9×**) |
+| 500 | 0.330 ms → 0.306 ms (1.1×) | 1.21 ms → 0.92 ms (1.3×) |
+| 1 000 | 0.716 ms → 0.654 ms (1.1×) | 1.94 ms → 1.68 ms (1.2×) |
+| 2 000 | 2.438 ms → 2.307 ms (1.1×) | 5.12 ms → 3.99 ms (1.3×) |
+| 5 000 | 6.383 ms → 5.605 ms (1.1×) | 13.3 ms → 9.7 ms (**1.4×**) |
+
+At sparse k ≈ 0.7, the per-bond arithmetic (P_lm recurrence, cos/sin/atan2)
+still dominates at mid-range N; the layout improvement is most visible at
+N = 100 (L2 was already marginal) and N ≥ 2 000 (accumulated write-latency
+savings compound over more bonds).  At denser k (e.g. k ≈ 30 in solvated
+structures), the speedup grows larger because more writes are issued per atom.
+
+All 846 tests pass.  Correctness verified by comparing C++ and Python-fallback
+outputs at N = 5, 20, 100, 500 (max absolute difference < 1 × 10⁻¹⁰).
 
 #### PERF — `compute_shape_anisotropy`: replace `eigvalsh` with trace / Frobenius norm (`_metrics.py`)
 

@@ -269,6 +269,12 @@ def compute_steinhardt_per_atom(
     actual neighbor pairs.  This gives O(N*k) complexity (k = mean neighbor
     count).
 
+    The C++ accumulator uses layout ``(N, n_l, l_max+1)`` with atom index
+    outermost (v0.3.6+), so every bond's ``(l_idx, m)`` writes are contiguous
+    (stride 8 B).  The former ``(n_l, l_max+1, N)`` layout wrote at strides of
+    ``N × 8 bytes``, causing L2→L3 cache spill for N ≳ 1 000 and superlinear
+    wall-time growth.
+
     When the extension is absent the function falls back to a sparse
     Python/NumPy implementation using ``scipy.spatial.cKDTree`` for neighbor
     enumeration and ``np.bincount`` for accumulation.  Both paths have the
