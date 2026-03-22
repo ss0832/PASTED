@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 2  
+          fetch-depth: 2
 
       - uses: actions/setup-python@v6
         with:
@@ -55,18 +55,24 @@ jobs:
       - name: Run pytest
         run: pytest tests/ -v --tb=short --cov=src --cov-report=xml --junitxml=junit.xml
 
-      - name: Upload coverage reports to Codecov
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }} 
+        if: ${{ !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          flags: py${{ matrix.python-version }}
+          fail_ci_if_error: true
 
       - name: Upload test results to Codecov
         uses: codecov/codecov-action@v5
         if: ${{ !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: junit.xml
           report_type: test_results
+          flags: py${{ matrix.python-version }}
+          fail_ci_if_error: true
 
   typecheck:
     name: Type check (mypy)
