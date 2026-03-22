@@ -2,7 +2,6 @@
 
 All notable changes to PASTED are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
@@ -52,32 +51,7 @@ when the C++ extension is active.
 **Affected files:**
 - `tests/test_maxent.py` — `HAS_MAXENT_LOOP` import and `skipif` decorator added
 
-### Reverted
 
-#### REVERT — `FlatCellList` CSR sorted layout removed from `_steinhardt.cpp` and `_relax.cpp`
-
-The physically sorted CSR layout (counting-sort `FlatCellList` with
-`sorted_idx`, `cell_start`, and `sorted_pts` buffers) that was introduced as
-a performance optimization has been removed.  Both `_steinhardt_core` and
-`_relax_core` return to the linked-list `FlatCellList` (`cell_head` + `next`
-arrays) that was in place through v0.3.9.
-
-**Reason for revert:** the measured speedup was inconsistent and
-environment-dependent (regressions at N < 500, gains only at N ≥ 5,000
-without `-march=native`), the additional complexity increased maintenance
-burden, and the feature did not meet the stability bar required for release.
-All correctness properties (UBSan integer-overflow guard, Verlet-list reuse,
-coincident-atom jitter) introduced in earlier releases are preserved.
-
-**Affected files:**
-- `src/pasted/_ext/_steinhardt.cpp` — reverted to linked-list `FlatCellList`;
-  `sorted_pts` buffer and CSR `cell_start` removed; header comment updated
-- `src/pasted/_ext/_relax.cpp` — reverted to linked-list `FlatCellList`;
-  `PenaltyEvaluator` physical-sort members (`new_to_old_`, `old_to_new_`,
-  `sorted_pts_`, `sorted_radii_`, `sorted_grad_`) removed; `evaluate()`
-  Large-N branch simplified; header comment updated
-- `docs/architecture.md` — CSR layout descriptions removed from both the
-  Steinhardt and relax sections
 
 ---
 
