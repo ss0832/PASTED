@@ -1330,6 +1330,23 @@ class TestOptimizerMode:
         )
         assert r.returncode != 0
 
+    def test_optimizer_constructor_value_error_exits_nonzero(self) -> None:
+        """StructureOptimizer.__init__ raising ValueError must produce exit 1.
+
+        This branch in _run_optimize_mode is otherwise unreachable via normal
+        CLI flags, so the failure is injected with a mock.
+        """
+        with patch("pasted.cli.StructureOptimizer", side_effect=ValueError("injected")):
+            r = _run(
+                "--n-atoms", "6", "--charge", "0", "--mult", "1",
+                "--elements", "6,7,8", "--optimize",
+                "--objective", "H_total:1.0",
+                "--method", "annealing", "--max-steps", "50",
+                "--n-samples", "1",
+            )
+        assert r.returncode != 0
+        assert "injected" in r.stderr or "error" in r.stderr.lower()
+
 
 # ===========================================================================
 # 17. --initial-xyz
@@ -1366,6 +1383,19 @@ class TestInitialXyz:
             "--method", "annealing", "--max-steps", "30",
             "--n-samples", "1",
             "--initial-xyz", "/tmp/this_file_does_not_exist_pasted_test.xyz",
+        )
+        assert r.returncode != 0
+
+    def test_initial_xyz_empty_file_exits_nonzero(self, tmp_path: Path) -> None:
+        """An XYZ file that contains no frames must cause a non-zero exit."""
+        empty = tmp_path / "empty.xyz"
+        empty.write_text("")
+        r = _run(
+            "--n-atoms", "6", "--charge", "0", "--mult", "1",
+            "--elements", "6,7,8", "--optimize",
+            "--method", "annealing", "--max-steps", "30",
+            "--n-samples", "1",
+            "--initial-xyz", str(empty),
         )
         assert r.returncode != 0
 
@@ -1528,3 +1558,102 @@ class TestEdgeCases:
         frames = parse_xyz(content)
         for atoms, _pos, _charge, _mult, _met in frames:
             assert "H" not in atoms, "H should not appear when --no-add-hydrogen is set"
+
+# ===========================================================================
+# 21. Range-argument error handling
+# ===========================================================================
+
+
+class TestRangeArgErrors:
+    """Malformed range arguments must produce a non-zero exit (cli.py L652-654)."""
+
+    def test_bad_bond_range_exits_nonzero(self) -> None:
+        """--bond-range without a colon separator must fail."""
+        r = _run(*_CHAIN_BASE, "--bond-range", "NOTARANGE")
+        assert r.returncode != 0
+
+    def test_bad_shell_radius_exits_nonzero(self) -> None:
+        """--shell-radius without a colon separator must fail."""
+        r = _run(*_CHAIN_BASE, "--shell-radius", "NOTARANGE")
+        assert r.returncode != 0
+
+    def test_bad_coord_range_lo_zero_exits_nonzero(self) -> None:
+        """--coord-range with lo=0 violates MIN >= 1 and must fail."""
+        r = _run(*_CHAIN_BASE, "--coord-range", "0:5")
+        assert r.returncode != 0
+
+
+# ===========================================================================
+# 22. --elements error handling
+# ===========================================================================
+
+
+class TestElementsArgErrors:
+    """Unsupported atomic numbers in --elements must produce a non-zero exit
+    (cli.py L661-663)."""
+
+    def test_elements_out_of_range_exits_nonzero(self) -> None:
+        """Z=999 is outside the supported 1-106 range."""
+        r = _run(
+            "--n-atoms", "4", "--charge", "0", "--mult", "1",
+            "--mode", "chain", "--elements", "999", "--n-samples", "1",
+        )
+        assert r.returncode != 0
+        assert "error" in r.stderr.lower()
+
+
+# ===========================================================================
+# 23. StructureGenerator constructor error handling
+# ===========================================================================
+
+
+class TestGeneratorConstructorErrors:
+    """Inputs that pass CLI parsing but are rejected by StructureGenerator
+    must produce a non-zero exit (cli.py L603-605)."""
+
+    def test_n_samples_zero_without_n_success_exits_nonzero(self) -> None:
+        """--n-samples 0 requires --n-success; omitting it must fail."""
+        r = _run(
+            "--n-atoms", "4", "--charge", "0", "--mult", "1",
+            "--mode", "chain", "--elements", "6,7,8", "--n-samples", "0",
+        )
+        assert r.returncode != 0
+
+    def test_n_success_zero_exits_nonzero(self) -> None:
+        """--n-success 0 is invalid (must be >= 1)."""
+        r = _run(*_CHAIN_BASE, "--n-success", "0")
+        assert r.returncode != 0
+
+    def test_element_fractions_symbol_not_in_pool_exits_nonzero(self) -> None:
+        """A fraction symbol absent from the element pool must fail."""
+        # Pool is C,N,O (Z=6,7,8); Fe is not in the pool.
+        r = _run(*_CHAIN_BASE, "--element-fractions", "Fe:1.0")
+        assert r.returncode != 0
+
+    def test_element_min_counts_exceeds_n_atoms_exits_nonzero(self) -> None:
+        """Sum of min-counts exceeding n_atoms must fail."""
+        r = _run(
+            "--n-atoms", "2", "--charge", "0", "--mult", "1",
+            "--mode", "chain", "--elements", "6",
+            "--element-min-counts", "C:5", "--n-samples", "1",
+        )
+        assert r.returncode != 0
+
+    def test_element_min_gt_max_counts_exits_nonzero(self) -> None:
+        """min-count > max-count for the same element must fail."""
+        r = _run(
+            *_CHAIN_BASE,
+            "--element-min-counts", "C:5",
+            "--element-max-counts", "C:2",
+        )
+        assert r.returncode != 0
+
+    def test_shell_center_z_not_in_pool_exits_nonzero(self) -> None:
+        """--center-z specifying an element absent from the pool must fail."""
+        # Pool is C,N,O; center-z=26 (Fe) is not in the pool.
+        r = _run(
+            "--n-atoms", "4", "--charge", "0", "--mult", "1",
+            "--mode", "shell", "--elements", "6,7,8",
+            "--center-z", "26", "--n-samples", "1",
+        )
+        assert r.returncode != 0
