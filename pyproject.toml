@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "hypothesis",
     "ruff>=0.4",
     "mypy>=1.10",
     "pybind11>=2.12",
