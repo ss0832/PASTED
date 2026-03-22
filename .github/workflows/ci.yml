@@ -53,23 +53,11 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Run pytest
-        run: pytest tests/ -v --tb=short --cov=src --cov-report=xml --junitxml=junit.xml
+        run: pytest tests/ -v --tb=short --cov=src --cov-report=term
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+      - name: Output coverage to job summary
         if: ${{ !cancelled() }}
-        with:
-          files: coverage.xml
-          fail_ci_if_error: true
-
-      - name: Upload test results to Codecov
-        uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: junit.xml
-          report_type: test_results
-          fail_ci_if_error: true
+        run: coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
 
   typecheck:
     name: Type check (mypy)
