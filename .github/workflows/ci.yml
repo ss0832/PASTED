@@ -52,10 +52,12 @@ jobs:
       - name: Install package with dev extras
         run: pip install -e ".[dev]"
 
+      # カバレッジ計測のオプションを追加
       - name: Run pytest
-        run: pytest tests/ -v --tb=short 
+        run: pytest tests/ -v --tb=short --cov=src --cov-report=term
 
-      - name: Output coverage to job summary
+      # サマリー画面にMarkdownの表として出力するステップを追加
+      - name: Output Coverage to Job Summary
         if: ${{ !cancelled() }}
         run: coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
 
