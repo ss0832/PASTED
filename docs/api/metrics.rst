@@ -69,12 +69,17 @@ therefore be used as ``--filter`` targets on the CLI and in the
        non-bridge.
      - [0, 1]
    * - ``charge_frustration``
-     - Mean EN variance across bonded atom pairs (Pauling scale).
+     - Population variance of |Δχ| (Pauling electronegativity difference)
+       across all cutoff-adjacent atom pairs.  High = inconsistent
+       bond-polarity landscape; 0 = all bonds equally polar (or fewer than
+       two pairs detected).
      - ≥ 0
    * - ``moran_I_chi``
-     - Moran's spatial autocorrelation of electronegativity on the
+     - Moran's I spatial autocorrelation of electronegativity on the
        bond graph.  +1 = clustered; −1 = alternating; 0 = no pattern.
-     - ≈ [−1, 1]
+       Clamped to 1.0 from above: binary-weight graphs with fewer edges
+       than atoms can produce raw values > 1 due to the n/W prefactor.
+     - (-∞, 1]
 
 .. note::
 
@@ -108,6 +113,19 @@ therefore be used as ``--filter`` targets on the CLI and in the
       Combined speedup: **~2.1–2.3×** on ``compute_steinhardt`` and
       **~1.3×** on ``compute_all_metrics`` at N = 500–1 000.
       See ``docs/architecture.md`` → *Per-bond arithmetic optimisations*.
+
+   .. note::
+
+      **Bug fix — ``moran_I_chi`` upper-bound clamp (v0.3.8).**
+
+      Prior to v0.3.8, ``moran_I_chi`` could return values above +1.0 on
+      structures whose cutoff graph was very sparse (fewer edges than atoms,
+      i.e. ``W < N``).  The ``N / W`` prefactor in Moran's I formula inflated
+      the result when un-normalised binary weights were used.  Both the C++
+      path (``graph_metrics_cpp``) and the Python fallback
+      (``compute_moran_I_chi``) now clamp the result to ``min(raw, 1.0)``
+      before returning.  Results for connected graphs (``graph_lcc ≈ 1.0``)
+      are unaffected.
 
    .. warning::
 

@@ -498,3 +498,47 @@ class TestComputeMoranIChi:
         cpp_result = _ext.moran_I_chi_cpp(pts, en_vals, 2.13)
 
         assert cpp_result == pytest.approx(py_result, abs=1e-9)
+
+
+    def test_moran_I_chi_never_exceeds_one(self) -> None:
+        """Regression test for v0.3.8 bug: moran_I_chi must be <= 1.0.
+
+        With binary (0/1) weights and a very sparse cutoff graph (W < N),
+        the raw formula (n/W) * numer/denom can exceed +1 because the
+        n/W prefactor is > 1.  Both the Python fallback and the C++ path
+        must clamp the result to 1.0 from above.
+        """
+        from pasted import generate
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate(
+                n_atoms=12, charge=0, mult=1, mode="gas",
+                region="sphere:8", elements="6,7,8,16",
+                n_samples=30, seed=42,
+            )
+
+        for s in result:
+            mI = s.metrics["moran_I_chi"]
+            assert mI <= 1.0 + 1e-12, (
+                f"moran_I_chi={mI:.6f} > 1.0 (regression: v0.3.8 clamp not applied)"
+            )
+
+    @pytest.mark.skipif(not _ext.HAS_GRAPH, reason="_graph_core extension not built")
+    def test_moran_I_chi_clamp_cpp(self) -> None:
+        """C++ moran_I_chi is clamped to <= 1.0 on a deliberately sparse graph."""
+        # Two isolated atoms of very different EN, cutoff just large enough
+        # to connect them: W=2, N=2 → n/W=1 (no inflation here).
+        # Force W < N by using 3 atoms but a cutoff that only connects 2 of them.
+        atoms = ["C", "N", "O"]          # EN: 2.55, 3.04, 3.44
+        pts = np.array([[0, 0, 0],
+                        [1.0, 0, 0],     # C-N: 1.0 Å — within cutoff
+                        [9.9, 0, 0]],    # O far away — outside cutoff
+                       dtype=float)
+        en_vals = np.array([pauling_electronegativity(a) for a in atoms])
+        # W=2 (one directed edge each way), N=3 → n/W=1.5 → raw may exceed 1
+        result = _ext.moran_I_chi_cpp(pts, en_vals, cutoff=2.0)
+        assert result <= 1.0 + 1e-12, (
+            f"C++ moran_I_chi={result:.6f} > 1.0 after v0.3.8 clamp"
+        )

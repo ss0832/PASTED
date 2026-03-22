@@ -610,12 +610,18 @@ def compute_moran_I_chi(
     Returns
     -------
     float
-        Moran\'s I in (-1, 1].  Returns 0.0 when all atoms share the same
+        Moran\'s I clamped to ``(-∞, 1]``.  Returns 0.0 when all atoms share
         electronegativity or no pair falls within *cutoff*.
 
         * I ~= 0 : random spatial arrangement (target for disordered structures)
         * I > 0  : same-electronegativity atoms cluster spatially
         * I < 0  : alternating high/low electronegativity (ionic-crystal-like)
+        .. note::
+
+            Binary (0/1) weights are used rather than row-standardised
+            weights, so the raw ``(n/W) * numer/denom`` can exceed +1
+            when the graph is very sparse (W < n).  The result is
+            clamped to 1.0 to honour the documented upper bound.
     """
     chi = np.array([_pauling_en(a) for a in atoms], dtype=float)
     chi_bar = chi.mean()
@@ -629,7 +635,8 @@ def compute_moran_I_chi(
     if W_sum < 1e-30:
         return 0.0
     numer = float((W * np.outer(dev, dev)).sum())
-    return float((n / W_sum) * (numer / denom))
+    raw = float((n / W_sum) * (numer / denom))
+    return min(raw, 1.0)
 
 
 def _compute_graph_ring_charge(

@@ -10,6 +10,63 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.8] — 2026-03-22
+
+### Fixed
+
+#### BUG — `moran_I_chi` exceeded the documented upper bound of 1.0 on sparse graphs
+
+**Affected versions:** all releases prior to v0.3.8.
+**Affected code paths:** C++ (`_graph_core.cpp`, `graph_metrics_cpp`) and
+Python fallback (`_metrics.py`, `compute_moran_I_chi`).
+
+**Root cause.**
+Moran's I is computed as
+
+```
+I = (N / W) * (Σ w_ij dev_i dev_j) / (Σ dev_i²)
+```
+
+where `W` is the total number of directed edges (twice the number of
+undirected pairs within `cutoff`).  With binary (0/1) weights the theoretical
+maximum of +1 is only guaranteed when the weight matrix is row-standardised
+(`W = N`).  PASTED uses un-normalised binary weights, so when the cutoff graph
+is very sparse (`W < N`) the prefactor `N / W > 1` inflates the result above
++1.  This is a numerical artefact of the weight convention, not a sign of
+incorrect spatial correlation.
+
+**Observed symptoms.**  Structures with `graph_lcc ≈ 0.08–0.17` (i.e. most
+atoms isolated under the default cutoff) produced `moran_I_chi` values of
+~1.16–1.22, silently violating the documented range `(-∞, 1]`.
+
+**Fix.**  Both the C++ path and the Python fallback now clamp the raw result
+to `min(raw, 1.0)` before returning.  The clamp only fires for sparse graphs
+(`W < N`); for all typical PASTED structures with `graph_lcc ≈ 1.0` the
+result is unchanged.
+
+**Tests added:**
+- `tests/test_metrics.py::TestMoranIChi::test_moran_I_chi_never_exceeds_one` —
+  generates 30 structures with a mixed-element pool and asserts `<= 1.0`.
+- `tests/test_metrics.py::TestMoranIChi::test_moran_I_chi_clamp_cpp` —
+  constructs a deliberately sparse 3-atom graph (`W=2, N=3`) and checks the
+  C++ path directly.
+
+### Documentation
+
+#### DOC — `moran_I_chi` range and `charge_frustration` description corrected
+
+- `docs/api/metrics.rst`: range column updated from `≈ [−1, 1]` to `(-∞, 1]`
+  with an explanation of the clamp; `charge_frustration` description corrected
+  from "Mean EN variance" to "Population variance of |Δχ| across cutoff-adjacent
+  pairs" (matching the actual `np.var` / population-variance C++ implementation).
+- `docs/architecture.md`: `moran_I_chi` row in the metrics table updated with
+  a reference to the v0.3.8 fix.
+- `src/pasted/_metrics.py`: `compute_moran_I_chi` docstring updated — return
+  type description changed from `(-1, 1]` to `(-∞, 1]` with a `.. note::` block
+  explaining the binary-weight sparse-graph edge case and the clamp.
+
+---
+
 ## [0.3.7] — 2026-03-22
 
 ### Documentation

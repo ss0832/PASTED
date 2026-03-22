@@ -361,8 +361,17 @@ py::dict graph_metrics_cpp(
                     }
                 }
             }
-            if (W_sum_m > 1e-30)
+            if (W_sum_m > 1e-30) {
                 moran_I = (static_cast<double>(n) / W_sum_m) * (numer_m / denom_m);
+                // Clamp to theoretical maximum of 1.0.
+                // With binary (0/1) weights the n/W prefactor can exceed 1 when
+                // the graph is very sparse (W < n), inflating the raw value above
+                // +1.  Row-standardised weights would guarantee [-1,1] but would
+                // change the metric's meaning.  Clamping preserves the documented
+                // upper bound without altering results for graphs where W >= n
+                // (the common operating regime for PASTED structures).
+                if (moran_I > 1.0) moran_I = 1.0;
+            }
         }
     }
 

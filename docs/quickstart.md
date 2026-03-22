@@ -57,6 +57,11 @@ Each value is the median of ≥ 3 repeats filling a 1.5 s budget.
 | 2 000 | 80 µs | 63.7 µs | 0.264 ms | 0.576 ms | 1.687 ms | **3.56 ms** |
 | 5 000 | 184 µs | 177 µs | 0.678 ms | 1.524 ms | 4.484 ms | **8.76 ms** |
 
+> **v0.3.8 note:** `moran_I_chi` is now clamped to 1.0 from above.
+> This has no effect on the timing numbers above (the clamp is a single
+> comparison, not a recomputation) but ensures the metric always stays
+> within the documented range `(-∞, 1]` even for very sparse cutoff graphs.
+
 Peak RSS across the full N = 5–5 000 sweep: **152 MB** (growth < 3 MB total;
 no memory leak detected over 500 repeated calls at each size).
 

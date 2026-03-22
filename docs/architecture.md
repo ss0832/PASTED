@@ -144,7 +144,7 @@ path has been removed entirely.
 | `graph_cc` | [0, 1] | Mean clustering coefficient |
 | `ring_fraction` | [0, 1] | Fraction of atoms in at least one cycle in the cutoff-adjacency graph (Tarjan bridge-finding) |
 | `charge_frustration` | ≥ 0 | Variance of \|Δχ\| across cutoff-adjacent pairs |
-| `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random |
+| `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random. Clamped to 1.0: sparse graphs (W < N) can inflate the raw n/W prefactor above 1 (see v0.3.8 fix). |
 
 ### Unified adjacency definition
 
