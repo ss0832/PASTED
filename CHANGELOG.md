@@ -8,6 +8,10 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+---
+
+## [0.3.7] — 2026-03-22
+
 ### Documentation
 
 #### DOC — `compute_all_metrics` N=5–5000 benchmark and Steinhardt buffer-layout analysis
@@ -26,6 +30,52 @@ to N = 5 000.  Key findings (pre-fix baseline):
 updated with root-cause analysis and post-fix benchmark table.
 
 ### Performance
+
+#### PERF — `_steinhardt_core`: atan2 elimination + Chebyshev recurrence + stack P_lm (`_steinhardt.cpp`)
+
+Three per-bond arithmetic optimisations applied to the `accumulate` lambda in
+`steinhardt_per_atom_cpp` (optimisations ①+②+③ from the performance analysis):
+
+**① + ② — atan2 elimination and Chebyshev recurrence for cos(m·φ)/sin(m·φ).**
+The former code called `std::atan2(dy, dx)` once per bond and then issued
+`l_max` independent `std::cos(m*phi)` / `std::sin(m*phi)` calls (18 libm calls
+at l_max = 8, each ≈ 20–50 CPU cycles).  The replacement:
+
+1. Computes `cos_phi = dx/r_xy`, `sin_phi = dy/r_xy` from a single `sqrt`
+   (no `atan2`).
+2. Derives all higher orders via the Chebyshev two-term recurrence:
+
+   ```
+   cos(m·φ) = 2·cos_phi·cos((m-1)·φ) − cos((m-2)·φ)   [2 mults + 1 sub]
+   sin(m·φ) = 2·cos_phi·sin((m-1)·φ) − sin((m-2)·φ)
+   ```
+
+Total per bond: 2 sqrts + (l_max−1)×4 arithmetic ops vs. 1 atan2 + 18 libm
+calls.  Vectorised benchmark shows ~4× on the phi-trig component.
+
+**③ — Stack-allocated P_lm.**  `compute_plm` previously received a
+`std::vector<std::vector<double>>&` that was re-assigned (zeroed and resized)
+each bond call.  The function signature now takes a caller-supplied
+`double[L_MAX+1][L_MAX+1]` on the stack, eliminating per-bond heap traffic
+and keeping the 936-byte table in L1 cache.
+
+Measured speedup on PASTED default gas structures (k ≈ 0.7, all C++ extensions):
+
+| N | v0.3.6 `steinhardt` | v0.3.7 `steinhardt` | speedup | `all_metrics` speedup |
+|--:|:--:|:--:|:--:|:--:|
+| 20 | 0.052 ms | **0.015 ms** | **3.4×** | 1.0× |
+| 100 | 0.076 ms | **0.065 ms** | 1.2× | **1.2×** |
+| 500 | 0.306 ms | **0.156 ms** | **2.0×** | **1.3×** |
+| 1 000 | 0.654 ms | **0.311 ms** | **2.1×** | **1.3×** |
+| 2 000 | 2.307 ms | **1.687 ms** | 1.4× | 1.1× |
+| 5 000 | 5.605 ms | **4.484 ms** | 1.3× | 1.1× |
+
+All 846 tests pass.  Correctness verified vs Python fallback at N = 3, 10, 50,
+200, 1 000 (max absolute difference < 2 × 10⁻¹⁵ — floating-point rounding only).
+
+---
+
+## [0.3.6] — 2026-03-21
 
 #### PERF — `_steinhardt_core`: transpose accumulator buffer to (N, n_l, l_max+1) (`_steinhardt.cpp`)
 

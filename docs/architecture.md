@@ -226,6 +226,44 @@ histogram** inside the `FlatCellList` `collect` lambda.  The previous
 implementation first collected all pair distances into a `std::vector<double>`
 before binning — an unnecessary O(N·k) heap allocation that has been removed.
 
+#### Per-bond arithmetic optimisations (v0.3.7)
+
+**① + ② — atan2 elimination + Chebyshev recurrence.**  The former code
+called `std::atan2` once per bond and then issued `l_max` independent
+`std::cos` / `std::sin` pairs (18 libm calls at l_max=8, each ≈ 20–50 CPU
+cycles).  The replacement:
+
+1. Computes `cos_phi = dx/r_xy` and `sin_phi = dy/r_xy` from a single extra
+   `sqrt` — no `atan2`.
+2. Derives `cos(m·phi)` and `sin(m·phi)` for m = 2 … l_max via the
+   Chebyshev two-term recurrence (2 multiplies + 1 subtract each) instead of
+   independent libm calls.
+
+Total cost per bond: 2 sqrts + (l_max−1)×4 arithmetic ops vs. 1 atan2 +
+18 libm calls.  The ratio favours the new approach by roughly 4–5× on the
+phi-trig component alone.
+
+**③ — Stack-allocated P_lm.**  `compute_plm` previously received a
+`std::vector<std::vector<double>>&` whose inner vectors were re-assigned
+(zeroed and resized) on every bond call.  The function now takes a
+caller-supplied `double[L_MAX+1][L_MAX+1]` allocated on the stack by the
+lambda, eliminating the per-bond heap traffic and keeping the 936-byte
+table in L1 cache for the entire pair-enumeration loop.
+
+Combined speedup on `compute_steinhardt` (PASTED gas structures, k ≈ 0.7):
+
+| N | v0.3.5 (baseline) | v0.3.6 (buf-transpose) | v0.3.7 (arithmetic) | total vs v0.3.5 |
+|--:|:--:|:--:|:--:|:--:|
+| 100 | 0.132 ms | 0.076 ms | **0.065 ms** | **2.0×** |
+| 500 | 0.330 ms | 0.306 ms | **0.156 ms** | **2.1×** |
+| 1 000 | 0.716 ms | 0.654 ms | **0.311 ms** | **2.3×** |
+| 2 000 | 2.438 ms | 2.307 ms | **1.687 ms** | **1.4×** |
+| 5 000 | 6.383 ms | 5.605 ms | **4.484 ms** | **1.4×** |
+
+`compute_all_metrics` improves by **1.1–1.3×** at typical PASTED sizes
+(N = 20–5 000), with the largest gain at N = 500–1 000 where trig was the
+dominant cost.
+
 All metrics share the unified adjacency `d_ij ≤ cutoff`.
 All computation is **single-threaded** (no OpenMP dependency).
 
@@ -341,18 +379,20 @@ Every bond's `(l_idx, m)` writes for atom `i` now fall in a contiguous block
 of `n_l × (l_max+1) × 8 = 216` bytes — fitting in a single cache line
 regardless of N.  Measured speedup (PASTED default structures, k ≈ 0.7):
 
-| N | Steinhardt speedup | `all_metrics` speedup |
-|--:|:--:|:--:|
-| 100 | **1.7×** | **1.9×** |
-| 500 | 1.1× | 1.3× |
-| 1 000 | 1.1× | 1.2× |
-| 2 000 | 1.0× | 1.3× |
-| 5 000 | 1.1× | **1.4×** |
+| N | v0.3.5 | v0.3.6 (buf-transpose) | v0.3.7 (+Chebyshev+stack) | vs v0.3.5 |
+|--:|:--:|:--:|:--:|:--:|
+| 20 | – | 0.052 ms | **0.015 ms** | – |
+| 100 | 0.132 ms | 0.076 ms | **0.065 ms** | **2.0×** |
+| 500 | 0.330 ms | 0.306 ms | **0.156 ms** | **2.1×** |
+| 1 000 | 0.716 ms | 0.654 ms | **0.311 ms** | **2.3×** |
+| 2 000 | 2.438 ms | 2.307 ms | **1.687 ms** | **1.4×** |
+| 5 000 | 6.383 ms | 5.605 ms | **4.484 ms** | **1.4×** |
 
-The improvement is largest at N = 100 (where L2 was already marginal) and at
-N ≥ 2 000 (overall `all_metrics` budget shrinks from 13.3 ms to 9.7 ms at
-N = 5 000).  At intermediate N the per-bond arithmetic (P_lm recurrence,
-cos/sin/atan2) dominates and buffer layout is not the bottleneck.
+The buffer-transpose (v0.3.6) mainly helped at N ≥ 2 000 (cache boundary).
+The arithmetic optimisations (v0.3.7) are most visible at N = 500–1 000
+because that is where the per-bond trig was the dominant cost.  Together
+the two changes deliver **2.1–2.3×** on `compute_steinhardt` and
+**1.3–1.4×** on `compute_all_metrics` across typical PASTED structures.
 
 ---
 

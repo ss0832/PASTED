@@ -275,6 +275,14 @@ def compute_steinhardt_per_atom(
     ``N × 8 bytes``, causing L2→L3 cache spill for N ≳ 1 000 and superlinear
     wall-time growth.
 
+    Since v0.3.7 the per-bond phi-trig cost is also eliminated:
+    ``atan2`` is replaced by a single ``sqrt + 2 divs`` to obtain
+    ``cos_phi`` / ``sin_phi``, and all higher orders ``cos(m·phi)`` /
+    ``sin(m·phi)`` follow from the Chebyshev two-term recurrence
+    (2 mults + 1 sub each) instead of ``l_max`` separate libm calls.
+    The P_lm table is now stack-allocated (``double[13][13]``) rather
+    than heap-allocated per bond.
+
     When the extension is absent the function falls back to a sparse
     Python/NumPy implementation using ``scipy.spatial.cKDTree`` for neighbor
     enumeration and ``np.bincount`` for accumulation.  Both paths have the

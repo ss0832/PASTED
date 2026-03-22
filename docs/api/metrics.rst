@@ -93,15 +93,21 @@ therefore be used as ``--filter`` targets on the CLI and in the
 
    .. note::
 
-      **Accumulator buffer layout (v0.3.6+).**  The C++ accumulator uses
-      layout ``(N, n_l, l_max+1)`` with atom index outermost, so every
-      bond's ``(l_idx, m)`` writes are contiguous (stride 8 B).  The former
-      ``(n_l, l_max+1, N)`` layout wrote at strides of N × 8 bytes, causing
-      L2→L3 cache spill at N ≈ 1 000 and superlinear wall-time growth.
-      The fix yields up to **1.9× speedup** on ``compute_all_metrics`` at
-      N = 100 and **1.4× at N = 5 000**.  See
-      ``docs/architecture.md`` → *Accumulator buffer layout* for the full
-      analysis and benchmark table.
+      **Steinhardt optimisations (v0.3.6 + v0.3.7).**
+
+      *v0.3.6 — accumulator buffer transpose.*  Layout changed from
+      ``(n_l, l_max+1, N)`` to ``(N, n_l, l_max+1)`` (atom index outermost),
+      making every bond's writes contiguous (stride 8 B) and eliminating the
+      L2→L3 spill that caused superlinear wall-time growth at N ≈ 1 000.
+
+      *v0.3.7 — per-bond arithmetic.*  ``atan2`` replaced by ``sqrt + div``
+      (``cos_phi``/``sin_phi``); ``cos(m·phi)``/``sin(m·phi)`` via Chebyshev
+      recurrence (2 mults + 1 sub each) instead of 18 libm calls per bond;
+      P_lm table stack-allocated (``double[13][13]``) instead of heap per bond.
+
+      Combined speedup: **~2.1–2.3×** on ``compute_steinhardt`` and
+      **~1.3×** on ``compute_all_metrics`` at N = 500–1 000.
+      See ``docs/architecture.md`` → *Per-bond arithmetic optimisations*.
 
    .. warning::
 
