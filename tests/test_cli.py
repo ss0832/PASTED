@@ -49,14 +49,14 @@ settings.
 from __future__ import annotations
 
 import argparse
-import subprocess
-import sys
+import io
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from pasted._io import parse_xyz
-from pasted.cli import _write_output, build_parser
+from pasted.cli import _write_output, build_parser, main
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -86,12 +86,43 @@ _CHAIN_BASE: list[str] = [
 ]
 
 
-def _run(*extra_args: str) -> subprocess.CompletedProcess[str]:
-    """Run pasted CLI via ``python -m pasted`` with *extra_args*."""
-    return subprocess.run(
-        [sys.executable, "-m", "pasted", *extra_args],
-        capture_output=True,
-        text=True,
+class _MockCompletedProcess:
+    """Drop-in replacement for subprocess.CompletedProcess used by _run()."""
+
+    def __init__(self, returncode: int, stdout: str, stderr: str) -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _run(*extra_args: str) -> _MockCompletedProcess:
+    """Invoke main() in-process instead of spawning a subprocess.
+
+    This allows pytest-cov to instrument cli.py directly, so coverage is
+    measured correctly rather than being invisible inside a child process.
+    """
+    args = ["pasted", *extra_args]
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    returncode = 0
+
+    with (
+        patch("sys.argv", args),
+        patch("sys.stdout", captured_stdout),
+        patch("sys.stderr", captured_stderr),
+    ):
+        try:
+            main()
+        except SystemExit as e:
+            returncode = e.code if isinstance(e.code, int) else (1 if e.code else 0)
+        except Exception as e:
+            returncode = 1
+            captured_stderr.write(str(e))
+
+    return _MockCompletedProcess(
+        returncode=returncode,
+        stdout=captured_stdout.getvalue(),
+        stderr=captured_stderr.getvalue(),
     )
 
 
