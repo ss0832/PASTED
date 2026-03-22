@@ -309,6 +309,18 @@ class OptimizationResult:
         The optimization method used (``"annealing"``,
         ``"basin_hopping"``, or ``"parallel_tempering"``).
 
+    Notes
+    -----
+    **Parallel Tempering result count.**  For ``method="parallel_tempering"``,
+    each restart contributes one entry for the global best *plus* one entry
+    for each replica whose final objective value differs from the global best.
+    The total ``len(result)`` therefore satisfies::
+
+        n_restarts <= len(result) <= n_restarts * (n_replicas + 1)
+
+    For ``method="annealing"`` and ``method="basin_hopping"``, each restart
+    contributes exactly one entry, so ``len(result) == n_restarts_attempted``.
+
     Examples
     --------
     Single-structure usage (backward-compatible)::
@@ -1332,6 +1344,26 @@ class StructureOptimizer:
 
         Returns all replica final states sorted best-first so that
         ``run()`` can incorporate them into ``OptimizationResult``.
+
+        Return value
+        ------------
+        A list of ``(score, Structure)`` tuples containing:
+
+        1. The global best (tracked across all replicas and all steps) as
+           the first entry.
+        2. Each replica's final state, **if** its final objective value
+           differs from the global best by more than ``1e-10`` or its atom
+           list differs.  Replicas that converged to the global best are
+           deduplicated and omitted.
+
+        The total count therefore satisfies::
+
+            1 <= len(result) <= n_replicas + 1
+
+        and across ``n_restarts`` calls to this method the aggregated
+        ``OptimizationResult`` will contain::
+
+            n_restarts <= len(opt_result) <= n_restarts * (n_replicas + 1)
         """
         rng = random.Random(None if self.seed is None else self.seed + restart_idx * 97)
         temps = self._pt_temperatures()

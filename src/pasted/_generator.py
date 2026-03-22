@@ -459,6 +459,12 @@ class GenerationResult:
             print(len(combined))          # up to 40
             print(combined.summary())
 
+        Structure order is preserved: all structures from *self* appear
+        before those from *other*.  Returning :data:`NotImplemented` for
+        non-``GenerationResult`` operands lets Python fall back to the
+        reflected ``__radd__`` of the right-hand side, following the
+        standard Python operator protocol.
+
         Parameters
         ----------
         other:
@@ -467,9 +473,16 @@ class GenerationResult:
         Returns
         -------
         GenerationResult
-            New result containing all structures from both operands.
-            ``n_success_target`` is taken from *self* when set, otherwise
-            from *other*.
+            New result containing all structures from both operands with
+            all counters summed.  ``n_success_target`` is taken from
+            *self* when set, otherwise from *other*.
+
+        Raises
+        ------
+        NotImplemented
+            Returned (not raised) when *other* is not a
+            :class:`GenerationResult`, allowing Python to try the
+            reflected operation on the right-hand operand.
         """
         if not isinstance(other, GenerationResult):
             return NotImplemented
