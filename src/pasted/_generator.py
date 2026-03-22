@@ -223,8 +223,14 @@ class Structure:
 
         Raises
         ------
+        FileNotFoundError
+            When *source* looks like a file path (no newlines) but the path
+            does not exist on disk.
+        IsADirectoryError
+            When *source* is a path that points to a directory rather than
+            a regular file.
         ValueError
-            When the file / string cannot be parsed, or *frame* is out of
+            When the XYZ content cannot be parsed, or *frame* is out of
             range.
 
         Examples
@@ -242,12 +248,22 @@ class Structure:
             )
             result = opt.run(initial=s)
         """
-        p = (
-            Path(source)
-            if not isinstance(source, str) or ("\n" not in str(source) and str(source).strip())
-            else None
+        # Determine whether *source* looks like a file path or raw XYZ text.
+        # Heuristic: a string containing no newlines is treated as a path;
+        # a multi-line string is treated as raw XYZ content.
+        _looks_like_path = not isinstance(source, str) or (
+            "\n" not in str(source) and str(source).strip()
         )
-        if p is not None and p.exists() and p.is_file():
+        p = Path(source) if _looks_like_path else None
+
+        if p is not None:
+            # *source* looks like a file path — enforce explicit errors.
+            if not p.exists():
+                raise FileNotFoundError(f"XYZ file not found: {p!s}")
+            if not p.is_file():
+                raise IsADirectoryError(
+                    f"Expected a file path, but {p!s} is a directory."
+                )
             text = p.read_text()
         else:
             text = str(source)

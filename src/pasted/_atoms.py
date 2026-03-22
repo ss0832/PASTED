@@ -445,21 +445,60 @@ def pauling_electronegativity(sym: str) -> float:
 # ---------------------------------------------------------------------------
 
 
-def parse_element_spec(spec: str) -> list[str]:
-    """Parse an atomic-number spec string into a sorted list of element symbols.
+def parse_element_spec(spec: str | list[str]) -> list[str]:
+    """Parse an element specification into a sorted list of element symbols.
 
-    Syntax
-    ------
-    ``"1-30"``       Z = 1 through 30
-    ``"6,7,8"``      Z = 6, 7, 8
-    ``"1-10,26,28"`` Z = 1–10 plus Z = 26 and 28
+    Three input forms are accepted:
+
+    **Atomic-number string** (most common)
+        ``"1-30"``       — Z = 1 through 30
+        ``"6,7,8"``      — Z = 6, 7, 8  (C, N, O)
+        ``"1-10,26,28"`` — Z = 1–10 plus Z = 26 and 28
+
+    **Symbol list**
+        ``["C", "N", "O"]`` — explicit element-symbol list.  Symbols must
+        be present in the built-in atomic-number table (Z = 1–106).
+
+    Parameters
+    ----------
+    spec:
+        An atomic-number spec string **or** a list of element symbol strings.
+
+    Returns
+    -------
+    list[str]
+        Element symbols sorted by atomic number (ascending Z).
 
     Raises
     ------
     ValueError
-        On malformed input or unsupported Z values.
+        On malformed input, unknown element symbols, or unsupported Z values.
     """
-    z_set: set[int] = set()
+    # ------------------------------------------------------------------ #
+    # Branch A — explicit symbol list, e.g. ["C", "N", "O"]              #
+    # ------------------------------------------------------------------ #
+    if isinstance(spec, list):
+        _sym_to_z: dict[str, int] = ATOMIC_NUMBERS
+        z_set: set[int] = set()
+        for sym in spec:
+            if not isinstance(sym, str):
+                raise ValueError(
+                    f"Symbol list entries must be strings, got {type(sym).__name__!r}: {sym!r}"
+                )
+            if sym not in _sym_to_z:
+                raise ValueError(
+                    f"Unknown element symbol {sym!r}. "
+                    "Use atomic-number notation (e.g. \"6,7,8\") or a valid symbol list."
+                )
+            z_set.add(_sym_to_z[sym])
+        if not z_set:
+            raise ValueError("Element specification resolved to an empty pool.")
+        return [_Z_TO_SYM[z] for z in sorted(z_set)]
+
+    # ------------------------------------------------------------------ #
+    # Branch B — atomic-number spec string, e.g. "6,7,8" or "1-30"      #
+    # ------------------------------------------------------------------ #
+    z_set_str: set[int] = set()
     for token in spec.split(","):
         token = token.strip()
         if not token:
@@ -469,11 +508,11 @@ def parse_element_spec(spec: str) -> list[str]:
             lo, hi = int(lo_s), int(hi_s)
             if lo > hi:
                 raise ValueError(f"Range {token!r}: lower > upper.")
-            z_set.update(range(lo, hi + 1))
+            z_set_str.update(range(lo, hi + 1))
         else:
-            z_set.add(int(token))
+            z_set_str.add(int(token))
     symbols: list[str] = []
-    for z in sorted(z_set):
+    for z in sorted(z_set_str):
         if z not in _Z_TO_SYM:
             raise ValueError(f"Z={z} not supported (supported range: {_ALL_Z[0]}–{_ALL_Z[-1]})")
         symbols.append(_Z_TO_SYM[z])

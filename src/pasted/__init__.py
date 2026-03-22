@@ -110,7 +110,7 @@ from ._placement import place_maxent
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.3.4"
+    __version__ = "0.3.5"
 
 __all__ = [  # grouped by API category, not alphabetical
     # High-level API

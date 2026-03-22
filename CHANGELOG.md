@@ -6,6 +6,68 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.5] — 2026-03-22
+
+### Bug Fixes
+
+#### BUG-1 — `parse_element_spec()` raised `AttributeError` when passed a `list[str]` (`_atoms.py`)
+
+`parse_element_spec()` accepted only a `str` argument (atomic-number notation
+such as `"6,7,8"` or `"1-30"`).  When called with a `list[str]` of element
+symbols — a form that is **documented as valid** in the quickstart and API
+reference — it raised:
+
+```
+AttributeError: 'list' object has no attribute 'split'
+```
+
+because the implementation immediately called `spec.split(",")` without
+checking the input type.
+
+Note that `StructureGenerator` and `generate()` already handled the list form
+correctly via an internal `isinstance` branch that bypassed `parse_element_spec`
+entirely.  The bug only surfaced when `parse_element_spec` was called directly
+(e.g. from user code or third-party libraries building on the public API).
+
+**Fix:** `parse_element_spec` now accepts `str | list[str]`.  When a list is
+provided, each entry is validated against the built-in symbol table and the
+result is returned sorted by ascending atomic number — matching the behavior
+of the string path.  The type signature in the source and all docstrings have
+been updated accordingly.
+
+**Affected files:**
+- `src/pasted/_atoms.py` — implementation and docstring
+- `docs/api/atoms.rst` — API reference note updated
+- `docs/quickstart.md` — element pool spec table note updated
+
+---
+
+#### BUG-2 — `Structure.from_xyz()` raised a confusing `ValueError` for missing files (`_generator.py`)
+
+When `Structure.from_xyz()` was given a path string that did not exist on
+disk, it silently treated the path string itself as XYZ text and attempted to
+parse it, producing a confusing error:
+
+```
+ValueError: Expected atom count on line 1, got '/path/to/missing.xyz'
+```
+
+The correct error for a missing file is `FileNotFoundError`, which is what
+Python's own `open()` / `Path.read_text()` raise.  The misleading `ValueError`
+made it hard to distinguish file-not-found issues from genuine XYZ parse errors.
+
+**Fix:** the path-resolution block now performs explicit existence and
+`is_file()` checks before calling `read_text()`.  Missing paths raise
+`FileNotFoundError`; paths pointing to directories raise `IsADirectoryError`.
+The docstring `Raises` section has been updated to document both new exception
+types.
+
+**Affected files:**
+- `src/pasted/_generator.py` — implementation and docstring (`Raises` section)
+- `docs/api/atoms.rst` — combined `versionchanged` note added
+
+---
+
 ## [0.3.4] — 2026-03-22
 
 ### Bug Fixes

@@ -929,14 +929,24 @@ elements are available for random sampling.  Three forms are supported:
 > (integers)**, not element symbols.  `elements="C,N,O"` raises `ValueError`;
 > use `elements="6,7,8"` or `elements=["C", "N", "O"]` instead.
 
+> **Note (v0.3.5):** `parse_element_spec()` now accepts a `list[str]` of
+> element symbols directly (e.g. `["C", "N", "O"]`).  Previously, calling
+> `parse_element_spec(["C", "N", "O"])` raised `AttributeError` because
+> the function attempted to call `.split(",")` on the list.  The fix has
+> no effect on the `StructureGenerator` / `generate()` keyword API, which
+> already handled symbol lists correctly via an internal branch.
+
 ```python
 # Correct — numeric atomic-number string
 gen = StructureGenerator(n_atoms=10, charge=0, mult=1, mode="chain",
                          elements="6,7,8")
 
-# Correct — explicit symbol list
+# Correct — explicit symbol list (passed to StructureGenerator or parse_element_spec)
 gen = StructureGenerator(n_atoms=10, charge=0, mult=1, mode="chain",
                          elements=["C", "N", "O"])
+
+from pasted._atoms import parse_element_spec
+assert parse_element_spec(["C", "N", "O"]) == ["C", "N", "O"]  # now works
 
 # WRONG — symbol string raises ValueError
 # gen = StructureGenerator(..., elements="C,N,O")  # ← ValueError!

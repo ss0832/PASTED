@@ -701,9 +701,15 @@ class TestXyzIoRobustness:
         assert len(frames) == 1
         assert frames[0][0] == atoms
 
-    def test_from_xyz_nonexistent_file_raises_value_error(self) -> None:
-        """A path that does not exist must raise ValueError, not a low-level OSError."""
-        with pytest.raises(ValueError):
+    def test_from_xyz_nonexistent_file_raises_file_not_found_error(self) -> None:
+        """A path that does not exist must raise FileNotFoundError.
+
+        Prior to v0.3.5, ``from_xyz`` silently treated the missing path string
+        as XYZ content and raised a confusing ``ValueError`` whose message
+        contained the path itself.  The fix raises ``FileNotFoundError``
+        directly, which is the standard Python convention for missing files.
+        """
+        with pytest.raises(FileNotFoundError):
             Structure.from_xyz("/absolutely/nonexistent/path/file.xyz")
 
     def test_from_xyz_multiline_string_not_treated_as_path(self) -> None:

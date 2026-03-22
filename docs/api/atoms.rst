@@ -64,7 +64,7 @@ in :attr:`Structure.metrics <pasted._generator.Structure.metrics>` and
    ``ValueError``; use ``elements="6,7,8"`` or ``elements=["C","N","O"]``
    instead.
 
-   Three string forms are accepted by :func:`parse_element_spec`:
+   :func:`parse_element_spec` accepts **two** input forms:
 
    .. list-table::
       :header-rows: 1
@@ -82,3 +82,20 @@ in :attr:`Structure.metrics <pasted._generator.Structure.metrics>` and
       * - Mixed ranges and singles
         - ``"1-10,26,28"``
         - H–Ne plus Fe and Ni
+      * - Symbol list *(new in v0.3.5)*
+        - ``["C", "N", "O"]``
+        - Explicit list of element symbols
+
+   .. versionchanged:: 0.3.5
+
+      ``parse_element_spec`` now accepts a ``list[str]`` of element symbols
+      in addition to atomic-number strings.  Previously, passing a list
+      raised :exc:`AttributeError` because the function tried to call
+      ``.split(",")`` on the list object.  The fix aligns the public API
+      with the behavior already documented in :doc:`/quickstart`.
+
+   .. versionchanged:: 0.3.5
+
+      :meth:`Structure.from_xyz` now raises :exc:`FileNotFoundError` when
+      given a path that does not exist, instead of silently treating the
+      path string as XYZ content and raising a confusing :exc:`ValueError`.
