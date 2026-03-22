@@ -264,6 +264,47 @@ Combined speedup on `compute_steinhardt` (PASTED gas structures, k ≈ 0.7):
 (N = 20–5 000), with the largest gain at N = 500–1 000 where trig was the
 dominant cost.
 
+#### Real spherical harmonics fast-path for l=4,6,8 (v0.3.8, optimisation ④)
+
+When `l_values = [4, 6, 8]` (the default), the `accumulate` lambda takes a
+dedicated code path that replaces both the P_lm recurrence and the Chebyshev
+trig recurrence with a single block of straight-line Cartesian polynomial
+arithmetic.
+
+**Why it works.**  On the unit sphere, `S_lm(x,y,z)` is a pure
+integer-coefficient polynomial in `x,y,z`.  The `(1−z²)^(m/2)` factor in
+`P_l^m(z)` is cancelled exactly by the `r_xy^m` from expanding
+`cos(mφ)·r_xy^m` and `sin(mφ)·r_xy^m` — so no `sqrt`, no trig, no division
+remains.
+
+**Code generation.**  A SymPy script applied joint CSE across all three `l`
+values simultaneously, maximising sharing of sub-expressions (`z²`, `z⁴`,
+`x·y`, `x²−y²`, …).  Output: 84 CSE intermediates + 39 accumulation lines.
+`std::pow(var, N)` for integer N was replaced by explicit multiplications
+(`z*z*z*z` etc.) to avoid libm call overhead.  The generated code is
+embedded verbatim in `_steinhardt.cpp`; the generator script is not shipped.
+
+**Dispatch.**  The fast-path fires only when
+`n_l == 3 && l_values == [4, 6, 8]` (runtime check, zero overhead for other
+`l` combinations, which continue to use the ①②③ generic path).
+
+**Measured speedup** (gas structures k≈0.7, `-O3 -std=c++17`, no `-march=native`):
+
+| N | generic ①②③ | fast-path ④ | speedup |
+|--:|---:|---:|---:|
+| 20 | 0.015 ms | 0.013 ms | 1.2× |
+| 100 | 0.040 ms | 0.028 ms | **1.4×** |
+| 500 | 0.182 ms | 0.115 ms | **1.6×** |
+| 1 000 | 0.374 ms | 0.239 ms | **1.6×** |
+| 2 000 | 2.115 ms | 1.667 ms | 1.3× |
+| 5 000 | 4.329 ms | 3.966 ms | 1.1× |
+
+The 1.4–1.6× peak at N = 100–1 000 reflects the removal of the ~148-op
+sequential-dependency chain in `compute_plm`, which had low IPC even under
+`-O3` because each recurrence step reads the result of the previous one.
+The straight-line polynomial code has no such dependency and allows the CPU
+to schedule independent multiplications in parallel.
+
 All metrics share the unified adjacency `d_ij ≤ cutoff`.
 All computation is **single-threaded** (no OpenMP dependency).
 

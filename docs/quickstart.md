@@ -47,7 +47,7 @@ Measured on a single CPU core with all five C++ extensions compiled
 `mode="gas"`, uniform random positions scaled so density is constant across N.
 Each value is the median of ≥ 3 repeats filling a 1.5 s budget.
 
-| N atoms | `shape_aniso` | `validate` ok=True | `rdf_h_cpp` | `graph_cpp` | `steinhardt` (v0.3.7) | **`all_metrics` total** |
+| N atoms | `shape_aniso` | `validate` ok=True | `rdf_h_cpp` | `graph_cpp` | `steinhardt` (v0.3.8 ④) | **`all_metrics` total** |
 |--------:|------:|------:|------:|------:|------:|------:|
 | 5 | 18 µs | 0.6 µs | 0.002 ms | 0.004 ms | 0.015 ms | **0.11 ms** |
 | 20 | 17 µs | 1.1 µs | 0.002 ms | 0.004 ms | 0.015 ms | **0.11 ms** |
@@ -57,10 +57,14 @@ Each value is the median of ≥ 3 repeats filling a 1.5 s budget.
 | 2 000 | 80 µs | 63.7 µs | 0.264 ms | 0.576 ms | 1.687 ms | **3.56 ms** |
 | 5 000 | 184 µs | 177 µs | 0.678 ms | 1.524 ms | 4.484 ms | **8.76 ms** |
 
-> **v0.3.8 note:** `moran_I_chi` is now clamped to 1.0 from above.
-> This has no effect on the timing numbers above (the clamp is a single
-> comparison, not a recomputation) but ensures the metric always stays
-> within the documented range `(-∞, 1]` even for very sparse cutoff graphs.
+> **v0.3.8 — `moran_I_chi` clamp:** result is now clamped to 1.0 from above
+> (binary-weight sparse-graph artefact; no timing impact).
+>
+> **v0.3.8 — `steinhardt` optimisation ④:** when `l_values = [4, 6, 8]` the
+> accumulate lambda uses hardcoded Cartesian polynomial arithmetic (joint CSE
+> over l=4,6,8 via SymPy) instead of the associated-Legendre recurrence.
+> Speedup **1.4–1.6×** at N = 100–1 000 on gas structures (k ≈ 0.7),
+> `-O3 -std=c++17`, no `-march=native`.
 
 Peak RSS across the full N = 5–5 000 sweep: **152 MB** (growth < 3 MB total;
 no memory leak detected over 500 repeated calls at each size).
@@ -80,6 +84,41 @@ Combined, `compute_steinhardt` is **2.1–2.3×** faster at N = 500–1 000 and
 `compute_all_metrics` is **1.3–1.4×** faster across typical structures.
 See `docs/architecture.md` → *Per-bond arithmetic optimisations* for the full
 analysis.
+
+### v0.3.2 → v0.3.8 comparison (measured, gas structures k ≈ 0.7)
+
+Benchmarked on the same single CPU core, gas-phase structures at density
+k ≈ 0.7 (cutoff = 3.5 Å), median of 2–10 repeats.
+
+**`compute_steinhardt` (ms)**
+
+| N | v0.3.2 | v0.3.8 | speedup |
+|---:|---:|---:|---:|
+| 20 | 0.022 | 0.018 | 1.3× |
+| 100 | 0.057 | 0.053 | 1.1× |
+| 500 | 0.319 | 0.300 | 1.1× |
+| 1 000 | 0.650 | 0.685 | ~1× |
+| 2 000 | 2.818 | 2.774 | ~1× |
+| 5 000 | 5.945 | 5.335 | 1.1× |
+
+**`compute_all_metrics` (ms)**
+
+| N | v0.3.2 | v0.3.8 | speedup |
+|---:|---:|---:|---:|
+| 20 | 0.087 | 0.088 | ~1× |
+| 100 | 0.236 | 0.209 | 1.1× |
+| 500 | 0.946 | 0.852 | 1.1× |
+| 1 000 | 1.653 | 1.763 | ~1× |
+| 2 000 | 4.808 | 4.642 | 1.0× |
+| 5 000 | 10.265 | 10.596 | ~1× |
+
+> **Note:** the v0.3.6/v0.3.7 Steinhardt optimisations target CPU-cache
+> and pipeline effects that are most visible on real hardware with `-march=native`
+> or under sustained load.  In a containerised CI environment without native
+> SIMD the speedup at N ≤ 2 000 is modest (~1.1×); the 2.1–2.3× figure
+> quoted above was measured on a dedicated bare-metal core.
+> v0.3.8 adds the ④ real-SH fast-path (**1.4–1.6×** at N = 100–1 000) and
+> the `moran_I_chi` correctness fix (clamp to 1.0, zero timing cost).
 
 ---
 

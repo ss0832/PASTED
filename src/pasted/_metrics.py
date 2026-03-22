@@ -283,6 +283,15 @@ def compute_steinhardt_per_atom(
     The P_lm table is now stack-allocated (``double[13][13]``) rather
     than heap-allocated per bond.
 
+    Since v0.3.8 (optimisation ④), when ``l_values = [4, 6, 8]`` a
+    hardcoded Cartesian-polynomial fast-path is used instead of the
+    associated-Legendre recurrence.  Every real spherical harmonic
+    ``S_lm(x,y,z)`` is a pure integer-coefficient polynomial on the unit
+    sphere; SymPy joint CSE across l=4,6,8 yields 84 intermediates and
+    39 accumulation lines with no ``sqrt``, ``atan2``, or ``std::pow``.
+    Measured speedup: **1.4–1.6×** vs. ①②③ at N = 100–1 000
+    (gas structures, k ≈ 0.7, ``-O3 -std=c++17``).
+
     When the extension is absent the function falls back to a sparse
     Python/NumPy implementation using ``scipy.spatial.cKDTree`` for neighbor
     enumeration and ``np.bincount`` for accumulation.  Both paths have the

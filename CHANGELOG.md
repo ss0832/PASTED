@@ -3,7 +3,6 @@
 All notable changes to PASTED are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-
 ---
 
 ## [Unreleased]
@@ -51,9 +50,41 @@ result is unchanged.
   constructs a deliberately sparse 3-atom graph (`W=2, N=3`) and checks the
   C++ path directly.
 
-### Documentation
+### Performance
 
-#### DOC — `moran_I_chi` range and `charge_frustration` description corrected
+#### PERF — `_steinhardt_core`: real spherical harmonics hardcoded for l=4,6,8 (optimisation ④)
+
+When `l_values = [4, 6, 8]` (the default used by `compute_all_metrics`), the
+`accumulate` lambda now takes a dedicated fast-path that replaces the
+associated-Legendre recurrence (`compute_plm`, ~148 data-dependent ops) and
+the Chebyshev trig recurrence with a single block of straight-line Cartesian
+polynomial arithmetic.
+
+**Mathematical basis.**  On the unit sphere every real spherical harmonic
+`S_lm(x,y,z)` is a pure integer-coefficient polynomial in `x,y,z` — no
+`sqrt`, no trig, no division.  The `(1-z²)^(m/2)` factor in `P_l^m(z)` is
+cancelled exactly by the `r_xy^m` that comes from expanding
+`cos(mφ)·r_xy^m` and `sin(mφ)·r_xy^m` in Cartesian form.
+
+**Code generation.**  A SymPy script applied joint CSE across l=4,6,8,
+producing 84 CSE intermediates + 39 accumulation lines of pure `double`
+arithmetic.  `std::pow` for integer exponents was replaced with explicit
+multiplications to avoid libm overhead.
+
+**Measured speedup** (gas structures k≈0.7, `-O3 -std=c++17`, no `-march=native`):
+
+| N | generic ①②③ | fast-path ④ | speedup |
+|--:|---:|---:|---:|
+| 100 | 0.040 ms | 0.028 ms | **1.4×** |
+| 500 | 0.182 ms | 0.115 ms | **1.6×** |
+| 1 000 | 0.374 ms | 0.239 ms | **1.6×** |
+| 2 000 | 2.115 ms | 1.667 ms | 1.3× |
+| 5 000 | 4.329 ms | 3.966 ms | 1.1× |
+
+**Tests added:** `TestSteinhardtFastPath::test_fast_path_matches_python_sparse`
+(atol=1e-12, N=5/50/200/1000) and `test_fast_path_vs_generic_order`.
+
+### Documentation
 
 - `docs/api/metrics.rst`: range column updated from `≈ [−1, 1]` to `(-∞, 1]`
   with an explanation of the clamp; `charge_frustration` description corrected

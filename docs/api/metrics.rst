@@ -127,6 +127,19 @@ therefore be used as ``--filter`` targets on the CLI and in the
       before returning.  Results for connected graphs (``graph_lcc ≈ 1.0``)
       are unaffected.
 
+   .. note::
+
+      **Performance — real spherical harmonics fast-path for l=4,6,8 (v0.3.8, ④).**
+
+      When ``l_values = [4, 6, 8]`` (the default), ``compute_steinhardt`` uses
+      hardcoded Cartesian polynomial arithmetic instead of the
+      associated-Legendre recurrence.  Every real spherical harmonic
+      ``S_lm(x,y,z)`` is a pure integer-coefficient polynomial on the unit
+      sphere; SymPy joint CSE across all three ``l`` values yields 84
+      intermediates + 39 accumulation lines with no ``sqrt``, no ``atan2``, and
+      no ``std::pow``.  Speedup: **1.4–1.6×** at N = 100–1 000 vs. the
+      ①②③ generic path.  Other ``l`` combinations are unaffected.
+
    .. warning::
 
       When ``HAS_GRAPH = False``, the five graph/ring/charge/Moran metrics

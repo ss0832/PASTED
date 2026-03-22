@@ -12,6 +12,7 @@ from pasted import _ext
 from pasted._atoms import cov_radius_ang as _cov_radius_ang
 from pasted._atoms import parse_filter, pauling_electronegativity
 from pasted._metrics import (
+    _steinhardt_per_atom_sparse,
     compute_all_metrics,
     compute_charge_frustration,
     compute_graph_metrics,
@@ -549,3 +550,34 @@ class TestComputeMoranIChi:
         # W=2 (one directed edge each way), N=3 → n/W=1.5 → raw may exceed 1
         result = _ext.moran_I_chi_cpp(pts, en_vals, cutoff=2.0)
         assert result <= 1.0 + 1e-12, f"C++ moran_I_chi={result:.6f} > 1.0 after v0.3.8 clamp"
+
+
+class TestSteinhardtFastPath:
+    """Regression tests for ④ real-SH hardcoded fast-path (v0.3.8)."""
+
+    @pytest.mark.skipif(not _ext.HAS_STEINHARDT, reason="_steinhardt_core not built")
+    @pytest.mark.parametrize("n", [5, 50, 200, 1000])
+    def test_fast_path_matches_python_sparse(self, n: int) -> None:
+        """④ fast-path [4,6,8] must agree with Python sparse to atol=1e-12."""
+        rng = np.random.default_rng(0)
+        pts = rng.standard_normal((n, 3)) * 2.5
+        fast = compute_steinhardt(pts, [4, 6, 8], 3.5)
+        ref_pa = _steinhardt_per_atom_sparse(pts, [4, 6, 8], 3.5)
+        for l_val in [4, 6, 8]:
+            key = f"Q{l_val}"
+            ref_val = float(np.mean(ref_pa[key]))
+            assert fast[key] == pytest.approx(ref_val, abs=1e-12), (
+                f"N={n} {key}: fast={fast[key]:.10f} ref={ref_val:.10f}"
+            )
+
+    @pytest.mark.skipif(not _ext.HAS_STEINHARDT, reason="_steinhardt_core not built")
+    def test_fast_path_vs_generic_order(self) -> None:
+        """[4,6,8] fast-path and [6,4,8] generic path must give same Q values."""
+        rng = np.random.default_rng(7)
+        pts = rng.standard_normal((300, 3)) * 2.5
+        fast = compute_steinhardt(pts, [4, 6, 8], 3.5)
+        generic = compute_steinhardt(pts, [6, 4, 8], 3.5)
+        for key in ["Q4", "Q6", "Q8"]:
+            assert fast[key] == pytest.approx(generic[key], abs=1e-12), (
+                f"{key}: fast={fast[key]:.10f} generic={generic[key]:.10f}"
+            )
