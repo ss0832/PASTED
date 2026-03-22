@@ -184,9 +184,9 @@ class TestMakeInitialReturnsNone:
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
             method="annealing", max_steps=10,
+            max_init_attempts=1,  # prevents itertools.count() infinite loop
             n_restarts=1, seed=0,
         )
-        # Patch StructureGenerator.generate to return an empty GenerationResult.
         from pasted._generator import GenerationResult
 
         with patch("pasted._optimizer.StructureGenerator") as mock_sg:
