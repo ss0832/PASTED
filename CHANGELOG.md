@@ -132,55 +132,6 @@ Added 23 tests using `hypothesis` covering 9 classes:
 
 ---
 
-## [0.3.8]
-
-**Affected versions:** all releases prior to v0.3.9.
-**Affected code path:** Python fallback `_steinhardt_per_atom_sparse`
-in `src/pasted/_metrics.py`.
-
-**Root cause.**  `scipy.spatial.cKDTree.query_pairs(cutoff)` returns all
-pairs with `d ≤ cutoff`, including pairs where `d = 0` (coincident atoms).
-The fallback divided by `safe_r_nb = where(r_nb > 0, r_nb, 1.0)` to avoid
-division by zero, but kept the zero-distance bond in the accumulator.
-This inflated `deg[i]` and then produced `Q_l = 1.0` (the value for a
-perfectly ordered collinear structure) for every coincident atom, while the
-C++ path correctly skips bonds with `d < 1e-10` and returns `Q_l = 0.0`
-(isolated, no valid bond direction).
-
-**Example:**  Two atoms both placed at the origin with `cutoff=1.0`:
-```
-C++ path:    Q6 = [0.0, 0.0]   ← correct (undefined direction → skip)
-Python path: Q6 = [1.0, 1.0]   ← wrong (was accumulating d=0 bond)
-```
-
-**Fix.**  After building the directed bond array, bonds with `r_nb < 1e-10`
-are masked out before the unit-vector division and the `bincount`
-accumulation, matching the C++ threshold exactly.
-
-**Discovered by:** `hypothesis` property-based test
-`TestCppVsPythonConsistency::test_cpp_vs_python_sparse_l468`.
-
-### Added
-
-#### TEST — Property-based test suite (`tests/test_property_based.py`)
-
-Added `tests/test_property_based.py` — 23 `hypothesis`-driven tests covering
-9 property classes:
-
-| Class | Properties verified |
-|---|---|
-| `TestMetricRangeInvariants` | Q ∈ [0,1]; graph metrics ∈ [0,1]; charge_frustration ≥ 0; moran ≤ 1; H ≥ 0; shape_aniso ∈ [0,1]; RDF_dev ≥ 0 |
-| `TestTranslationInvariance` | Steinhardt + graph metrics unchanged after arbitrary shift |
-| `TestRotationInvariance` | Steinhardt + graph metrics unchanged after arbitrary 3-D rotation |
-| `TestCppVsPythonConsistency` | C++ and Python sparse paths agree to atol=1e-10 for any input |
-| `TestFastPathVsGeneric` | ④ fast-path and ①②③ generic path agree to atol=1e-10 for any input |
-| `TestGenerateInvariants` | `generate()` always produces correct atom count, valid parity, finite metrics |
-| `TestComputeAllMetricsCompleteness` | All 13 metric keys present; all values finite; result is dict of floats |
-| `TestPerAtomRanges` | Per-atom Q_l values also in [0, 1] |
-| `TestIdempotency` | Same input → same output (no hidden state mutation) |
-
----
-
 ## [0.3.8] — 2026-03-22
 
 ### Fixed
