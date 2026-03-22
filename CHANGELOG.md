@@ -10,63 +10,55 @@ PASTED uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+
 ## [0.3.9] — 2026-03-22
 
 ### Fixed
 
-#### BUG — `_steinhardt_per_atom_sparse`: 重複座標で Q=1 を返す（C++ は Q=0）
+#### BUG — `_steinhardt_per_atom_sparse`: Q=1 for overlapping coordinates (C++ returns Q=0)
 
-*発見方法: `hypothesis` プロパティベーステスト*
+*Discovered via: hypothesis property-based test*
 
-`scipy.spatial.cKDTree.query_pairs(cutoff)` は `d=0`（重複座標）のペアも返すが、
-Python 側が `safe_r_nb = where(r_nb>0, r_nb, 1.0)` でゼロ除算を回避しつつも
-そのペアを有効な結合として累積していた。C++ は `d < 1e-10` で完全スキップするため
-両パスに矛盾があった。修正: `r_nb < 1e-10` のボンドをマスクアウト。
+`scipy.spatial.cKDTree.query_pairs(cutoff)` returns pairs with `d=0` (coincident coordinates), but the Python implementation, while preventing division by zero with `safe_r_nb = where(r_nb>0, r_nb, 1.0)`, still accumulated these pairs as valid bonds. The C++ implementation skips entirely when `d < 1e-10`, leading to inconsistency.  
+**Fix:** Bonds where `r_nb < 1e-10` are now masked out in the Python path.
 
-#### BUG — `parse_xyz`: 座標ブロック内の空白行で `ValueError` クラッシュ
+#### BUG — `parse_xyz`: ValueError crash on blank lines within coordinate blocks
 
-*発見方法: カバレッジ計測（未実行パス調査）*
+*Discovered via: coverage analysis (untested path inspection)*
 
-XYZ フォーマットでは空白行は合法なセパレータだが、座標ループ内で空白行を
-`len(parts) < 4` チェック前に `split()` した結果が空リストになり、
-`ValueError: Malformed coordinate line: ''` が発生していた。
-修正: 座標ループ内で空白行をスキップ。
+In the XYZ format, blank lines are legal as separators, but splitting a blank line before the `len(parts) < 4` check returns an empty list, causing `ValueError: Malformed coordinate line: ''`.  
+**Fix:** Blank lines are now skipped within the coordinate loop.
 
-#### BUG — `FlatCellList::build()` で `int` 符号付き整数オーバーフロー
+#### BUG — `FlatCellList::build()`: signed integer overflow in `int`
 
-*発見方法: UBSan（Undefined Behaviour Sanitizer）*
-*影響ファイル: `_steinhardt.cpp`, `_graph_core.cpp`, `_relax.cpp` の全 3 ファイル*
+*Discovered via: UBSan (Undefined Behaviour Sanitizer)*  
+*Affected files: `_steinhardt.cpp`, `_graph_core.cpp`, `_relax.cpp` (all three files)*
 
-`cutoff` が大きい（例: 1000 Å）とき、セル数 `nx * ny * nz` の計算が
-`int` をオーバーフローし、`cell_head.assign()` に不正なサイズが渡っていた
-（C++ 未定義動作）。
+When `cutoff` is large (e.g., 1000 Å), the cell count computation `nx * ny * nz` could overflow `int`, resulting in an invalid size passed to `cell_head.assign()`, triggering undefined behavior in C++.
 
-**修正方針（案A）**: `int64_t` で積を監視し、`1<<22`（4M セル、約 16 MB）を
-超えたら `cell_size` を 2 倍にして再計算するループを追加。
-上限に収まった時点で `int` にキャストし、以降のホットループ
-（`for_each_neighbor`）は `int` 算術のまま — 実行時パフォーマンスに影響なし。
+**Fix approach (Plan A):** The product is monitored as `int64_t`; if the value exceeds `1<<22` (4 million cells, about 16 MB), the `cell_size` is doubled and the calculation retried in a loop. Once the upper limit is satisfied, the result is cast back to `int` for the subsequent hot loop (`for_each_neighbor`), preserving performance.
 
 ### Added
 
-#### TEST — プロパティベーステスト群 (`tests/test_property_based.py`)
+#### TEST — Property-based test suite (`tests/test_property_based.py`)
 
-`hypothesis` を使った 23 テスト（9 クラス）を追加:
+Added 23 tests using `hypothesis` covering 9 classes:
 
-- `TestMetricRangeInvariants` — 全メトリクスの値域不変条件
-- `TestTranslationInvariance` — 平行移動不変性
-- `TestRotationInvariance` — 回転不変性
-- `TestCppVsPythonConsistency` — C++ ↔ Python sparse パス一致（atol=1e-10）
-- `TestFastPathVsGeneric` — ④ fast-path ↔ ①②③ generic 一致（atol=1e-10）
-- `TestGenerateInvariants` — `generate()` の原子数・パリティ・メトリクス完全性
-- `TestComputeAllMetricsCompleteness` — 全 13 キー存在・有限値・dict[str,float]
-- `TestPerAtomRanges` — per-atom Q_l も [0, 1] 内
-- `TestIdempotency` — 同一入力で同一出力（冪等性）
+- `TestMetricRangeInvariants` — Range invariance for all metrics
+- `TestTranslationInvariance` — Invariance under translation
+- `TestRotationInvariance` — Invariance under rotation
+- `TestCppVsPythonConsistency` — C++ ↔ Python sparse path agreement (atol=1e-10)
+- `TestFastPathVsGeneric` — Fast-path ④ vs generic ①②③ agreement (atol=1e-10)
+- `TestGenerateInvariants` — Completeness and correctness of atom count, parity, and metrics in `generate()`
+- `TestComputeAllMetricsCompleteness` — All 13 metric keys present, finite, `dict[str, float]` result
+- `TestPerAtomRanges` — Per-atom Q_l also within [0, 1]
+- `TestIdempotency` — Identical output for identical input (idempotency)
 
 ### Changed (type annotations — mypy strict)
 
-- `_placement.py`: `angular_repulsion_gradient` の戻り値を `np.asarray()` でラップ（`Any` → `ndarray`）
-- `_optimizer.py`: `_make_ctx` の `positions: list` を `list[tuple[float, float, float]]` に明示化
-- `_optimizer.py`: `tuple(tuple(p) for p in positions)` を `(float(p[0]), float(p[1]), float(p[2]))` に修正（型不一致解消）
+- `_placement.py`: `angular_repulsion_gradient` return value is now wrapped with `np.asarray()` (`Any` → `ndarray`)
+- `_optimizer.py`: `_make_ctx` has explicit `positions: list[tuple[float, float, float]]` type annotation
+- `_optimizer.py`: `tuple(tuple(p) for p in positions)` changed to `(float(p[0]), float(p[1]), float(p[2]))` for type correctness
 
 ---
 
