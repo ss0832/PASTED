@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1558,6 +1559,34 @@ class TestEdgeCases:
         frames = parse_xyz(content)
         for atoms, _pos, _charge, _mult, _met in frames:
             assert "H" not in atoms, "H should not appear when --no-add-hydrogen is set"
+
+
+# ===========================================================================
+# 21. __main__ entry-point
+# ===========================================================================
+
+
+class TestMainEntryPoint:
+    """``python -m pasted`` must reach __main__.py (currently 0 % coverage).
+
+    ``runpy.run_module`` does not register coverage for ``__main__.py``
+    because pytest-cov cannot trace into a separately-spawned module context.
+    Instead we evict ``pasted.__main__`` from ``sys.modules`` and re-import
+    it with ``pasted.cli.main`` patched to a no-op, which forces Python to
+    re-execute both lines of ``__main__.py`` inside the already-traced process.
+    """
+
+    def test_dunder_main_executes_both_lines(self) -> None:
+        """Re-importing __main__ executes 'from .cli import main' and 'main()'.
+
+        Both source lines are covered; the patched main() call is verified
+        via assert_called_once().
+        """
+        sys.modules.pop("pasted.__main__", None)
+        with patch("pasted.cli.main") as mock_main:
+            import pasted.__main__  # noqa: F401
+        mock_main.assert_called_once()
+
 
 # ===========================================================================
 # 21. Range-argument error handling
