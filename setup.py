@@ -21,6 +21,7 @@ Extensions
   pasted._ext._maxent_core     <- src/pasted/_ext/_maxent.cpp
   pasted._ext._steinhardt_core <- src/pasted/_ext/_steinhardt.cpp
   pasted._ext._graph_core      <- src/pasted/_ext/_graph_core.cpp
+  pasted._ext._bond_angle_core <- src/pasted/_ext/_bond_angle_core.cpp
 
 Fallback
 --------
@@ -47,6 +48,8 @@ _EXT_SPECS = [
     ("pasted._ext._maxent_core",     "src/pasted/_ext/_maxent.cpp"),
     ("pasted._ext._steinhardt_core", "src/pasted/_ext/_steinhardt.cpp"),
     ("pasted._ext._graph_core",      "src/pasted/_ext/_graph_core.cpp"),
+    ("pasted._ext._bond_angle_core", "src/pasted/_ext/_bond_angle_core.cpp"),
+    ("pasted._ext._combined_core",   "src/pasted/_ext/_combined_core.cpp"),
 ]
 
 

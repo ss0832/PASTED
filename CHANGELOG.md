@@ -9,6 +9,119 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.0] — 2026-03-24
+
+### Fixed
+
+#### BUG — `ALL_METRICS` module docstring incorrectly described type as `tuple[str, ...]` (`_atoms.py`)
+
+The module-level docstring entry for `ALL_METRICS` stated the type as
+`tuple[str, ...]`, but the actual runtime type has always been `frozenset[str]`.
+This mismatch could mislead users expecting indexed access (`ALL_METRICS[0]`)
+or a guaranteed iteration order.  The docstring has been corrected to
+`frozenset[str]`, and an inline docstring has been added to the definition
+explaining that `sorted(ALL_METRICS)` should be used whenever ordered
+enumeration is required.
+
+**Affected files:** `src/pasted/_atoms.py`
+
+#### BUG — `compute_shape_anisotropy` emitted `RuntimeWarning` for structures with Inf coordinates (`_metrics.py`)
+
+When an atom position contained `Inf`, NumPy's mean-centering subtraction
+(`p = pts - pts.mean(axis=0)`) emitted a `RuntimeWarning: invalid value
+encountered in subtract`.  The function already returned `NaN` in this case,
+but the warning was noise for callers that intentionally pass degenerate
+structures (e.g., `test_adversarial.py::test_from_xyz_nan_inf_coords_does_not_hard_crash`).
+An explicit `np.isfinite` guard now returns `NaN` before the subtraction,
+suppressing the warning without changing the return value for valid inputs.
+
+**Affected files:** `src/pasted/_metrics.py`
+
+#### BUG — `read_xyz()` raised `ValueError` instead of `FileNotFoundError` for non-existent paths (`_generator.py`)
+
+`read_xyz("missing.xyz")` silently fell through the path-existence check and
+attempted to parse the path string as XYZ text, raising a confusing
+`ValueError: Expected atom count on line 1, got 'missing.xyz'`.  The
+`Structure.from_xyz()` method (which `read_xyz` wraps) correctly raised
+`FileNotFoundError` for the same input.  The path-validation block in
+`read_xyz` has been updated to match `Structure.from_xyz()` behavior,
+raising `FileNotFoundError` or `IsADirectoryError` explicitly before any
+parse attempt.
+
+**Affected files:** `src/pasted/_generator.py`
+
+
+
+#### FEATURE — `_combined_core`: single-pass C++17 all-metrics kernel (`_combined_core.cpp`, `_metrics.py`, `setup.py`)
+
+`_combined_core` is a new pybind11 extension that computes all pair-based
+structural metrics in a **single `FlatCellList` traversal**, replacing the
+four independent cell-list builds previously issued by `_rdf_h_cpp`,
+`_graph_metrics_cpp`, `_steinhardt_per_atom`, and `_bond_angle_entropy_cpp`.
+
+The combined kernel accumulates in one pass:
+
+- RDF histogram → `h_spatial`, `rdf_dev`
+- Bond adjacency lists → `graph_lcc`, `graph_cc`, `ring_fraction`,
+  `charge_frustration`, `moran_I_chi`
+- Steinhardt re/im buffers → `Q4`, `Q6`, `Q8` (fast-path ④, same
+  Cartesian-polynomial expressions as `_steinhardt_core`)
+- Per-atom distance sums → `radial_variance`
+- Per-atom outer-product tensor components → `local_anisotropy`
+- CSR neighbor count → bond-angle entropy (no second cell-list pass;
+  unit vectors are filled from the already-populated `bond_adj` lists)
+
+`compute_all_metrics` now dispatches to `_all_metrics_cpp` when
+`HAS_COMBINED = True` (the new top priority in the dispatch chain),
+falling back to the existing `_HAS_GRAPH` / pure-Python paths otherwise.
+
+**Measured speedup** (C++ level, FlatCellList × 3 → × 1):
+
+| N    | Old (ms) | New (ms) | Speedup |
+|------|----------|----------|---------|
+| 50   | 0.110    | 0.057    | 1.93×   |
+| 500  | 0.615    | 0.328    | 1.87×   |
+| 1000 | 1.131    | 0.591    | 1.91×   |
+
+**NaN/Inf guard:** non-finite coordinates in `pts` are detected at entry and
+return a zero-filled result dict (matching the behavior of the individual
+extension modules) rather than crashing in `FlatCellList::build`.
+
+**Affected files:**
+- `src/pasted/_ext/_combined_core.cpp` — new file
+- `src/pasted/_metrics.py` — `_HAS_COMBINED` import + dispatch block added
+- `setup.py` — `_combined_core` entry uncommented
+
+#### FEATURE — `_EXT_SUBMODULES` and fallback tests extended (`tests/test_ext_init.py`, `tests/test_fallback_paths.py`)
+
+- `test_ext_init.py`: `_EXT_SUBMODULES` already included `_combined_core`;
+  `HAS_BA_CPP` / `HAS_COMBINED` flag assertions and attribute-existence checks
+  are in place from the v0.4.0-alpha work.
+- `test_fallback_paths.py`: `_COMBINED_FLAG` added;
+  `_ALL_METRICS_FLAGS` now covers all four C++ flags
+  (`_HAS_GRAPH`, `_HAS_STEINHARDT`, `_HAS_BA_CPP`, `_HAS_COMBINED`).
+
+### Fixed
+
+#### BUG — `test_property_based.py::TestRotationInvariance::test_graph_metrics_rotation_invariant` failed with `atol=1e-8` violation on degenerate input
+
+Hypothesis's shrinking strategy could produce coordinate arrays where many
+atoms shared the same position (minimum distance → 0).  With coincident
+atoms, `r_bound → 0` in `rdf_h_cpp`, making `RDF_dev` numerically unstable
+across rotation.  Such inputs are physically impossible (no real structure
+has atoms at identical positions).
+
+**Fix:** `positions_strategy` in `test_property_based.py` now applies
+`hypothesis.assume(min_pairwise_dist² ≥ 0.25)` (i.e., all pairs ≥ 0.5 Å),
+discarding degenerate examples rather than masking a numerical edge case.
+The 0.5 Å threshold is a conservative lower bound on the shortest known
+covalent bond (H–H ≈ 0.74 Å).
+
+**Affected files:**
+- `tests/test_property_based.py` — `assume` import + `_MIN_ATOM_DIST` guard
+
+---
+
 ## [0.3.10] — 2026-03-22
 
 ### Fixed

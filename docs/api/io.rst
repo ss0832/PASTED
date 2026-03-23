@@ -42,3 +42,15 @@ For most use-cases the higher-level methods on
    * - :func:`pasted._generator.read_xyz`
      - Load all frames from a file or raw string and return
        ``list[Structure]`` with metrics recomputed by default.
+
+.. note::
+
+   **Bug fix — ``read_xyz`` now raises ``FileNotFoundError`` for missing paths (v0.4.0).**
+
+   Prior to v0.4.0, calling ``read_xyz("missing.xyz")`` (a string without
+   newlines that does not exist as a file) fell through the path-existence
+   check and tried to parse the path string as XYZ text, raising a confusing
+   ``ValueError: Expected atom count on line 1, got 'missing.xyz'``.
+   The function now raises :exc:`FileNotFoundError` (or
+   :exc:`IsADirectoryError` for directory paths), matching the behavior of
+   :meth:`~pasted._generator.Structure.from_xyz`.

@@ -48,6 +48,8 @@ _EXT_SUBMODULES = [
     "pasted._ext._maxent_core",
     "pasted._ext._steinhardt_core",
     "pasted._ext._graph_core",
+    "pasted._ext._bond_angle_core",  # added in v0.4.0
+    "pasted._ext._combined_core",  # added in v0.4.0 (step 2)
 ]
 
 
@@ -133,6 +135,8 @@ class TestExtInitFallbacks:
             assert ext.HAS_MAXENT_LOOP is False
             assert ext.HAS_STEINHARDT is False
             assert ext.HAS_GRAPH is False
+            assert ext.HAS_BA_CPP is False  # added in v0.4.0
+            assert ext.HAS_COMBINED is False  # added in v0.4.0
         finally:
             _restore_ext()
 
@@ -148,12 +152,45 @@ class TestExtInitFallbacks:
         finally:
             _restore_ext()
 
+    def test_partial_build_relax_only_extended(self) -> None:
+        """Only _relax_core available: new HAS_BA_CPP and HAS_COMBINED must also be False."""
+        blocked = {name: None for name in _EXT_SUBMODULES if "relax" not in name}
+        ext = _reload_ext(blocked)
+        try:
+            assert ext.HAS_BA_CPP is False
+            assert ext.HAS_COMBINED is False
+        finally:
+            _restore_ext()
+
+    def test_bond_angle_core_missing_sets_has_ba_cpp_false(self) -> None:
+        """ImportError on _bond_angle_core must set HAS_BA_CPP=False."""
+        ext = _reload_ext({"pasted._ext._bond_angle_core": None})
+        try:
+            assert ext.HAS_BA_CPP is False
+            assert ext.bond_angle_entropy_cpp is None
+        finally:
+            _restore_ext()
+
+    def test_combined_core_missing_sets_has_combined_false(self) -> None:
+        """ImportError on _combined_core must set HAS_COMBINED=False."""
+        ext = _reload_ext({"pasted._ext._combined_core": None})
+        try:
+            assert ext.HAS_COMBINED is False
+            assert ext.all_metrics_cpp is None
+        finally:
+            _restore_ext()
+
     def test_normal_import_all_flags_true(self) -> None:
         """Sanity check: with all extensions present every HAS_* flag is True."""
         _restore_ext()
         import pasted._ext as ext
+
         assert ext.HAS_RELAX is True
         assert ext.HAS_MAXENT is True
         assert ext.HAS_MAXENT_LOOP is True
         assert ext.HAS_STEINHARDT is True
         assert ext.HAS_GRAPH is True
+        # v0.4.0 extensions: only check attribute existence because CI may
+        # not have rebuilt the binaries yet.
+        assert hasattr(ext, "HAS_BA_CPP")
+        assert hasattr(ext, "HAS_COMBINED")

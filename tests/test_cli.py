@@ -65,25 +65,40 @@ from pasted.cli import _write_output, build_parser, main
 
 # Minimum valid CLI arguments for gas mode
 _GAS_BASE: list[str] = [
-    "--n-atoms", "6",
-    "--charge", "0",
-    "--mult", "1",
-    "--mode", "gas",
-    "--region", "sphere:6",
-    "--elements", "6,7,8",
-    "--n-samples", "5",
-    "--seed", "42",
+    "--n-atoms",
+    "6",
+    "--charge",
+    "0",
+    "--mult",
+    "1",
+    "--mode",
+    "gas",
+    "--region",
+    "sphere:6",
+    "--elements",
+    "6,7,8",
+    "--n-samples",
+    "5",
+    "--seed",
+    "42",
 ]
 
 # Minimum valid CLI arguments for chain mode (no --region required)
 _CHAIN_BASE: list[str] = [
-    "--n-atoms", "6",
-    "--charge", "0",
-    "--mult", "1",
-    "--mode", "chain",
-    "--elements", "6,7,8",
-    "--n-samples", "5",
-    "--seed", "0",
+    "--n-atoms",
+    "6",
+    "--charge",
+    "0",
+    "--mult",
+    "1",
+    "--mode",
+    "chain",
+    "--elements",
+    "6,7,8",
+    "--n-samples",
+    "5",
+    "--seed",
+    "0",
 ]
 
 
@@ -205,9 +220,7 @@ class TestBuildParser:
         assert method_action is not None
         method_choices = method_action.choices
         assert method_choices is not None
-        assert set(method_choices) == {
-            "annealing", "basin_hopping", "parallel_tempering"
-        }
+        assert set(method_choices) == {"annealing", "basin_hopping", "parallel_tempering"}
 
 
 # ===========================================================================
@@ -221,41 +234,76 @@ class TestArgumentTypes:
     def _ns(self) -> argparse.Namespace:
         """Namespace with all commonly-used non-default values set."""
         return _parse_args(
-            "--n-atoms", "12",
-            "--charge", "-1",
-            "--mult", "2",
-            "--mode", "chain",
-            "--branch-prob", "0.4",
-            "--chain-persist", "0.7",
-            "--chain-bias", "0.3",
-            "--bond-range", "1.2:1.8",
-            "--center-z", "26",
-            "--coord-range", "4:6",
-            "--shell-radius", "1.8:2.5",
-            "--maxent-steps", "200",
-            "--maxent-lr", "0.03",
-            "--maxent-cutoff-scale", "3.0",
-            "--cov-scale", "1.1",
-            "--relax-cycles", "500",
-            "--affine-strength", "0.2",
-            "--affine-stretch", "0.3",
-            "--affine-shear", "0.1",
-            "--affine-jitter", "0.05",
-            "--n-samples", "20",
-            "--n-success", "5",
-            "--seed", "99",
-            "--n-bins", "30",
-            "--w-atom", "0.6",
-            "--w-spatial", "0.4",
-            "--cutoff", "3.5",
-            "--max-steps", "1000",
-            "--T-start", "2.0",
-            "--T-end", "0.005",
-            "--frag-threshold", "0.25",
-            "--move-step", "0.3",
-            "--lcc-threshold", "0.5",
-            "--n-replicas", "3",
-            "--pt-swap-interval", "5",
+            "--n-atoms",
+            "12",
+            "--charge",
+            "-1",
+            "--mult",
+            "2",
+            "--mode",
+            "chain",
+            "--branch-prob",
+            "0.4",
+            "--chain-persist",
+            "0.7",
+            "--chain-bias",
+            "0.3",
+            "--bond-range",
+            "1.2:1.8",
+            "--center-z",
+            "26",
+            "--coord-range",
+            "4:6",
+            "--shell-radius",
+            "1.8:2.5",
+            "--maxent-steps",
+            "200",
+            "--maxent-lr",
+            "0.03",
+            "--maxent-cutoff-scale",
+            "3.0",
+            "--cov-scale",
+            "1.1",
+            "--relax-cycles",
+            "500",
+            "--affine-strength",
+            "0.2",
+            "--affine-stretch",
+            "0.3",
+            "--affine-shear",
+            "0.1",
+            "--affine-jitter",
+            "0.05",
+            "--n-samples",
+            "20",
+            "--n-success",
+            "5",
+            "--seed",
+            "99",
+            "--n-bins",
+            "30",
+            "--w-atom",
+            "0.6",
+            "--w-spatial",
+            "0.4",
+            "--cutoff",
+            "3.5",
+            "--max-steps",
+            "1000",
+            "--T-start",
+            "2.0",
+            "--T-end",
+            "0.005",
+            "--frag-threshold",
+            "0.25",
+            "--move-step",
+            "0.3",
+            "--lcc-threshold",
+            "0.5",
+            "--n-replicas",
+            "3",
+            "--pt-swap-interval",
+            "5",
         )
 
     # --- int arguments ---
@@ -494,8 +542,10 @@ class TestArgumentTypes:
     def test_filters_append(self) -> None:
         ns = _parse_args(
             *_CHAIN_BASE,
-            "--filter", "H_total:1.0:-",
-            "--filter", "Q6:-:0.5",
+            "--filter",
+            "H_total:1.0:-",
+            "--filter",
+            "Q6:-:0.5",
         )
         assert isinstance(ns.filters, list)
         assert len(ns.filters) == 2
@@ -509,8 +559,10 @@ class TestArgumentTypes:
     def test_element_fractions_append(self) -> None:
         ns = _parse_args(
             *_CHAIN_BASE,
-            "--element-fractions", "C:0.6",
-            "--element-fractions", "N:0.3",
+            "--element-fractions",
+            "C:0.6",
+            "--element-fractions",
+            "N:0.3",
         )
         assert isinstance(ns.element_fractions, list)
         assert len(ns.element_fractions) == 2
@@ -532,7 +584,14 @@ class TestArgumentTypes:
     def test_seed_default_is_none(self) -> None:
         # Use a minimal namespace that does NOT include --seed
         ns = _parse_args(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1", "--mode", "chain",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
         )
         assert ns.seed is None
 
@@ -583,8 +642,14 @@ class TestDefaults:
     def test_mode_default(self) -> None:
         # chain explicitly set; test gas default
         ns = _parse_args(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--region", "sphere:4",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--region",
+            "sphere:4",
         )
         assert ns.mode == "gas"
 
@@ -626,9 +691,7 @@ class TestDefaults:
 
     def test_n_samples_default(self) -> None:
         # overridden in _CHAIN_BASE to 5; test raw default
-        ns = _parse_args(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1", "--mode", "chain"
-        )
+        ns = _parse_args("--n-atoms", "4", "--charge", "0", "--mult", "1", "--mode", "chain")
         assert ns.n_samples == 1
 
     def test_n_bins_default(self) -> None:
@@ -670,7 +733,14 @@ class TestDefaults:
     def test_elements_default_is_none(self) -> None:
         # Use minimal args that omit --elements to get the real default
         ns = _parse_args(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1", "--mode", "chain",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
         )
         assert ns.elements is None
 
@@ -725,15 +795,35 @@ class TestModeRegionValidation:
 
     def test_gas_without_region_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "gas", "--elements", "6,7,8", "--n-samples", "1",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "gas",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
 
     def test_maxent_without_region_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "maxent", "--elements", "6,7,8", "--n-samples", "1",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "maxent",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
 
@@ -745,9 +835,20 @@ class TestModeRegionValidation:
 
     def test_shell_without_region_succeeds(self) -> None:
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "shell", "--elements", "1-30",
-            "--n-samples", "5", "--seed", "3",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "shell",
+            "--elements",
+            "1-30",
+            "--n-samples",
+            "5",
+            "--seed",
+            "3",
         )
         assert r.returncode == 0, f"shell mode failed: {r.stderr}"
 
@@ -778,10 +879,24 @@ class TestPlacementModeSmoke:
     def test_shell_mode_produces_xyz(self, tmp_path: Path) -> None:
         out = tmp_path / "shell.xyz"
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "shell", "--center-z", "26",
-            "--elements", "1-30", "--n-samples", "5", "--seed", "7",
-            "-o", str(out),
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "shell",
+            "--center-z",
+            "26",
+            "--elements",
+            "1-30",
+            "--n-samples",
+            "5",
+            "--seed",
+            "7",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0, f"stderr: {r.stderr}"
         assert out.exists()
@@ -789,10 +904,24 @@ class TestPlacementModeSmoke:
     def test_maxent_mode_produces_xyz(self, tmp_path: Path) -> None:
         out = tmp_path / "maxent.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "maxent", "--region", "sphere:5",
-            "--elements", "6,7,8", "--n-samples", "5", "--seed", "42",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "maxent",
+            "--region",
+            "sphere:5",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "5",
+            "--seed",
+            "42",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0, f"stderr: {r.stderr}"
         assert out.exists()
@@ -813,8 +942,10 @@ class TestFilterParsing:
     def test_two_filters_stored(self) -> None:
         ns = _parse_args(
             *_CHAIN_BASE,
-            "--filter", "H_total:1.0:-",
-            "--filter", "Q6:-:0.4",
+            "--filter",
+            "H_total:1.0:-",
+            "--filter",
+            "Q6:-:0.4",
         )
         assert len(ns.filters) == 2
         assert "H_total:1.0:-" in ns.filters
@@ -824,11 +955,24 @@ class TestFilterParsing:
         """Filters must eliminate structures; the remaining ones satisfy the bound."""
         out = tmp_path / "filtered.xyz"
         r = _run(
-            "--n-atoms", "8", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8",
-            "--n-samples", "20", "--seed", "1",
-            "--filter", "H_total:0.0:-",  # accept everything with H_total >= 0
-            "-o", str(out),
+            "--n-atoms",
+            "8",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "20",
+            "--seed",
+            "1",
+            "--filter",
+            "H_total:0.0:-",  # accept everything with H_total >= 0
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -844,29 +988,68 @@ class TestElementPoolParsing:
     def test_elements_numeric_range(self, tmp_path: Path) -> None:
         out = tmp_path / "out.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "gas", "--region", "sphere:6",
-            "--elements", "1-30", "--n-samples", "3", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "gas",
+            "--region",
+            "sphere:6",
+            "--elements",
+            "1-30",
+            "--n-samples",
+            "3",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_elements_comma_list(self, tmp_path: Path) -> None:
         out = tmp_path / "out.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "gas", "--region", "sphere:6",
-            "--elements", "6,7,8", "--n-samples", "3", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "gas",
+            "--region",
+            "sphere:6",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "3",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_elements_omitted_uses_full_pool(self, tmp_path: Path) -> None:
         out = tmp_path / "out.xyz"
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--n-samples", "3", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--n-samples",
+            "3",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -875,8 +1058,10 @@ class TestElementPoolParsing:
         # Verify that the raw list is the correct type for downstream processing
         ns = _parse_args(
             *_CHAIN_BASE,
-            "--element-fractions", "C:0.6",
-            "--element-fractions", "N:0.3",
+            "--element-fractions",
+            "C:0.6",
+            "--element-fractions",
+            "N:0.3",
         )
         raw: list[str] = ns.element_fractions
         assert isinstance(raw, list)
@@ -886,10 +1071,14 @@ class TestElementPoolParsing:
         out = tmp_path / "out.xyz"
         r = _run(
             *_GAS_BASE,
-            "--element-fractions", "C:0.6",
-            "--element-fractions", "N:0.3",
-            "--element-fractions", "O:0.1",
-            "-o", str(out),
+            "--element-fractions",
+            "C:0.6",
+            "--element-fractions",
+            "N:0.3",
+            "--element-fractions",
+            "O:0.1",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -897,8 +1086,10 @@ class TestElementPoolParsing:
         out = tmp_path / "out.xyz"
         r = _run(
             *_GAS_BASE,
-            "--element-min-counts", "C:2",
-            "-o", str(out),
+            "--element-min-counts",
+            "C:2",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -906,8 +1097,10 @@ class TestElementPoolParsing:
         out = tmp_path / "out.xyz"
         r = _run(
             *_GAS_BASE,
-            "--element-max-counts", "N:3",
-            "-o", str(out),
+            "--element-max-counts",
+            "N:3",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -1022,9 +1215,21 @@ class TestValidateFlag:
         A fixed seed makes the result deterministic.
         """
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,8",  # C, O — both even Z
-            "--n-samples", "1", "--seed", "0", "--validate",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,8",  # C, O — both even Z
+            "--n-samples",
+            "1",
+            "--seed",
+            "0",
+            "--validate",
         )
         assert r.returncode == 0, (
             f"--validate with all-even-Z pool should always pass; stderr: {r.stderr}"
@@ -1032,9 +1237,19 @@ class TestValidateFlag:
 
     def test_validate_prints_ok_or_fail_to_stderr(self) -> None:
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8",
-            "--n-samples", "1", "--validate",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "1",
+            "--validate",
         )
         stderr_lower = r.stderr.lower()
         assert "ok" in stderr_lower or "fail" in stderr_lower or "validate" in stderr_lower
@@ -1047,9 +1262,21 @@ class TestValidateFlag:
         """
         out = tmp_path / "should_not_exist.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8",
-            "--n-samples", "1", "--validate", "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "1",
+            "--validate",
+            "-o",
+            str(out),
         )
         # Exit code 0 = parity passed; 1 = parity failed.  Both are valid.
         assert r.returncode in (0, 1)
@@ -1074,9 +1301,20 @@ class TestSamplingControls:
         out1 = tmp_path / "run1.xyz"
         out2 = tmp_path / "run2.xyz"
         args = [
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8",
-            "--n-samples", "5", "--seed", "123",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "5",
+            "--seed",
+            "123",
         ]
         r1 = _run(*args, "-o", str(out1))
         r2 = _run(*args, "-o", str(out2))
@@ -1089,8 +1327,18 @@ class TestSamplingControls:
         out1 = tmp_path / "seed1.xyz"
         out2 = tmp_path / "seed2.xyz"
         args = [
-            "--n-atoms", "8", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8", "--n-samples", "10",
+            "--n-atoms",
+            "8",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "10",
         ]
         _run(*args, "--seed", "1", "-o", str(out1))
         _run(*args, "--seed", "2", "-o", str(out2))
@@ -1102,11 +1350,26 @@ class TestSamplingControls:
         """n-success=2 with n-samples=200 should produce at most 2 structures."""
         out = tmp_path / "success.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "gas", "--region", "sphere:6",
-            "--elements", "6,7,8", "--n-samples", "200",
-            "--n-success", "2", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "gas",
+            "--region",
+            "sphere:6",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "200",
+            "--n-success",
+            "2",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
         if out.exists() and out.stat().st_size > 0:
@@ -1131,11 +1394,16 @@ class TestAffineFlags:
         out = tmp_path / "stretch.xyz"
         r = _run(
             *_CHAIN_BASE,
-            "--affine-strength", "0.2",
-            "--affine-stretch", "0.4",
-            "--affine-shear", "0.0",
-            "--affine-jitter", "0.0",
-            "-o", str(out),
+            "--affine-strength",
+            "0.2",
+            "--affine-stretch",
+            "0.4",
+            "--affine-shear",
+            "0.0",
+            "--affine-jitter",
+            "0.0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -1186,20 +1454,48 @@ class TestShellFlags:
     def test_shell_with_center_z(self, tmp_path: Path) -> None:
         out = tmp_path / "shell_fe.xyz"
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "shell", "--center-z", "26",
-            "--elements", "1-30", "--n-samples", "5", "--seed", "7",
-            "-o", str(out),
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "shell",
+            "--center-z",
+            "26",
+            "--elements",
+            "1-30",
+            "--n-samples",
+            "5",
+            "--seed",
+            "7",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_shell_coord_range(self, tmp_path: Path) -> None:
         out = tmp_path / "shell_coord.xyz"
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "shell", "--coord-range", "2:4",
-            "--elements", "1-30", "--n-samples", "5", "--seed", "2",
-            "-o", str(out),
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "shell",
+            "--coord-range",
+            "2:4",
+            "--elements",
+            "1-30",
+            "--n-samples",
+            "5",
+            "--seed",
+            "2",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -1215,11 +1511,25 @@ class TestOptimizerMode:
     def test_optimize_basic_annealing(self, tmp_path: Path) -> None:
         out = tmp_path / "opt.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "annealing", "--max-steps", "50",
-            "--n-samples", "1", "--seed", "42",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
+            "--seed",
+            "42",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0, f"optimizer failed:\n{r.stderr}"
         assert out.exists()
@@ -1229,83 +1539,185 @@ class TestOptimizerMode:
     def test_optimize_basin_hopping(self, tmp_path: Path) -> None:
         out = tmp_path / "bh.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "basin_hopping", "--max-steps", "50",
-            "--n-samples", "1", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "basin_hopping",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_optimize_parallel_tempering(self, tmp_path: Path) -> None:
         out = tmp_path / "pt.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "parallel_tempering",
-            "--max-steps", "30", "--n-replicas", "2",
-            "--n-samples", "1", "--seed", "1",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "parallel_tempering",
+            "--max-steps",
+            "30",
+            "--n-replicas",
+            "2",
+            "--n-samples",
+            "1",
+            "--seed",
+            "1",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_optimize_custom_objective(self, tmp_path: Path) -> None:
         out = tmp_path / "obj.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--objective", "H_total:1.0",
-            "--objective", "Q6:-2.0",
-            "--method", "annealing", "--max-steps", "50",
-            "--n-samples", "1", "--seed", "5",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--objective",
+            "H_total:1.0",
+            "--objective",
+            "Q6:-2.0",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
+            "--seed",
+            "5",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_optimize_no_composition_moves(self, tmp_path: Path) -> None:
         out = tmp_path / "nocomp.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
             "--no-composition-moves",
-            "--method", "annealing", "--max-steps", "50",
-            "--n-samples", "1", "--seed", "7",
-            "-o", str(out),
+            "--method",
+            "annealing",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
+            "--seed",
+            "7",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_optimize_no_displacements(self, tmp_path: Path) -> None:
         out = tmp_path / "nodisplace.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
             "--no-displacements",
-            "--method", "annealing", "--max-steps", "50",
-            "--n-samples", "1", "--seed", "8",
-            "-o", str(out),
+            "--method",
+            "annealing",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
+            "--seed",
+            "8",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
     def test_optimize_both_disabled_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--no-composition-moves", "--no-displacements",
-            "--method", "annealing", "--max-steps", "50",
-            "--n-samples", "1",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--no-composition-moves",
+            "--no-displacements",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "50",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
-        assert "no-displacements" in r.stderr or "no-composition" in r.stderr \
-               or "error" in r.stderr.lower()
+        assert (
+            "no-displacements" in r.stderr
+            or "no-composition" in r.stderr
+            or "error" in r.stderr.lower()
+        )
 
     def test_optimize_output_is_valid_xyz(self, tmp_path: Path) -> None:
         out = tmp_path / "opt_valid.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "annealing", "--max-steps", "30",
-            "--n-samples", "1", "--seed", "42",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "30",
+            "--n-samples",
+            "1",
+            "--seed",
+            "42",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
         content = out.read_text()
@@ -1324,10 +1736,19 @@ class TestOptimizerMode:
 
     def test_optimize_bad_objective_format_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--objective", "INVALID_NO_COLON",
-            "--n-samples", "1",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--objective",
+            "INVALID_NO_COLON",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
 
@@ -1339,11 +1760,23 @@ class TestOptimizerMode:
         """
         with patch("pasted.cli.StructureOptimizer", side_effect=ValueError("injected")):
             r = _run(
-                "--n-atoms", "6", "--charge", "0", "--mult", "1",
-                "--elements", "6,7,8", "--optimize",
-                "--objective", "H_total:1.0",
-                "--method", "annealing", "--max-steps", "50",
-                "--n-samples", "1",
+                "--n-atoms",
+                "6",
+                "--charge",
+                "0",
+                "--mult",
+                "1",
+                "--elements",
+                "6,7,8",
+                "--optimize",
+                "--objective",
+                "H_total:1.0",
+                "--method",
+                "annealing",
+                "--max-steps",
+                "50",
+                "--n-samples",
+                "1",
             )
         assert r.returncode != 0
         assert "injected" in r.stderr or "error" in r.stderr.lower()
@@ -1367,23 +1800,50 @@ class TestInitialXyz:
 
         out = tmp_path / "opt_init.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "annealing", "--max-steps", "30",
-            "--n-samples", "1", "--seed", "0",
-            "--initial-xyz", str(init_file),
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "30",
+            "--n-samples",
+            "1",
+            "--seed",
+            "0",
+            "--initial-xyz",
+            str(init_file),
+            "-o",
+            str(out),
         )
         assert r.returncode == 0, f"stderr: {r.stderr}"
         assert out.exists()
 
     def test_initial_xyz_missing_file_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "annealing", "--max-steps", "30",
-            "--n-samples", "1",
-            "--initial-xyz", "/tmp/this_file_does_not_exist_pasted_test.xyz",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "30",
+            "--n-samples",
+            "1",
+            "--initial-xyz",
+            "/tmp/this_file_does_not_exist_pasted_test.xyz",
         )
         assert r.returncode != 0
 
@@ -1392,11 +1852,23 @@ class TestInitialXyz:
         empty = tmp_path / "empty.xyz"
         empty.write_text("")
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--elements", "6,7,8", "--optimize",
-            "--method", "annealing", "--max-steps", "30",
-            "--n-samples", "1",
-            "--initial-xyz", str(empty),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--elements",
+            "6,7,8",
+            "--optimize",
+            "--method",
+            "annealing",
+            "--max-steps",
+            "30",
+            "--n-samples",
+            "1",
+            "--initial-xyz",
+            str(empty),
         )
         assert r.returncode != 0
 
@@ -1500,9 +1972,18 @@ class TestEdgeCases:
         The run itself exits 0 (a UserWarning is emitted, not an error exit)."""
         out = tmp_path / "zero.xyz"
         r = _run(
-            "--n-atoms", "0", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--n-samples", "1",
-            "-o", str(out),
+            "--n-atoms",
+            "0",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--n-samples",
+            "1",
+            "-o",
+            str(out),
         )
         # CLI exits cleanly; no structures are written
         assert r.returncode == 0
@@ -1512,23 +1993,40 @@ class TestEdgeCases:
 
     def test_negative_mult_not_caught_by_argparse(self) -> None:
         """argparse does not validate mult > 0; that is done downstream."""
-        ns = _parse_args(*_CHAIN_BASE[:6], "--mult", "-1", "--mode", "chain",
-                         "--n-samples", "1")
+        ns = _parse_args(*_CHAIN_BASE[:6], "--mult", "-1", "--mode", "chain", "--n-samples", "1")
         assert isinstance(ns.mult, int)
         assert ns.mult == -1
 
     def test_mode_invalid_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "invalid_mode", "--n-samples", "1",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "invalid_mode",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
 
     def test_method_invalid_exits_nonzero(self) -> None:
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--n-samples", "1",
-            "--optimize", "--method", "not_a_method",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--n-samples",
+            "1",
+            "--optimize",
+            "--method",
+            "not_a_method",
         )
         assert r.returncode != 0
 
@@ -1536,10 +2034,22 @@ class TestEdgeCases:
         """n-atoms=50 should run to completion in a reasonable time."""
         out = tmp_path / "large.xyz"
         r = _run(
-            "--n-atoms", "50", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8",
-            "--n-samples", "2", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "50",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "2",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
 
@@ -1547,10 +2057,23 @@ class TestEdgeCases:
         """With --no-add-hydrogen and C-only pool, no H atoms should appear."""
         out = tmp_path / "noh.xyz"
         r = _run(
-            "--n-atoms", "6", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6",
-            "--no-add-hydrogen", "--n-samples", "5", "--seed", "0",
-            "-o", str(out),
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6",
+            "--no-add-hydrogen",
+            "--n-samples",
+            "5",
+            "--seed",
+            "0",
+            "-o",
+            str(out),
         )
         assert r.returncode == 0
         content = out.read_text()
@@ -1624,8 +2147,18 @@ class TestElementsArgErrors:
     def test_elements_out_of_range_exits_nonzero(self) -> None:
         """Z=999 is outside the supported 1-106 range."""
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "999", "--n-samples", "1",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "999",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
         assert "error" in r.stderr.lower()
@@ -1643,8 +2176,18 @@ class TestGeneratorConstructorErrors:
     def test_n_samples_zero_without_n_success_exits_nonzero(self) -> None:
         """--n-samples 0 requires --n-success; omitting it must fail."""
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6,7,8", "--n-samples", "0",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "0",
         )
         assert r.returncode != 0
 
@@ -1662,9 +2205,20 @@ class TestGeneratorConstructorErrors:
     def test_element_min_counts_exceeds_n_atoms_exits_nonzero(self) -> None:
         """Sum of min-counts exceeding n_atoms must fail."""
         r = _run(
-            "--n-atoms", "2", "--charge", "0", "--mult", "1",
-            "--mode", "chain", "--elements", "6",
-            "--element-min-counts", "C:5", "--n-samples", "1",
+            "--n-atoms",
+            "2",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "chain",
+            "--elements",
+            "6",
+            "--element-min-counts",
+            "C:5",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0
 
@@ -1672,8 +2226,10 @@ class TestGeneratorConstructorErrors:
         """min-count > max-count for the same element must fail."""
         r = _run(
             *_CHAIN_BASE,
-            "--element-min-counts", "C:5",
-            "--element-max-counts", "C:2",
+            "--element-min-counts",
+            "C:5",
+            "--element-max-counts",
+            "C:2",
         )
         assert r.returncode != 0
 
@@ -1681,8 +2237,19 @@ class TestGeneratorConstructorErrors:
         """--center-z specifying an element absent from the pool must fail."""
         # Pool is C,N,O; center-z=26 (Fe) is not in the pool.
         r = _run(
-            "--n-atoms", "4", "--charge", "0", "--mult", "1",
-            "--mode", "shell", "--elements", "6,7,8",
-            "--center-z", "26", "--n-samples", "1",
+            "--n-atoms",
+            "4",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "shell",
+            "--elements",
+            "6,7,8",
+            "--center-z",
+            "26",
+            "--n-samples",
+            "1",
         )
         assert r.returncode != 0

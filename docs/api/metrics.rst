@@ -82,6 +82,25 @@ therefore be used as ``--filter`` targets on the CLI and in the
        Clamped to 1.0 from above: binary-weight graphs with fewer edges
        than atoms can produce raw values > 1 due to the n/W prefactor.
      - (-∞, 1]
+   * - ``bond_angle_entropy``
+     - Mean per-atom Shannon entropy of the bond-angle (θ_ijk) distribution,
+       binned into 36 uniform bins over [0°, 180°].  High = angles spread
+       uniformly; low = narrow angular distribution.  Added in v0.4.0.
+     - [0, ln 36]
+   * - ``coordination_variance``
+     - Population variance of per-atom coordination numbers within *cutoff*.
+       0 = all atoms have the same number of neighbors; high = heterogeneous
+       local environments.  Added in v0.4.0.
+     - ≥ 0
+   * - ``radial_variance``
+     - Mean per-atom variance of neighbor distances (Å²).  0 = all neighbors
+       equidistant; high = large spread of bond lengths.  Added in v0.4.0.
+     - ≥ 0 Å²
+   * - ``local_anisotropy``
+     - Mean per-atom anisotropy of the local covariance tensor built from
+       neighbor direction vectors.  0 = isotropic; 1 = fully anisotropic
+       (all neighbors in one plane or along one axis).  Added in v0.4.0.
+     - [0, 1]
 
 .. note::
 
@@ -115,6 +134,16 @@ therefore be used as ``--filter`` targets on the CLI and in the
       Combined speedup: **~2.1–2.3×** on ``compute_steinhardt`` and
       **~1.3×** on ``compute_all_metrics`` at N = 500–1 000.
       See ``docs/architecture.md`` → *Per-bond arithmetic optimizations*.
+
+   .. note::
+
+      **Bug fix — ``shape_aniso`` RuntimeWarning for Inf coordinates (v0.4.0).**
+
+      In prior versions, a structure whose positions contained ``Inf``
+      triggered a NumPy ``RuntimeWarning: invalid value encountered in
+      subtract`` during mean-centering in :func:`compute_shape_anisotropy`.
+      An explicit ``np.isfinite`` guard now returns ``NaN`` cleanly before
+      the subtraction, suppressing the warning without affecting valid inputs.
 
    .. note::
 

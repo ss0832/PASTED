@@ -106,11 +106,12 @@ from ._metrics import (
 )
 from ._optimizer import EvalContext, OptimizationResult, StructureOptimizer, parse_objective_spec
 from ._placement import place_maxent
+from .neighbor_list import NeighborList
 
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.3.10"
+    __version__ = "0.4.0"
 
 __all__ = [  # grouped by API category, not alphabetical
     # High-level API
@@ -142,6 +143,7 @@ __all__ = [  # grouped by API category, not alphabetical
     "compute_charge_frustration",
     "compute_moran_I_chi",
     "compute_steinhardt_per_atom",
+    "NeighborList",
     "format_xyz",
     # Placement utilities
     "place_maxent",

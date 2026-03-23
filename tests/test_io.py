@@ -206,3 +206,19 @@ class TestReadXyz:
             )
             result = opt.run(initial=s)
         assert result.best is not None
+
+    def test_read_xyz_missing_file_raises_file_not_found(self, tmp_path: Path) -> None:
+        """read_xyz raises FileNotFoundError for a non-existent path (Bug fix v0.4.0).
+
+        Previously this raised a confusing ValueError because the path string was
+        silently parsed as XYZ text.  Now it raises FileNotFoundError, matching
+        the behavior of Structure.from_xyz().
+        """
+        missing = tmp_path / "does_not_exist.xyz"
+        with pytest.raises(FileNotFoundError, match="XYZ file not found"):
+            read_xyz(missing)
+
+    def test_read_xyz_directory_raises_is_a_directory(self, tmp_path: Path) -> None:
+        """read_xyz raises IsADirectoryError when given a directory path (Bug fix v0.4.0)."""
+        with pytest.raises(IsADirectoryError):
+            read_xyz(tmp_path)

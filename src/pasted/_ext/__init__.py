@@ -16,6 +16,8 @@ HAS_MAXENT_LOOP : bool  -- True when _maxent_core full C++ L-BFGS loop is availa
                            (implies HAS_MAXENT; enables the fast place_maxent_cpp path)
 HAS_STEINHARDT  : bool  -- True when _steinhardt_core is available
 HAS_GRAPH       : bool  -- True when _graph_core is available
+HAS_BA_CPP      : bool  -- True when _bond_angle_core is available
+HAS_COMBINED    : bool  -- True when _combined_core (single-pass all-metrics) is available
 
 relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
     Available when HAS_RELAX is True.
@@ -42,6 +44,15 @@ rdf_h_cpp(pts, cutoff, n_bins)
     Available when HAS_GRAPH is True.
     Returns dict with h_spatial and rdf_dev computed in O(N*k) via
     FlatCellList pair enumeration.  Replaces the O(N^2) pdist path.
+
+bond_angle_entropy_cpp(pts, cutoff)
+    Available when HAS_BA_CPP is True.
+    Returns mean per-atom bond-angle Shannon entropy over [0, ln(36)].
+    Histogram bins are fixed at 36 (compile-time constant).
+
+all_metrics_cpp(pts, radii, en_vals, cutoff, n_bins)
+    Available when HAS_COMBINED is True.
+    Single-pass computation of all metrics via one shared FlatCellList.
 
 Callers should check the relevant flag before calling and fall back to the
 pure-Python implementations in _placement.py / _metrics.py when False.
@@ -125,12 +136,36 @@ except ImportError:
     rdf_h_cpp: Any = None  # type: ignore[no-redef]
     HAS_GRAPH = False
 
+# ---------------------------------------------------------------------------
+# _bond_angle_core  -- bond-angle-distribution Shannon entropy
+# ---------------------------------------------------------------------------
+try:
+    from ._bond_angle_core import bond_angle_entropy_cpp  # type: ignore[import-untyped]
+
+    HAS_BA_CPP: bool = True
+except ImportError:
+    bond_angle_entropy_cpp: Any = None  # type: ignore[no-redef]
+    HAS_BA_CPP = False
+
+# ---------------------------------------------------------------------------
+# _combined_core  -- single-pass all-metrics (step 2)
+# ---------------------------------------------------------------------------
+try:
+    from ._combined_core import all_metrics_cpp  # type: ignore[import-untyped]
+
+    HAS_COMBINED: bool = True
+except ImportError:
+    all_metrics_cpp: Any = None  # type: ignore[no-redef]
+    HAS_COMBINED = False
+
 __all__ = [
     "HAS_GRAPH",
     "HAS_MAXENT",
     "HAS_MAXENT_LOOP",
     "HAS_RELAX",
     "HAS_STEINHARDT",
+    "HAS_BA_CPP",
+    "HAS_COMBINED",
     "angular_repulsion_gradient",
     "graph_metrics_cpp",
     "moran_I_chi_cpp",
@@ -138,4 +173,6 @@ __all__ = [
     "rdf_h_cpp",
     "relax_positions",
     "steinhardt_per_atom",
+    "bond_angle_entropy_cpp",
+    "all_metrics_cpp",
 ]

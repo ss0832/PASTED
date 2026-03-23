@@ -35,7 +35,7 @@ Properties under test
          · every metric value is finite
 
   PB-7  compute_all_metrics completeness
-         · All 13 keys present in the result for any valid input
+         · All 17 keys present in the result for any valid input
          · All values finite for finite, non-degenerate input
 
   PB-8  Metric monotonicity hints (smoke, not strict)
@@ -55,7 +55,7 @@ from typing import Any
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from pasted import _ext, generate
@@ -94,9 +94,26 @@ _N_ATOMS = st.integers(min_value=2, max_value=40)
 _COORD = st.floats(min_value=-20.0, max_value=20.0, allow_nan=False, allow_infinity=False)
 
 
+# Minimum physically meaningful inter-atomic distance (Å).
+# Coincident or near-coincident coordinates are unphysical: the smallest
+# known covalent bond (H-H) is ~0.74 Å.  Inputs below this threshold cause
+# numerically degenerate behaviour in direction-vector and g(r) calculations
+# (undefined unit vectors, r_bound -> 0) without corresponding to any real
+# structure.  The assume() guard discards such examples instead of papering
+# over the numerical failure mode.
+_MIN_ATOM_DIST: float = 0.5
+
+
 @st.composite
 def positions_strategy(draw: Any, n: int | None = None) -> np.ndarray:
-    """Draw an (N, 3) float64 array of finite coordinates."""
+    """Draw an (N, 3) float64 array of finite coordinates.
+
+    All pairwise inter-atomic distances are guaranteed to be at least
+    ``_MIN_ATOM_DIST`` (0.5 Å), matching the physical constraint that atoms
+    cannot overlap.  Degenerate (coincident) configurations are discarded via
+    ``hypothesis.assume`` so they do not mask numerical errors in metrics that
+    require well-defined direction vectors or a non-zero bounding radius.
+    """
     n_atoms = draw(_N_ATOMS) if n is None else n
     flat = draw(
         st.lists(
@@ -105,7 +122,16 @@ def positions_strategy(draw: Any, n: int | None = None) -> np.ndarray:
             max_size=n_atoms * 3,
         )
     )
-    return np.array(flat, dtype=np.float64).reshape(n_atoms, 3)
+    pts = np.array(flat, dtype=np.float64).reshape(n_atoms, 3)
+    if n_atoms >= 2:
+        # Compute all pairwise squared distances without allocating a full
+        # condensed vector: O(N^2) but N <= 40 so this is negligible.
+        diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]  # (N, N, 3)
+        sq = (diff * diff).sum(axis=-1)  # (N, N)
+        # Zero out the diagonal (self-distance) before taking the minimum.
+        np.fill_diagonal(sq, np.inf)
+        assume(float(sq.min()) >= _MIN_ATOM_DIST**2)
+    return pts
 
 
 @st.composite

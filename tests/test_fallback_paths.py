@@ -15,6 +15,7 @@ The flags are imported as module-level names at load time, so we patch them
     pasted._placement.HAS_MAXENT_LOOP
     pasted._metrics._HAS_GRAPH
     pasted._metrics._HAS_STEINHARDT
+    pasted._metrics._HAS_BA_CPP
 """
 
 from __future__ import annotations
@@ -39,7 +40,13 @@ _MAXENT_FLAGS = {
 _ALL_PLACEMENT_FLAGS = {**_RELAX_FLAGS, **_MAXENT_FLAGS}
 _GRAPH_FLAG = {"pasted._metrics._HAS_GRAPH": False}
 _STEINHARDT_FLAG = {"pasted._metrics._HAS_STEINHARDT": False}
-_ALL_METRICS_FLAGS = {**_GRAPH_FLAG, **_STEINHARDT_FLAG}
+# HAS_BA_CPP is name-copied in _metrics.py (_HAS_BA_CPP), so patch the
+# consuming-module copy — same pattern as _GRAPH_FLAG / _STEINHARDT_FLAG.
+_BA_CPP_FLAG = {"pasted._metrics._HAS_BA_CPP": False}
+# HAS_COMBINED is name-copied in _metrics.py (_HAS_COMBINED); patch the
+# consuming-module copy — same pattern as the other flags above.
+_COMBINED_FLAG = {"pasted._metrics._HAS_COMBINED": False}
+_ALL_METRICS_FLAGS = {**_GRAPH_FLAG, **_STEINHARDT_FLAG, **_BA_CPP_FLAG, **_COMBINED_FLAG}
 
 
 def _patch(**flags):

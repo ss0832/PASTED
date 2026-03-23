@@ -101,8 +101,16 @@ def test_generate_basic_gas() -> None:
 
 def test_generate_returns_generation_result() -> None:
     """generate() must return a GenerationResult, not a plain list."""
-    result = generate(n_atoms=8, charge=0, mult=1, mode="gas",
-                      region="sphere:7", elements="6,7,8", n_samples=10, seed=0)
+    result = generate(
+        n_atoms=8,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:7",
+        elements="6,7,8",
+        n_samples=10,
+        seed=0,
+    )
     assert isinstance(result, GenerationResult)
     assert isinstance(result.n_attempted, int)
     assert isinstance(result.n_passed, int)
@@ -111,8 +119,9 @@ def test_generate_returns_generation_result() -> None:
 
 def test_generate_summary_labels() -> None:
     """summary() string must contain the four documented keys."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=1)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=1
+    )
     s = result.summary()
     for token in ("passed=", "attempted=", "rejected_parity=", "rejected_filter="):
         assert token in s, f"Missing token {token!r} in summary: {s!r}"
@@ -120,8 +129,9 @@ def test_generate_summary_labels() -> None:
 
 def test_generate_n_prefix_attributes() -> None:
     """Accessing result.passed or result.attempted (no n_ prefix) must raise AttributeError."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=1)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=1
+    )
     with pytest.raises(AttributeError):
         _ = result.passed  # type: ignore[attr-defined]
     with pytest.raises(AttributeError):
@@ -136,21 +146,27 @@ def test_generate_warning_no_pass() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         result = generate(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:8",
-            elements="6",           # carbon-only: parity always passes
-            n_samples=10, seed=0,
-            filters=["H_total:999:-"],   # impossible — nothing will pass
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:8",
+            elements="6",  # carbon-only: parity always passes
+            n_samples=10,
+            seed=0,
+            filters=["H_total:999:-"],  # impossible — nothing will pass
         )
     assert not result
-    assert any(issubclass(x.category, UserWarning) for x in w), \
+    assert any(issubclass(x.category, UserWarning) for x in w), (
         "Expected UserWarning when no structures pass"
+    )
 
 
 def test_generate_bool_empty_result() -> None:
     """Empty GenerationResult must be falsy; non-empty must be truthy."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=0)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=0
+    )
     # n_samples=5 will almost certainly yield at least one result for chain/CNO
     assert bool(result) == (len(result) > 0)
 
@@ -163,9 +179,14 @@ def test_generate_bool_empty_result() -> None:
 def test_generate_maxent() -> None:
     """maxent mode requires region= and should produce valid structures."""
     result = generate(
-        n_atoms=12, charge=0, mult=1,
-        mode="maxent", region="sphere:6",
-        elements="6,7,8", n_samples=5, seed=42,
+        n_atoms=12,
+        charge=0,
+        mult=1,
+        mode="maxent",
+        region="sphere:6",
+        elements="6,7,8",
+        n_samples=5,
+        seed=42,
     )
     for s in result:
         assert len(s.atoms) >= 1
@@ -175,8 +196,7 @@ def test_generate_maxent() -> None:
 def test_generate_maxent_missing_region_raises() -> None:
     """maxent without region= must raise ValueError."""
     with pytest.raises(ValueError, match="region"):
-        generate(n_atoms=6, charge=0, mult=1, mode="maxent",
-                 elements="6,7,8", n_samples=3, seed=0)
+        generate(n_atoms=6, charge=0, mult=1, mode="maxent", elements="6,7,8", n_samples=3, seed=0)
 
 
 # ===========================================================================
@@ -204,8 +224,9 @@ def test_struct_gen_chain() -> None:
 
 def test_struct_gen_getattr_proxy() -> None:
     """Attribute access on StructureGenerator should proxy to _cfg."""
-    gen = StructureGenerator(n_atoms=10, charge=0, mult=1, mode="chain",
-                             elements="6,7,8", n_samples=5, seed=7)
+    gen = StructureGenerator(
+        n_atoms=10, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=7
+    )
     assert gen.n_atoms == 10
     assert gen.seed == 7
     assert gen.mode == "chain"
@@ -213,8 +234,9 @@ def test_struct_gen_getattr_proxy() -> None:
 
 def test_struct_gen_element_pool_property() -> None:
     """element_pool property must return a copy of the pool list."""
-    gen = StructureGenerator(n_atoms=5, charge=0, mult=1, mode="chain",
-                             elements="6,7,8", n_samples=1, seed=0)
+    gen = StructureGenerator(
+        n_atoms=5, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=1, seed=0
+    )
     pool = gen.element_pool
     assert isinstance(pool, list)
     assert set(pool) == {"C", "N", "O"}
@@ -227,8 +249,9 @@ def test_struct_gen_element_pool_property() -> None:
 
 def test_write_xyz_append(tmp_path: Path) -> None:
     """write_xyz(append=True) should produce a multi-frame file."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=3)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=3
+    )
     if not result:
         pytest.skip("No structures generated; skip I/O test.")
     out = tmp_path / "out.xyz"
@@ -242,8 +265,9 @@ def test_write_xyz_append(tmp_path: Path) -> None:
 
 def test_write_xyz_overwrite(tmp_path: Path) -> None:
     """write_xyz(append=False) should produce a single-frame file."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=4)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=4
+    )
     if not result:
         pytest.skip("No structures generated.")
     out = tmp_path / "single.xyz"
@@ -262,9 +286,15 @@ def test_write_xyz_overwrite(tmp_path: Path) -> None:
 def test_n_success_stops_early() -> None:
     """n_success=5 should return at most 5 structures."""
     gen = StructureGenerator(
-        n_atoms=10, charge=0, mult=1, mode="gas",
-        region="sphere:8", elements="6,7,8",
-        n_success=3, n_samples=200, seed=42,
+        n_atoms=10,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:8",
+        elements="6,7,8",
+        n_success=3,
+        n_samples=200,
+        seed=42,
     )
     result = gen.generate()
     assert len(result) <= 3
@@ -273,16 +303,19 @@ def test_n_success_stops_early() -> None:
 def test_n_samples_zero_needs_n_success() -> None:
     """n_samples=0 without n_success must raise ValueError."""
     with pytest.raises(ValueError, match="n_success"):
-        StructureGenerator(n_atoms=5, charge=0, mult=1, mode="chain",
-                           elements="6,7,8", n_samples=0)
+        StructureGenerator(
+            n_atoms=5, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=0
+        )
 
 
 def test_stream_same_as_generate() -> None:
     """list(gen.stream()) and gen.generate() must yield the same atoms."""
-    gen1 = StructureGenerator(n_atoms=8, charge=0, mult=1, mode="chain",
-                              elements="6,7,8", n_samples=10, seed=9)
-    gen2 = StructureGenerator(n_atoms=8, charge=0, mult=1, mode="chain",
-                              elements="6,7,8", n_samples=10, seed=9)
+    gen1 = StructureGenerator(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=10, seed=9
+    )
+    gen2 = StructureGenerator(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=10, seed=9
+    )
     streamed = list(gen1.stream())
     generated = gen2.generate().structures
     assert len(streamed) == len(generated)
@@ -296,9 +329,10 @@ def test_stream_same_as_generate() -> None:
 
 
 def test_structure_metrics_keys() -> None:
-    """Each generated Structure must have all 13 expected metric keys."""
-    result = generate(n_atoms=8, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=3, seed=11)
+    """Each generated Structure must have all 17 expected metric keys."""
+    result = generate(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=3, seed=11
+    )
     if not result:
         pytest.skip("No structures generated.")
     s = result.structures[0]
@@ -308,8 +342,9 @@ def test_structure_metrics_keys() -> None:
 
 def test_structure_comp_property() -> None:
     """comp must be an alphabetically-sorted composition string."""
-    result = generate(n_atoms=10, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=12)
+    result = generate(
+        n_atoms=10, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=12
+    )
     if not result:
         pytest.skip("No structures generated.")
     for s in result:
@@ -317,8 +352,7 @@ def test_structure_comp_property() -> None:
         assert isinstance(comp, str)
         # Reconstruct from comp and compare with Counter
         c = Counter(s.atoms)
-        expected = "".join(f"{sym}{n}" if n > 1 else sym
-                            for sym, n in sorted(c.items()))
+        expected = "".join(f"{sym}{n}" if n > 1 else sym for sym, n in sorted(c.items()))
         assert comp == expected, f"{comp!r} != {expected!r}"
 
 
@@ -326,9 +360,9 @@ def test_structure_comp_alphabetical_ar() -> None:
     """Quickstart example: ['Ar','C','H','H'] -> 'ArCH2' (alphabetical)."""
     s = Structure(
         atoms=["Ar", "C", "H", "H"],
-        positions=[(0.0, 0.0, 0.0), (1.5, 0.0, 0.0),
-                   (2.5, 0.5, 0.0), (2.5, -0.5, 0.0)],
-        charge=0, mult=1,
+        positions=[(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (2.5, 0.5, 0.0), (2.5, -0.5, 0.0)],
+        charge=0,
+        mult=1,
         metrics={k: 0.0 for k in ALL_METRICS},
         mode="test",
     )
@@ -337,8 +371,9 @@ def test_structure_comp_alphabetical_ar() -> None:
 
 def test_structure_repr_contains_comp() -> None:
     """repr(s) must contain the comp string."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=2)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=2
+    )
     if not result:
         pytest.skip()
     s = result.structures[0]
@@ -348,8 +383,9 @@ def test_structure_repr_contains_comp() -> None:
 
 def test_structure_len() -> None:
     """len(s) and s.n must equal the number of atoms."""
-    result = generate(n_atoms=8, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=3, seed=5)
+    result = generate(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=3, seed=5
+    )
     if not result:
         pytest.skip()
     s = result.structures[0]
@@ -364,10 +400,12 @@ def test_structure_len() -> None:
 
 def test_generation_result_add() -> None:
     """r1 + r2 must combine structures and accumulate counters."""
-    r1 = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                  elements="6,7,8", n_samples=5, seed=100)
-    r2 = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                  elements="6,7,8", n_samples=5, seed=101)
+    r1 = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=100
+    )
+    r2 = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=101
+    )
     combined = r1 + r2
     assert isinstance(combined, GenerationResult)
     assert combined.n_attempted == r1.n_attempted + r2.n_attempted
@@ -381,16 +419,18 @@ def test_generation_result_add() -> None:
 
 def test_generator_config_immutable() -> None:
     """GeneratorConfig must be frozen (immutable)."""
-    cfg = GeneratorConfig(n_atoms=10, charge=0, mult=1, mode="chain",
-                          elements="6,7,8", n_samples=5, seed=0)
+    cfg = GeneratorConfig(
+        n_atoms=10, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=0
+    )
     with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
         cfg.seed = 99  # type: ignore[misc]
 
 
 def test_generator_config_replace() -> None:
     """dataclasses.replace on a config must not mutate the original."""
-    cfg = GeneratorConfig(n_atoms=10, charge=0, mult=1, mode="chain",
-                          elements="6,7,8", n_samples=5, seed=0)
+    cfg = GeneratorConfig(
+        n_atoms=10, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=0
+    )
     cfg2 = dataclasses.replace(cfg, seed=99)
     assert cfg.seed == 0
     assert cfg2.seed == 99
@@ -398,16 +438,18 @@ def test_generator_config_replace() -> None:
 
 def test_generator_config_with_struct_gen() -> None:
     """StructureGenerator must accept a GeneratorConfig as first arg."""
-    cfg = GeneratorConfig(n_atoms=8, charge=0, mult=1, mode="chain",
-                          elements="6,7,8", n_samples=5, seed=77)
+    cfg = GeneratorConfig(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=77
+    )
     result = StructureGenerator(cfg).generate()
     assert isinstance(result, GenerationResult)
 
 
 def test_generate_accepts_config() -> None:
     """generate() must accept a GeneratorConfig as its first positional arg."""
-    cfg = GeneratorConfig(n_atoms=8, charge=0, mult=1, mode="chain",
-                          elements="6,7,8", n_samples=5, seed=88)
+    cfg = GeneratorConfig(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=88
+    )
     result = generate(cfg)
     assert isinstance(result, GenerationResult)
 
@@ -506,16 +548,20 @@ def test_parse_xyz_multi_frame() -> None:
     atoms = ["C", "N"]
     positions = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)]
     metrics = {k: 0.0 for k in ALL_METRICS}
-    block = (format_xyz(atoms, positions, 0, 1, metrics) + "\n"
-             + format_xyz(atoms, positions, 0, 1, metrics))
+    block = (
+        format_xyz(atoms, positions, 0, 1, metrics)
+        + "\n"
+        + format_xyz(atoms, positions, 0, 1, metrics)
+    )
     frames = parse_xyz(block)
     assert len(frames) == 2
 
 
 def test_structure_from_xyz_roundtrip(tmp_path: Path) -> None:
     """Structure.from_xyz(write_xyz(...)) must produce a valid Structure."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=20)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=20
+    )
     if not result:
         pytest.skip()
     s_orig = result.structures[0]
@@ -534,8 +580,9 @@ def test_structure_from_xyz_file_not_found() -> None:
 
 def test_read_xyz_multi(tmp_path: Path) -> None:
     """read_xyz must return all frames as a list of Structure objects."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=10, seed=22)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=10, seed=22
+    )
     if len(result) < 2:
         pytest.skip("Need at least 2 structures for multi-frame test.")
     p = tmp_path / "multi.xyz"
@@ -555,8 +602,14 @@ def test_read_xyz_multi(tmp_path: Path) -> None:
 def test_shell_mode_fixed_center() -> None:
     """Shell mode with center_z should produce a center_sym attribute."""
     result = generate(
-        n_atoms=6, charge=0, mult=1, mode="shell",
-        center_z=26, elements="1-30", n_samples=5, seed=7,
+        n_atoms=6,
+        charge=0,
+        mult=1,
+        mode="shell",
+        center_z=26,
+        elements="1-30",
+        n_samples=5,
+        seed=7,
     )
     for s in result:
         assert s.center_sym == "Fe"
@@ -565,8 +618,13 @@ def test_shell_mode_fixed_center() -> None:
 def test_shell_mode_n_atoms_expands() -> None:
     """Shell mode output may have more atoms than n_atoms (center + H)."""
     result = generate(
-        n_atoms=4, charge=0, mult=1, mode="shell",
-        elements="1-30", n_samples=5, seed=7,
+        n_atoms=4,
+        charge=0,
+        mult=1,
+        mode="shell",
+        elements="1-30",
+        n_samples=5,
+        seed=7,
     )
     for s in result:
         # At minimum the shell atoms + optional center
@@ -581,11 +639,15 @@ def test_shell_mode_n_atoms_expands() -> None:
 def test_element_fractions() -> None:
     """Biased element fractions should shift the distribution toward C."""
     gen = StructureGenerator(
-        n_atoms=20, charge=0, mult=1,
-        mode="gas", region="sphere:10",
+        n_atoms=20,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:10",
         elements="6,7,8",
         element_fractions={"C": 0.6, "N": 0.3, "O": 0.1},
-        n_samples=20, seed=0,
+        n_samples=20,
+        seed=0,
     )
     result = gen.generate()
     if not result:
@@ -600,11 +662,15 @@ def test_element_fractions() -> None:
 def test_element_min_counts() -> None:
     """element_min_counts must guarantee minimum atom presence."""
     gen = StructureGenerator(
-        n_atoms=10, charge=0, mult=1,
-        mode="gas", region="sphere:8",
+        n_atoms=10,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:8",
         elements="6,7,8",
         element_min_counts={"C": 3},
-        n_samples=10, seed=42,
+        n_samples=10,
+        seed=42,
     )
     result = gen.generate()
     for s in result:
@@ -614,11 +680,15 @@ def test_element_min_counts() -> None:
 def test_element_max_counts() -> None:
     """element_max_counts must enforce upper bounds per element."""
     gen = StructureGenerator(
-        n_atoms=10, charge=0, mult=1,
-        mode="gas", region="sphere:8",
+        n_atoms=10,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:8",
         elements="6,7,8",
         element_max_counts={"N": 2},
-        n_samples=10, seed=42,
+        n_samples=10,
+        seed=42,
     )
     result = gen.generate()
     for s in result:
@@ -629,7 +699,10 @@ def test_element_min_max_inconsistency_raises() -> None:
     """min > max for the same element must raise ValueError."""
     with pytest.raises(ValueError):
         StructureGenerator(
-            n_atoms=10, charge=0, mult=1, mode="chain",
+            n_atoms=10,
+            charge=0,
+            mult=1,
+            mode="chain",
             elements="6,7,8",
             element_min_counts={"C": 5},
             element_max_counts={"C": 2},
@@ -641,7 +714,10 @@ def test_element_min_sum_exceeds_n_atoms_raises() -> None:
     """Sum of min counts > n_atoms must raise ValueError."""
     with pytest.raises(ValueError):
         StructureGenerator(
-            n_atoms=5, charge=0, mult=1, mode="chain",
+            n_atoms=5,
+            charge=0,
+            mult=1,
+            mode="chain",
             elements="6,7,8",
             element_min_counts={"C": 4, "N": 4},  # 8 > 5
             n_samples=5,
@@ -656,9 +732,14 @@ def test_element_min_sum_exceeds_n_atoms_raises() -> None:
 def test_affine_strength_runs() -> None:
     """affine_strength > 0 should produce valid structures without errors."""
     result = generate(
-        n_atoms=15, charge=0, mult=1,
-        mode="gas", region="sphere:10",
-        elements="6,7,8", n_samples=10, seed=42,
+        n_atoms=15,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:10",
+        elements="6,7,8",
+        n_samples=10,
+        seed=42,
         affine_strength=0.2,
     )
     for s in result:
@@ -668,9 +749,13 @@ def test_affine_strength_runs() -> None:
 def test_affine_per_operation_control() -> None:
     """Per-operation affine parameters should run without errors."""
     result = generate(
-        n_atoms=12, charge=0, mult=1,
-        mode="chain", elements="6,7,8",
-        n_samples=5, seed=0,
+        n_atoms=12,
+        charge=0,
+        mult=1,
+        mode="chain",
+        elements="6,7,8",
+        n_samples=5,
+        seed=0,
         affine_strength=0.2,
         affine_stretch=0.4,
         affine_shear=0.0,
@@ -687,7 +772,9 @@ def test_affine_per_operation_control() -> None:
 def test_optimizer_annealing_basic() -> None:
     """Basic annealing optimizer should return an OptimizationResult with a best."""
     opt = StructureOptimizer(
-        n_atoms=8, charge=0, mult=1,
+        n_atoms=8,
+        charge=0,
+        mult=1,
         elements="6,7,8,15,16",
         objective={"H_total": 1.0, "Q6": -2.0},
         method="annealing",
@@ -706,7 +793,9 @@ def test_optimizer_annealing_basic() -> None:
 def test_optimizer_summary_format() -> None:
     """OptimizationResult.summary() must contain the documented keys."""
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"H_total": 1.0},
         method="annealing",
@@ -723,7 +812,9 @@ def test_optimizer_summary_format() -> None:
 def test_optimizer_iteration() -> None:
     """Iterating over OptimizationResult must yield Structure objects."""
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"H_total": 1.0},
         method="annealing",
@@ -744,7 +835,9 @@ def test_optimizer_iteration() -> None:
 def test_optimizer_basin_hopping() -> None:
     """basin_hopping must complete and produce a valid best structure."""
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"H_total": 1.0},
         method="basin_hopping",
@@ -759,7 +852,9 @@ def test_optimizer_basin_hopping() -> None:
 def test_optimizer_parallel_tempering() -> None:
     """parallel_tempering must complete and produce a valid best structure."""
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"H_total": 1.0},
         method="parallel_tempering",
@@ -783,7 +878,9 @@ def test_optimizer_parallel_tempering() -> None:
 def test_optimizer_callable_1arg() -> None:
     """1-arg callable objective (lambda) should work correctly."""
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective=lambda m: m["H_total"] - 2.0 * m["Q6"],
         method="annealing",
@@ -803,7 +900,9 @@ def test_optimizer_callable_2arg_ctx() -> None:
         return float(m["H_total"])
 
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective=obj,
         method="annealing",
@@ -830,7 +929,9 @@ def test_eval_context_progress_field() -> None:
         return float(m["H_total"])
 
     opt = StructureOptimizer(
-        n_atoms=6, charge=0, mult=1,
+        n_atoms=6,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective=obj,
         method="annealing",
@@ -838,8 +939,9 @@ def test_eval_context_progress_field() -> None:
         seed=11,
     )
     opt.run()
-    assert all(0.0 <= p < 1.0 for p in progresses), \
+    assert all(0.0 <= p < 1.0 for p in progresses), (
         f"Some progress values out of [0, 1): {progresses[:5]}"
+    )
 
 
 # ===========================================================================
@@ -850,9 +952,14 @@ def test_eval_context_progress_field() -> None:
 def test_optimizer_position_only() -> None:
     """allow_composition_moves=False must preserve the composition."""
     initial_structs = generate(
-        n_atoms=8, charge=0, mult=1,
-        mode="gas", region="sphere:7",
-        elements="6,7,8", n_samples=20, seed=0,
+        n_atoms=8,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:7",
+        elements="6,7,8",
+        n_samples=20,
+        seed=0,
     )
     if not initial_structs:
         pytest.skip()
@@ -880,9 +987,14 @@ def test_optimizer_position_only() -> None:
 def test_optimizer_composition_only() -> None:
     """allow_displacements=False must preserve the positions."""
     initial_structs = generate(
-        n_atoms=8, charge=0, mult=1,
-        mode="gas", region="sphere:7",
-        elements="6,7,8", n_samples=20, seed=0,
+        n_atoms=8,
+        charge=0,
+        mult=1,
+        mode="gas",
+        region="sphere:7",
+        elements="6,7,8",
+        n_samples=20,
+        seed=0,
     )
     if not initial_structs:
         pytest.skip()
@@ -910,7 +1022,9 @@ def test_optimizer_both_disabled_raises() -> None:
     """allow_displacements=False AND allow_composition_moves=False must raise ValueError."""
     with pytest.raises(ValueError):
         StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             elements="6,7,8",
             objective={"H_total": 1.0},
             allow_displacements=False,
@@ -926,7 +1040,9 @@ def test_optimizer_both_disabled_raises() -> None:
 def test_optimizer_max_init_attempts_positive() -> None:
     """max_init_attempts > 0 should not break a normal run."""
     opt = StructureOptimizer(
-        n_atoms=8, charge=0, mult=1,
+        n_atoms=8,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"H_total": 1.0},
         method="annealing",
@@ -943,7 +1059,9 @@ def test_optimizer_impossible_parity_raises() -> None:
     """All-nitrogen pool with n_atoms=7, charge=0, mult=1 must raise ValueError."""
     with pytest.raises(ValueError):
         StructureOptimizer(
-            n_atoms=7, charge=0, mult=1,
+            n_atoms=7,
+            charge=0,
+            mult=1,
             elements="7",  # nitrogen only
             objective={"H_total": 1.0},
         )
@@ -957,7 +1075,9 @@ def test_optimizer_impossible_parity_raises() -> None:
 def test_optimizer_affine_moves() -> None:
     """allow_affine_moves=True should produce a valid best structure."""
     opt = StructureOptimizer(
-        n_atoms=10, charge=0, mult=1,
+        n_atoms=10,
+        charge=0,
+        mult=1,
         elements="6,7,8",
         objective={"shape_aniso": 2.0, "H_total": 1.0},
         allow_affine_moves=True,
@@ -983,7 +1103,9 @@ def test_optimizer_affine_moves() -> None:
 def test_en_metrics_in_result() -> None:
     """charge_frustration and moran_I_chi must be present in metrics."""
     opt = StructureOptimizer(
-        n_atoms=8, charge=0, mult=1,
+        n_atoms=8,
+        charge=0,
+        mult=1,
         elements="6,7,8,9,14,15,16",
         objective={
             "charge_frustration": 2.0,
@@ -1037,16 +1159,16 @@ def test_no_memory_leak_repeated_generate() -> None:
     tracemalloc.start()
     snap0 = tracemalloc.take_snapshot()
     for i in range(10):
-        generate(n_atoms=8, charge=0, mult=1, mode="chain",
-                 elements="6,7,8", n_samples=5, seed=i)
+        generate(n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=i)
     snap1 = tracemalloc.take_snapshot()
     tracemalloc.stop()
 
     stats = snap1.compare_to(snap0, "lineno")
     total_diff = sum(s.size_diff for s in stats)
     # Allow up to 50 MB total growth for 10 calls
-    assert total_diff < 50 * 1024 * 1024, \
+    assert total_diff < 50 * 1024 * 1024, (
         f"Suspicious memory growth: {total_diff / 1e6:.1f} MB over 10 calls"
+    )
 
 
 # ===========================================================================
@@ -1060,7 +1182,8 @@ def test_cli_help(capsys: pytest.CaptureFixture) -> None:  # type: ignore[type-a
 
     proc = subprocess.run(
         [sys.executable, "-m", "pasted", "--help"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert proc.returncode == 0, f"--help exited with {proc.returncode}"
     assert "pasted" in proc.stdout.lower() or "pasted" in proc.stderr.lower()
@@ -1073,18 +1196,30 @@ def test_cli_basic_gas(tmp_path: Path) -> None:
     out_file = tmp_path / "cli_out.xyz"
     proc = subprocess.run(
         [
-            sys.executable, "-m", "pasted",
-            "--n-atoms", "6",
-            "--charge", "0",
-            "--mult", "1",
-            "--mode", "gas",
-            "--region", "sphere:6",
-            "--elements", "6,7,8",
-            "--n-samples", "3",
-            "--seed", "0",
-            "-o", str(out_file),
+            sys.executable,
+            "-m",
+            "pasted",
+            "--n-atoms",
+            "6",
+            "--charge",
+            "0",
+            "--mult",
+            "1",
+            "--mode",
+            "gas",
+            "--region",
+            "sphere:6",
+            "--elements",
+            "6,7,8",
+            "--n-samples",
+            "3",
+            "--seed",
+            "0",
+            "-o",
+            str(out_file),
         ],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert proc.returncode == 0, f"CLI failed: {proc.stderr}"
     assert out_file.exists(), "Output file not created"
@@ -1116,8 +1251,9 @@ def test_from_xyz_directory_raises(tmp_path: Path) -> None:
 
 def test_from_xyz_frame_out_of_range(tmp_path: Path) -> None:
     """Requesting frame=5 from a 1-frame file must raise ValueError."""
-    result = generate(n_atoms=6, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=5, seed=50)
+    result = generate(
+        n_atoms=6, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=5, seed=50
+    )
     if not result:
         pytest.skip()
     p = tmp_path / "single.xyz"
@@ -1136,8 +1272,11 @@ def test_n_success_warning_on_budget_exhaust() -> None:
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         result = generate(
-            n_atoms=8, charge=0, mult=1,
-            mode="gas", region="sphere:7",
+            n_atoms=8,
+            charge=0,
+            mult=1,
+            mode="gas",
+            region="sphere:7",
             elements="6,7,8",
             n_success=999,  # essentially impossible to reach in 3 tries
             n_samples=3,
@@ -1147,8 +1286,7 @@ def test_n_success_warning_on_budget_exhaust() -> None:
     # Either fewer structures were generated OR a warning was emitted
     assert len(result) <= 999
     if len(result) < 999:
-        assert len(budget_warnings) > 0, \
-            "Expected UserWarning when n_success not reached"
+        assert len(budget_warnings) > 0, "Expected UserWarning when n_success not reached"
 
 
 # ===========================================================================
@@ -1158,8 +1296,9 @@ def test_n_success_warning_on_budget_exhaust() -> None:
 
 def test_reproducibility_same_seed() -> None:
     """Two generate() calls with the same seed must produce identical atoms."""
-    kwargs = dict(n_atoms=8, charge=0, mult=1, mode="chain",
-                  elements="6,7,8", n_samples=10, seed=314)
+    kwargs = dict(
+        n_atoms=8, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=10, seed=314
+    )
     r1 = generate(**kwargs)  # type: ignore[arg-type]
     r2 = generate(**kwargs)  # type: ignore[arg-type]
     assert len(r1) == len(r2)
@@ -1193,8 +1332,9 @@ def test_shape_anisotropy_colinear_atoms() -> None:
 
 def test_moran_i_chi_clamped() -> None:
     """moran_I_chi must be <= 1.0 for all generated structures."""
-    result = generate(n_atoms=10, charge=0, mult=1, mode="chain",
-                      elements="6,7,8", n_samples=10, seed=42)
+    result = generate(
+        n_atoms=10, charge=0, mult=1, mode="chain", elements="6,7,8", n_samples=10, seed=42
+    )
     for s in result:
         val = s.metrics.get("moran_I_chi", 0.0)
         assert val <= 1.0 + 1e-9, f"moran_I_chi = {val} exceeds 1.0"

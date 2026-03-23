@@ -850,7 +850,7 @@ class TestComputeAllMetricsReturnType:
             )
 
     def test_keys_match_all_metrics(self) -> None:
-        """The returned dict must contain exactly the 13 keys in ALL_METRICS."""
+        """The returned dict must contain exactly the 17 keys in ALL_METRICS."""
         result = compute_all_metrics(
             ["C", "N", "O"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0)],

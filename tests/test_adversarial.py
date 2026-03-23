@@ -12,6 +12,8 @@ Test categories
   F. Thread safety   — concurrent generate() and StructureOptimizer with the same seed
   G. Memory          — large n_atoms, many restarts; peak heap and RSS growth limits
   H. Counterintuitive valid cases — things that should succeed despite looking suspicious
+  I. Adversarial metrics (v0.4.0) — bond_angle_entropy / coordination_variance /
+     radial_variance / local_anisotropy: edge cases and C++/Python numerical agreement
 """
 
 import gc
@@ -21,9 +23,18 @@ import tempfile
 import threading
 import tracemalloc
 import warnings
+from unittest.mock import patch
 
 import numpy as np
 import pytest
+
+from pasted._metrics import (
+    _compute_bond_angle_entropy,
+    _compute_coordination_variance,
+    _compute_local_anisotropy,
+    _compute_radial_variance,
+)
+from pasted.neighbor_list import NeighborList
 
 try:
     import psutil
@@ -1048,3 +1059,168 @@ class TestCounterIntuitiveValidCases:
                 np.array(s2.positions),
                 err_msg=f"Positions differ between two calls with seed=123 at structure index {i}",
             )
+
+
+# ---------------------------------------------------------------------------
+# I. Adversarial metrics (v0.4.0) — edge cases and numerical accuracy
+# ---------------------------------------------------------------------------
+
+
+def _make_nl(pts, cutoff=3.5):
+    """Build a NeighborList from a plain list/array of positions."""
+    return NeighborList(np.array(pts, dtype=np.float64), cutoff)
+
+
+def _bae_cpp(nl):
+    """Normal path: uses C++ extension when available."""
+    return _compute_bond_angle_entropy(nl)
+
+
+def _bae_python(nl):
+    """Force _HAS_BA_CPP=False to exercise the NumPy fallback path.
+
+    Patches the consuming-module name-copy so the patch target matches
+    the _BA_CPP_FLAG pattern in test_fallback_paths.py.
+    """
+    with patch("pasted._metrics._HAS_BA_CPP", False):
+        return _compute_bond_angle_entropy(nl)
+
+
+class TestAdversarialMetrics:
+    """I. Adversarial metrics — bond_angle_entropy / coordination_variance /
+    radial_variance / local_anisotropy: edge cases and C++/Python numerical agreement.
+    """
+
+    # ── Normal path: C++ and Python numerical agreement ──────────────────
+    @pytest.mark.skipif(
+        not __import__("pasted._ext", fromlist=["HAS_BA_CPP"]).HAS_BA_CPP,
+        reason="C++ extension not available",
+    )
+    @pytest.mark.parametrize("seed", [0, 1, 42])
+    def test_cpp_python_agreement_random(self, seed):
+        """C++ and NumPy fallback must agree to within 1e-6 on random inputs."""
+        rng = np.random.default_rng(seed)
+        pts = rng.uniform(0, 10, (80, 3))
+        nl = _make_nl(pts)
+        assert abs(_bae_cpp(nl) - _bae_python(nl)) < 1e-6
+
+    # ── Edge cases: both implementations return the same value ───────────
+    @pytest.mark.skipif(
+        not __import__("pasted._ext", fromlist=["HAS_BA_CPP"]).HAS_BA_CPP,
+        reason="C++ extension not available",
+    )
+    @pytest.mark.parametrize(
+        ("pts", "expected"),
+        [
+            ([[0, 0, 0]], 0.0),  # N=1
+            ([[0, 0, 0], [0, 0, 0]], 0.0),  # coincident coords (d=0 -> pair excluded)
+            ([[0, 0, 0], [10, 0, 0]], 0.0),  # no pair within cutoff=3.5
+            (
+                [[0, 0, 0], [1, 0, 0], [2, 0, 0]],
+                0.0,
+                # cutoff=3.5 -> all 3 atoms are mutual neighbours (k=2).
+                # Every atom's angle pairs land in a single bin -> entropy = 0.
+            ),
+        ],
+    )
+    def test_edge_cases_agree(self, pts, expected):
+        """Both C++ and Python paths must return expected value for edge cases."""
+        nl = _make_nl(pts)
+        cpp = _bae_cpp(nl)
+        py = _bae_python(nl)
+        assert cpp == pytest.approx(expected, abs=1e-9)
+        assert py == pytest.approx(expected, abs=1e-9)
+        assert cpp == pytest.approx(py, abs=1e-6)
+
+    # ── Fallback only: Python path must work even with C++ present ───────
+    def test_python_fallback_runs(self):
+        """Python fallback must produce a finite value in [0, ln(36)]."""
+        rng = np.random.default_rng(7)
+        pts = rng.uniform(0, 8, (30, 3))
+        nl = _make_nl(pts)
+        val = _bae_python(nl)
+        assert np.isfinite(val)
+        assert 0.0 <= val <= np.log(36) + 1e-9
+
+    # ── coordination_variance edge cases ─────────────────────────────────
+    def test_coordination_variance_uniform_grid(self):
+        """Perfectly uniform coordination → variance = 0."""
+        # 4 atoms in a tetrahedron: each has exactly 3 neighbours at the same
+        # distance, so the degree array is [3, 3, 3, 3] → var = 0.
+        s = 1.5
+        pts = np.array(
+            [
+                [s, s, s],
+                [s, -s, -s],
+                [-s, s, -s],
+                [-s, -s, s],
+            ]
+        )
+        nl = _make_nl(pts, cutoff=4.0)
+        assert _compute_coordination_variance(nl) == pytest.approx(0.0, abs=1e-12)
+
+    def test_coordination_variance_isolated(self):
+        """No pairs → 0.0 (not NaN)."""
+        nl = _make_nl([[0, 0, 0], [100, 0, 0]])
+        val = _compute_coordination_variance(nl)
+        assert val == pytest.approx(0.0)
+
+    # ── radial_variance edge cases ───────────────────────────────────────
+    def test_radial_variance_equidistant(self):
+        """All neighbours equidistant → variance = 0."""
+        # Atom 0 at origin; atoms 1-6 on axes at equal distance 1.5 Å.
+        d = 1.5
+        pts = np.array(
+            [
+                [0, 0, 0],
+                [d, 0, 0],
+                [-d, 0, 0],
+                [0, d, 0],
+                [0, -d, 0],
+                [0, 0, d],
+                [0, 0, -d],
+            ]
+        )
+        nl = _make_nl(pts, cutoff=2.0)
+        assert _compute_radial_variance(nl) == pytest.approx(0.0, abs=1e-12)
+
+    def test_radial_variance_nonnegative(self):
+        """radial_variance must never be negative (floating-point clamp check)."""
+        rng = np.random.default_rng(99)
+        pts = rng.uniform(0, 5, (50, 3))
+        nl = _make_nl(pts)
+        assert _compute_radial_variance(nl) >= 0.0
+
+    # ── local_anisotropy edge cases ──────────────────────────────────────
+    def test_local_anisotropy_range(self):
+        """local_anisotropy must lie in [0, 1] for arbitrary inputs."""
+        rng = np.random.default_rng(13)
+        pts = rng.uniform(0, 8, (40, 3))
+        nl = _make_nl(pts)
+        val = _compute_local_anisotropy(nl)
+        assert 0.0 <= val <= 1.0 + 1e-9
+
+    def test_local_anisotropy_no_runtimewarning(self):
+        """tr=0 case (all-coincident) must not emit RuntimeWarning."""
+        # All atoms at the same point → tr(T) = 0 for every atom.
+        pts = np.zeros((5, 3))
+        nl = _make_nl(pts)
+        import warnings as _warnings
+
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            val = _compute_local_anisotropy(nl)
+        assert val == pytest.approx(0.0)
+
+    # ── All four metrics: no NaN/Inf (smoke) ─────────────────────────────
+    @pytest.mark.parametrize("seed", [0, 7, 42])
+    def test_all_four_metrics_finite(self, seed):
+        """All four adversarial metrics must be finite for random structures."""
+        from pasted._metrics import _compute_adversarial
+
+        rng = np.random.default_rng(seed)
+        pts = rng.uniform(0, 10, (60, 3))
+        nl = _make_nl(pts)
+        result = _compute_adversarial(nl)
+        for key, val in result.items():
+            assert np.isfinite(val), f"{key} is not finite: {val}"

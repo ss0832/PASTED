@@ -9,9 +9,10 @@ Public names
 ------------
 ATOMIC_NUMBERS : dict[str, int]
     Element symbol → atomic number, Z = 1–106.
-ALL_METRICS : tuple[str, ...]
-    Names of all 13 disorder metrics returned by
-    :func:`~pasted._metrics.compute_all_metrics`.
+ALL_METRICS : frozenset[str]
+    Names of all 17 disorder metrics returned by
+    :func:`~pasted._metrics.compute_all_metrics`.  The set is unordered;
+    use ``sorted(ALL_METRICS)`` for a deterministic listing.
 PAULING_EN_FALLBACK : float
     Default electronegativity value (1.0) used for elements without a
     tabulated Pauling value (noble gases, etc.).
@@ -167,8 +168,20 @@ ALL_METRICS: frozenset[str] = frozenset(
         "ring_fraction",
         "charge_frustration",
         "moran_I_chi",
+        # adversarial metrics (added in v0.4.0)
+        "bond_angle_entropy",
+        "coordination_variance",
+        "radial_variance",
+        "local_anisotropy",
     }
 )
+"""Frozenset of all 17 disorder metric names returned by
+:func:`~pasted._metrics.compute_all_metrics`.
+
+The set is unordered; use ``sorted(ALL_METRICS)`` whenever a deterministic
+order is required (e.g., for display or serialization).  Membership testing
+(``"H_total" in ALL_METRICS``) is O(1).
+"""
 
 # ---------------------------------------------------------------------------
 # Pyykkö single-bond covalent radii (Å), Z = 1–86

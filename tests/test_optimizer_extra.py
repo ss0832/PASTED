@@ -145,7 +145,7 @@ class TestCompositionMoveFallbacks:
         """L811: n=1 with all-odd-Z pool falls through to last-resort replacement."""
         rng = random.Random(42)
         atoms = ["C"]  # even Z
-        pool = ["H"]   # only odd Z; n=1 so two-atom path is skipped
+        pool = ["H"]  # only odd Z; n=1 so two-atom path is skipped
         result = _composition_move(atoms, pool, rng)
         assert len(result) == 1
 
@@ -156,16 +156,20 @@ class TestCompositionMoveFallbacks:
 
 
 class TestOptimizerResolveCutoffVerbose:
-    def test_user_cutoff_logged_when_verbose(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_user_cutoff_logged_when_verbose(self, capsys: pytest.CaptureFixture[str]) -> None:
         """L1204: a user-supplied cutoff must be logged when verbose=True."""
         StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="annealing", max_steps=10,
-            n_restarts=1, seed=0, verbose=True, cutoff=4.0,
+            method="annealing",
+            max_steps=10,
+            n_restarts=1,
+            seed=0,
+            verbose=True,
+            cutoff=4.0,
         )
         captured = capsys.readouterr()
         assert "user-specified" in captured.err or "4.000" in captured.err
@@ -180,12 +184,16 @@ class TestMakeInitialReturnsNone:
     def test_make_initial_returns_none_when_generation_fails(self) -> None:
         """L1267: _make_initial returns None when the inner generator yields nothing."""
         opt = StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="annealing", max_steps=10,
+            method="annealing",
+            max_steps=10,
             max_init_attempts=1,  # prevents itertools.count() infinite loop
-            n_restarts=1, seed=0,
+            n_restarts=1,
+            seed=0,
         )
         from pasted._generator import GenerationResult
 
@@ -204,12 +212,17 @@ class TestTemperatureEdgeCases:
     def test_t_end_zero_returns_t_start(self) -> None:
         """L1274: when T_end <= 0, _temperature must return T_start."""
         opt = StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="annealing", max_steps=10,
-            T_start=1.0, T_end=0.0,
-            n_restarts=1, seed=0,
+            method="annealing",
+            max_steps=10,
+            T_start=1.0,
+            T_end=0.0,
+            n_restarts=1,
+            seed=0,
         )
         assert opt._temperature(50) == pytest.approx(1.0)
 
@@ -223,11 +236,15 @@ class TestPtTemperaturesDegenerate:
     def test_n_replicas_1_returns_single_temperature(self) -> None:
         """L1286: _pt_temperatures with n_replicas=1 should return [T_start]."""
         opt = StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="parallel_tempering", max_steps=10,
-            n_replicas=1, seed=0,
+            method="parallel_tempering",
+            max_steps=10,
+            n_replicas=1,
+            seed=0,
         )
         temps = opt._pt_temperatures()
         # n = max(2, 1) = 2 per implementation, but still no error
@@ -247,11 +264,15 @@ class TestRunSkipsRestarts:
         The final RuntimeError is also raised if *all* restarts fail.
         """
         opt = StructureOptimizer(
-            n_atoms=4, charge=0, mult=1,
+            n_atoms=4,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="annealing", max_steps=10,
-            n_restarts=2, seed=0,
+            method="annealing",
+            max_steps=10,
+            n_restarts=2,
+            seed=0,
         )
         # Provide a fake valid structure for the *first* call so at least one
         # restart succeeds, then return None for subsequent calls so the
@@ -260,12 +281,14 @@ class TestRunSkipsRestarts:
         from pasted._generator import Structure
 
         fake_atoms = ["C", "C", "C", "C"]
-        fake_positions = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0),
-                          (0.0, 1.5, 0.0), (0.0, 0.0, 1.5)]
+        fake_positions = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (0.0, 1.5, 0.0), (0.0, 0.0, 1.5)]
         fake_metrics: dict[str, float] = {}
         fake_structure = Structure(
-            atoms=fake_atoms, positions=fake_positions,
-            charge=0, mult=1, metrics=fake_metrics,
+            atoms=fake_atoms,
+            positions=fake_positions,
+            charge=0,
+            mult=1,
+            metrics=fake_metrics,
             mode="chain",
         )
 
@@ -293,12 +316,16 @@ class TestLccThresholdRejection:
     def test_lcc_threshold_rejects_step(self) -> None:
         """L1901: steps with graph_lcc below lcc_threshold must be rejected."""
         opt = StructureOptimizer(
-            n_atoms=6, charge=0, mult=1,
+            n_atoms=6,
+            charge=0,
+            mult=1,
             elements=["C", "N", "O"],
             objective={"H_total": 1.0},
-            method="annealing", max_steps=30,
+            method="annealing",
+            max_steps=30,
             lcc_threshold=1.1,  # impossibly high → every step rejected
-            n_restarts=1, seed=0,
+            n_restarts=1,
+            seed=0,
         )
         result = opt.run()
         assert result is not None

@@ -1532,6 +1532,16 @@ def read_xyz(
     list[Structure]
         One :class:`Structure` per frame, in file order.
 
+    Raises
+    ------
+    FileNotFoundError
+        When *source* looks like a file path (no newlines) but the path
+        does not exist on disk.
+    IsADirectoryError
+        When *source* is a path that points to a directory.
+    ValueError
+        When the XYZ content cannot be parsed.
+
     Examples
     --------
     Load a PASTED output file and pass the first structure to the
@@ -1566,7 +1576,17 @@ def read_xyz(
                                                   n_attempted=len(loaded))
     """
     p = Path(source) if not isinstance(source, str) or "\n" not in str(source) else None
-    text = p.read_text() if (p is not None and p.exists()) else str(source)
+    if p is not None:
+        # *source* looks like a file path — enforce explicit errors, matching
+        # Structure.from_xyz() behavior (raises FileNotFoundError / IsADirectoryError
+        # rather than silently falling through to parse the path string as XYZ).
+        if not p.exists():
+            raise FileNotFoundError(f"XYZ file not found: {p!s}")
+        if not p.is_file():
+            raise IsADirectoryError(f"Expected a file path, but {p!s} is a directory.")
+        text = p.read_text()
+    else:
+        text = str(source)
 
     frames = parse_xyz(text)
     result: list[Structure] = []

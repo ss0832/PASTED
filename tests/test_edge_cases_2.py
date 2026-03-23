@@ -20,7 +20,7 @@ Categories
           whitespace-padded metric name, case-sensitive metric name
   NEC-F  parse_objective_spec contract — empty list, duplicate key last-wins,
           non-float weight raises, all-metrics dict round-trip
-  NEC-G  compute_all_metrics direct API — 2-atom call returns all 13 keys,
+  NEC-G  compute_all_metrics direct API — 2-atom call returns all 17 keys,
           w_atom/w_spatial linearity of H_total
   NEC-H  EvalContext field invariants — atoms/positions/element_pool are
           immutable tuples, step ∈ [0, max_steps), best_f monotone,
@@ -30,13 +30,13 @@ Categories
           equals n_restarts, basin_hopping method name in summary, run()
           idempotent (callable twice)
   NEC-J  Objective function flexibility — integer-valued return, callable
-          covering all 13 ALL_METRICS keys simultaneously
+          covering all 17 ALL_METRICS keys simultaneously
   NEC-K  Shell-mode specifics — center_sym populated, center_z not in pool
           raises ValueError, n_atoms=1 shell succeeds
   NEC-L  High multiplicity (mult=7) valid structures generated
   NEC-M  Affine-shear-only path (stretch=0, jitter=0) does not crash
   NEC-N  validate_charge_mult direct API — positive/negative results
-  NEC-O  ALL_METRICS is exactly the 13 documented keys
+  NEC-O  ALL_METRICS is exactly the 17 documented keys
 """
 
 from __future__ import annotations
@@ -677,7 +677,7 @@ class TestParseObjectiveSpecContract:
 
     def test_all_metrics_round_trip(self) -> None:
         """Building a spec from every metric in ALL_METRICS and parsing it
-        must produce a dict with exactly those 13 keys."""
+        must produce a dict with exactly those 17 keys."""
         specs = [f"{m}:1.0" for m in sorted(ALL_METRICS)]
         result = parse_objective_spec(specs)
         _check_parse_objective_spec(result)
@@ -706,8 +706,8 @@ class TestComputeAllMetricsDirect:
 
     _DEFAULT_KW: ClassVar[dict[str, Any]] = dict(n_bins=10, w_atom=1.0, w_spatial=1.0, cutoff=5.0)
 
-    def test_two_atom_call_returns_all_13_keys(self) -> None:
-        """A 2-atom system must still return all 13 metric keys."""
+    def test_two_atom_call_returns_all_17_keys(self) -> None:
+        """A 2-atom system must still return all 17 metric keys."""
         m = compute_all_metrics(
             ["C", "N"],
             [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0)],
@@ -971,7 +971,7 @@ class TestOptimizationResultContract:
 
 
 class TestObjectiveFunctionFlexibility:
-    """Integer-valued return, all-13-metrics objective."""
+    """Integer-valued return, all-17-metrics objective."""
 
     def test_integer_returning_objective_does_not_crash(self) -> None:
         """An objective that returns int (not float) must run without error."""
@@ -993,7 +993,7 @@ class TestObjectiveFunctionFlexibility:
         assert result.best is not None
 
     def test_all_metrics_dict_objective_runs(self) -> None:
-        """An objective dict containing all 13 metric keys must execute
+        """An objective dict containing all 17 metric keys must execute
         without KeyError or other crash."""
         full_obj = {k: 1.0 for k in ALL_METRICS}
         result = StructureOptimizer(
@@ -1299,7 +1299,7 @@ class TestValidateChargeMult:
 
 
 class TestAllMetricsCompleteness:
-    """ALL_METRICS must be exactly the 13 metrics documented in quickstart.md."""
+    """ALL_METRICS must be exactly the 17 metrics (13 original + 4 adversarial)."""
 
     _EXPECTED: frozenset[str] = frozenset(
         {
@@ -1316,6 +1316,11 @@ class TestAllMetricsCompleteness:
             "ring_fraction",
             "charge_frustration",
             "moran_I_chi",
+            # v0.4.0 adversarial metrics
+            "bond_angle_entropy",
+            "coordination_variance",
+            "radial_variance",
+            "local_anisotropy",
         }
     )
 
@@ -1323,16 +1328,16 @@ class TestAllMetricsCompleteness:
         """ALL_METRICS must be a frozenset (immutable)."""
         assert isinstance(ALL_METRICS, frozenset)
 
-    def test_all_metrics_has_exactly_13_entries(self) -> None:
-        """ALL_METRICS must contain exactly 13 keys."""
-        assert len(ALL_METRICS) == 13
+    def test_all_metrics_has_exactly_17_entries(self) -> None:
+        """ALL_METRICS must contain exactly 17 keys."""
+        assert len(ALL_METRICS) == 17
 
     def test_all_metrics_equals_documented_set(self) -> None:
         """ALL_METRICS must match the exact set from the documentation."""
         assert ALL_METRICS == self._EXPECTED
 
     def test_no_undocumented_metric_in_all_metrics(self) -> None:
-        """There must be no metric in ALL_METRICS beyond the documented 13."""
+        """There must be no metric in ALL_METRICS beyond the documented 17."""
         extras = ALL_METRICS - self._EXPECTED
         assert not extras, f"Undocumented metrics found: {extras}"
 

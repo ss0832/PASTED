@@ -71,8 +71,11 @@ class TestNegativeCountsRaiseError:
         """L797: a negative min-count value must raise ValueError."""
         with pytest.raises(ValueError, match="non-negative"):
             StructureGenerator(
-                n_atoms=6, charge=0, mult=1,
-                mode="chain", elements="6,7,8",
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="chain",
+                elements="6,7,8",
                 element_min_counts={"C": -1},
             )
 
@@ -80,8 +83,11 @@ class TestNegativeCountsRaiseError:
         """L811: a negative max-count value must raise ValueError."""
         with pytest.raises(ValueError, match="non-negative"):
             StructureGenerator(
-                n_atoms=6, charge=0, mult=1,
-                mode="chain", elements="6,7,8",
+                n_atoms=6,
+                charge=0,
+                mult=1,
+                mode="chain",
+                elements="6,7,8",
                 element_max_counts={"C": -1},
             )
 
@@ -97,16 +103,24 @@ class TestCenterZNotInPool:
         # Pool is C, N, O (Z=6,7,8); center_z=26 (Fe) is absent.
         with pytest.raises(ValueError, match="not in the element pool"):
             StructureGenerator(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", elements="6,7,8", center_z=26,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                elements="6,7,8",
+                center_z=26,
             )
 
     def test_center_z_unknown_atomic_number_raises(self) -> None:
         """L834: center_z with an unsupported Z raises ValueError."""
         with pytest.raises(ValueError, match=r"unknown atomic number|not in the element pool"):
             StructureGenerator(
-                n_atoms=4, charge=0, mult=1,
-                mode="shell", elements="1-106", center_z=999,
+                n_atoms=4,
+                charge=0,
+                mult=1,
+                mode="shell",
+                elements="1-106",
+                center_z=999,
             )
 
 
@@ -119,9 +133,14 @@ class TestLogSampleResultBareBranch:
     def test_log_sample_result_bare_branch(self, capsys: pytest.CaptureFixture[str]) -> None:
         """L914: calling _log_sample_result with no metrics and no msg logs bare prefix."""
         gen = StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=1, seed=0, verbose=True,
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=1,
+            seed=0,
+            verbose=True,
         )
         # Call the private helper directly with neither metrics nor msg.
         gen._log_sample_result(0, 1, "1", "PASS", metrics=None, msg=None)
@@ -138,9 +157,15 @@ class TestResolveCutoffVerbose:
     def test_user_cutoff_logged_when_verbose(self, capsys: pytest.CaptureFixture[str]) -> None:
         """L946: when verbose=True, a user-supplied cutoff must be logged."""
         StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=1, seed=0, verbose=True, cutoff=4.0,
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=1,
+            seed=0,
+            verbose=True,
+            cutoff=4.0,
         )
         captured = capsys.readouterr()
         assert "user-specified" in captured.err or "4.000" in captured.err
@@ -155,8 +180,11 @@ class TestGetAttr:
     def test_getattr_unknown_raises_attribute_error(self) -> None:
         """L1070-1071: accessing a nonexistent attribute must raise AttributeError."""
         gen = StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
         )
         with pytest.raises(AttributeError, match="no attribute"):
             _ = gen.this_does_not_exist_at_all
@@ -164,8 +192,11 @@ class TestGetAttr:
     def test_getattr_cfg_guard_raises_attribute_error(self) -> None:
         """L1067: accessing '_cfg' via __getattr__ must raise AttributeError."""
         gen = StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
         )
         # Delete _cfg to force __getattr__ to be called for it.
         object.__delattr__(gen, "_cfg")
@@ -186,9 +217,14 @@ class TestPlaceOneErrorVerbose:
         # C-only pool (Z=6, even) with even n_atoms guarantees parity passes,
         # so _place_one is actually reached before the mock fires.
         gen = StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6",
-            n_samples=1, seed=0, verbose=True,
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6",
+            n_samples=1,
+            seed=0,
+            verbose=True,
         )
         with patch.object(gen, "_place_one", side_effect=RuntimeError("boom")):
             with pytest.raises(RuntimeError, match="boom"):
@@ -203,18 +239,21 @@ class TestPlaceOneErrorVerbose:
 
 
 class TestRelaxNotConverged:
-    def test_relax_non_convergence_logs_warning(
-        self, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_relax_non_convergence_logs_warning(self, capsys: pytest.CaptureFixture[str]) -> None:
         """L1234: when relax_positions returns converged=False, a warning is logged."""
         from unittest.mock import patch
 
         # C-only pool (Z=6, even) with even n_atoms guarantees parity passes,
         # so relax_positions is actually reached before the mock fires.
         gen = StructureGenerator(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6",
-            n_samples=1, seed=0, verbose=True,
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6",
+            n_samples=1,
+            seed=0,
+            verbose=True,
         )
 
         import pasted._generator as _gen_mod
@@ -255,9 +294,13 @@ class TestGenerateFunction:
     def test_generate_with_config_works(self) -> None:
         """L1646-1647: generate() accepting a GeneratorConfig object."""
         cfg = GeneratorConfig(
-            n_atoms=4, charge=0, mult=1,
-            mode="chain", elements="6,7,8",
-            n_samples=3, seed=0,
+            n_atoms=4,
+            charge=0,
+            mult=1,
+            mode="chain",
+            elements="6,7,8",
+            n_samples=3,
+            seed=0,
         )
         result = generate(config=cfg)
         assert result is not None

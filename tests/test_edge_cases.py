@@ -1123,8 +1123,8 @@ class TestComputeAllMetricsBoundary:
         assert isinstance(m, dict)
         assert "H_total" in m
 
-    def test_all_13_metrics_present(self) -> None:
-        """compute_all_metrics must return all 13 metrics listed in quickstart.md."""
+    def test_all_17_metrics_present(self) -> None:
+        """compute_all_metrics must return all 17 metrics (13 original + 4 adversarial)."""
         expected_keys = {
             "H_atom",
             "H_spatial",
@@ -1139,6 +1139,11 @@ class TestComputeAllMetricsBoundary:
             "ring_fraction",
             "charge_frustration",
             "moran_I_chi",
+            # v0.4.0 adversarial metrics
+            "bond_angle_entropy",
+            "coordination_variance",
+            "radial_variance",
+            "local_anisotropy",
         }
         atoms = ["C", "N", "O", "C", "N"]
         positions = [(float(i), 0.0, 0.0) for i in range(5)]

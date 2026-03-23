@@ -12,12 +12,17 @@ cutoff-based metrics share the same *cutoff* distance threshold (Å).
 
 Acceleration paths
 ------------------
-**C++ path** (``HAS_GRAPH = True``): :func:`compute_all_metrics` calls
-``rdf_h_cpp`` and ``graph_metrics_cpp``, each of which uses a single
-``FlatCellList`` O(N·k) traversal.  A shared adjacency list is built once
-and reused for all five graph/ring/charge/Moran metrics.
-``scipy.spatial.distance.pdist`` / ``squareform`` are **never called** on
-this path.
+**C++ single-pass path** (``HAS_COMBINED = True``, v0.4.0+):
+:func:`compute_all_metrics` calls ``all_metrics_cpp``, which builds
+a single ``FlatCellList`` and accumulates **all** pair-based metrics
+(RDF, graph, Steinhardt, bond-angle entropy, radial variance,
+local anisotropy) in one traversal.  Speedup vs. the legacy path:
+~1.9× at N=1000.
+
+**C++ legacy path** (``HAS_GRAPH = True``, ``HAS_COMBINED = False``):
+:func:`compute_all_metrics` calls ``rdf_h_cpp``, ``graph_metrics_cpp``,
+``steinhardt_per_atom``, and ``bond_angle_entropy_cpp`` independently,
+each building its own ``FlatCellList``.
 
 **Pure-Python fallback** (``HAS_GRAPH = False``): :func:`compute_h_spatial`
 and :func:`compute_rdf_deviation` use ``scipy.spatial.cKDTree`` (O(N·k)),
@@ -28,27 +33,36 @@ significantly slower; reinstall with a C++17 compiler to enable
 
 Metrics catalog
 ---------------
-All 13 metrics returned by :func:`compute_all_metrics`:
+All 17 metrics returned by :func:`compute_all_metrics` (13 original
++ 4 adversarial metrics added in v0.4.0):
 
-===================  ========  ================================================
-Metric               Range     Description
-===================  ========  ================================================
-``H_atom``           ≥ 0       Shannon entropy of element composition
-``H_spatial``        ≥ 0       Shannon entropy of pair-distance histogram
-``H_total``          ≥ 0       ``w_atom*H_atom + w_spatial*H_spatial``
-``RDF_dev``          ≥ 0       RMS deviation of empirical g(r) from ideal gas
-``shape_aniso``      [0, 1]    Relative shape anisotropy (0=sphere, 1=rod)
-``Q4``, ``Q6``,      [0, 1]    Steinhardt bond-order parameters
-``Q8``
-``graph_lcc``        [0, 1]    Largest connected-component fraction
-``graph_cc``         [0, 1]    Mean clustering coefficient
-``ring_fraction``    [0, 1]    Fraction of atoms in at least one cycle
-``charge_frustration`` ≥ 0     Variance of |Δχ| across cutoff-adjacent pairs
-``moran_I_chi``      (-∞, 1]   Moran's I spatial autocorrelation for Pauling EN
-===================  ========  ================================================
+=========================  =========  ==========================================
+Metric                     Range      Description
+=========================  =========  ==========================================
+``H_atom``                 ≥ 0        Shannon entropy of element composition
+``H_spatial``              ≥ 0        Shannon entropy of pair-distance histogram
+``H_total``                ≥ 0        ``w_atom*H_atom + w_spatial*H_spatial``
+``RDF_dev``                ≥ 0        RMS deviation of empirical g(r) from ideal gas
+``shape_aniso``            [0, 1]     Relative shape anisotropy (0=sphere, 1=rod)
+``Q4``, ``Q6``, ``Q8``    [0, 1]     Steinhardt bond-order parameters
+``graph_lcc``              [0, 1]     Largest connected-component fraction
+``graph_cc``               [0, 1]     Mean clustering coefficient
+``ring_fraction``          [0, 1]     Fraction of atoms in at least one cycle
+``charge_frustration``     ≥ 0        Variance of |Δχ| across cutoff-adjacent pairs
+``moran_I_chi``            (-∞, 1]    Moran's I spatial autocorrelation for Pauling EN
+``bond_angle_entropy``     [0, ln 36] Mean per-atom bond-angle distribution entropy
+``coordination_variance``  ≥ 0        Population variance of per-atom coordination number
+``radial_variance``        ≥ 0 Å²    Mean per-atom variance of neighbor distances
+``local_anisotropy``       [0, 1]     Mean per-atom local covariance tensor anisotropy
+=========================  =========  ==========================================
 
 Changelog highlights
 --------------------
+* **v0.4.0**: ``_combined_core`` single-pass C++ kernel added; all 17 metrics
+  now computed in one ``FlatCellList`` traversal when ``HAS_COMBINED=True``
+  (~1.9× speedup at N=1000).  Four adversarial metrics introduced in v0.4.0-alpha
+  (``bond_angle_entropy``, ``coordination_variance``, ``radial_variance``,
+  ``local_anisotropy``) are now part of the stable ``ALL_METRICS`` set.
 * **v0.3.10**: ``compute_shape_anisotropy`` guard tightened from ``tr == 0``
   to ``tr < 1e-30``, fixing a ``ZeroDivisionError`` on subnormal coordinate
   differences.
@@ -114,6 +128,18 @@ from ._ext import rdf_h_cpp as _rdf_h_cpp
 
 if _HAS_STEINHARDT:
     from ._ext import steinhardt_per_atom as _steinhardt_per_atom_cpp
+
+from ._ext import HAS_BA_CPP as _HAS_BA_CPP
+
+if _HAS_BA_CPP:
+    from ._ext import bond_angle_entropy_cpp as _bond_angle_entropy_cpp
+
+from ._ext import HAS_COMBINED as _HAS_COMBINED
+
+if _HAS_COMBINED:
+    from ._ext import all_metrics_cpp as _all_metrics_cpp
+
+from .neighbor_list import NeighborList
 
 # ---------------------------------------------------------------------------
 # Low-level entropy helper
@@ -214,7 +240,16 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
     """Relative shape anisotropy from the gyration tensor.
 
     Range: [0, 1] (0=spherical, 1=rod-like).
-    Returns NaN for a single atom.
+
+    Returns NaN when:
+
+    * The input contains fewer than 2 atoms.
+    * Any coordinate is non-finite (NaN or Inf).  In earlier versions a
+      structure with Inf coordinates would emit a NumPy
+      ``RuntimeWarning: invalid value encountered in subtract`` from the
+      mean-centering step; the explicit ``np.isfinite`` guard (added in
+      v0.4.0) suppresses that warning and returns NaN cleanly.
+
     Returns 0.0 when all atoms are coincident (gyration tensor trace < 1e-30),
     guarding against ``ZeroDivisionError`` from subnormal or identical coordinates.
 
@@ -234,6 +269,11 @@ def compute_shape_anisotropy(pts: np.ndarray) -> float:
     atoms at positions differing by ≈ 6e-108 Å) and raised ``ZeroDivisionError``.
     """
     if len(pts) < 2:
+        return float("nan")
+    # Guard against NaN/Inf coordinates: pts containing Inf would propagate
+    # through the mean subtraction and trigger a NumPy RuntimeWarning
+    # ("invalid value encountered in subtract").  Return NaN for such inputs.
+    if not np.all(np.isfinite(pts)):
         return float("nan")
     p = pts - pts.mean(axis=0)
     T = (p.T @ p) / len(p)
@@ -824,6 +864,41 @@ def compute_all_metrics(
 
     ha = compute_h_atom(atoms)
 
+    if _HAS_COMBINED:
+        raw = dict(_all_metrics_cpp(pts, radii, en_vals, cutoff, n_bins))
+        hs = float(raw["h_spatial"])
+        rdf_dev = float(raw["rdf_dev"])
+        graph_result = {
+            k: float(raw[k])
+            for k in (
+                "graph_lcc",
+                "graph_cc",
+                "ring_fraction",
+                "charge_frustration",
+                "moran_I_chi",
+            )
+        }
+        stein_result = {f"Q{lv}": float(np.asarray(raw[f"Q{lv}"]).mean()) for lv in [4, 6, 8]}
+        adv_result = {
+            k: float(raw[k])
+            for k in (
+                "bond_angle_entropy",
+                "coordination_variance",
+                "radial_variance",
+                "local_anisotropy",
+            )
+        }
+        return {
+            "H_atom": ha,
+            "H_spatial": hs,
+            "H_total": w_atom * ha + w_spatial * hs,
+            "RDF_dev": rdf_dev,
+            "shape_aniso": compute_shape_anisotropy(pts),
+            **stein_result,
+            **graph_result,
+            **adv_result,
+        }
+
     if _HAS_GRAPH:
         rdf_h = dict(_rdf_h_cpp(pts, cutoff, n_bins))
         hs = float(rdf_h["h_spatial"])
@@ -842,6 +917,7 @@ def compute_all_metrics(
         "shape_aniso": compute_shape_anisotropy(pts),
         **compute_steinhardt(pts, [4, 6, 8], cutoff),
         **graph_result,
+        **_compute_adversarial(NeighborList(pts, cutoff)),
     }
 
 
@@ -935,3 +1011,236 @@ def compute_angular_entropy(
         entropies.append(_shannon_np(counts.astype(float)))
 
     return float(np.mean(entropies)) if entropies else 0.0
+
+
+# ===========================================================================
+# Adversarial metrics (added in v0.4.0)
+# ===========================================================================
+# These four metrics expose structural features that common GNN/descriptor
+# architectures treat as implicitly fixed (uniform coordination, isotropic
+# environments, sharp RBF shells, specific bond-angle peaks).  They share
+# a single NeighborList constructed once in compute_all_metrics.
+# ===========================================================================
+
+
+def _compute_bond_angle_entropy(nl: NeighborList) -> float:
+    """Three-body bond-angle Shannon entropy, averaged over all atoms.
+
+    For each atom *j* with at least 2 neighbours within the cutoff, all
+    pairwise angles ``theta_{ajb} = arccos(u_ja · u_jb)`` are histogrammed
+    into 36 equal bins over ``[0, pi]``.  The Shannon entropy of the
+    per-atom histogram is averaged over all contributing atoms.
+
+    When the C++ extension is available (``HAS_BA_CPP = True``) the fast
+    ``bond_angle_entropy_cpp`` path is used.  Otherwise a NumPy fallback
+    is executed; both paths use 36 bins and produce identical results.
+
+    Targets the GNN / spherical-harmonic bias: "bond angles concentrate
+    at 109.5° / 120°."
+
+    Range
+    -----
+    ``[0, ln(36)]``  — 0 = single angle, ln(36) ≈ 3.58 = uniform.
+
+    Parameters
+    ----------
+    nl:
+        Pre-built ``NeighborList`` for the structure.
+
+    Returns
+    -------
+    float
+    """
+    if nl.n_pairs == 0:
+        return 0.0
+
+    if _HAS_BA_CPP:
+        return float(_bond_angle_entropy_cpp(nl.pts, nl.cutoff))
+
+    # NumPy fallback — bin count fixed at 36 to match C++ output.
+    n_bins = 36
+    n = nl.n_atoms
+    dh = nl.unit_diff  # (2P, 3) — cached
+    # Exclude coincident pairs: C++ skips d² < 1e-20; Python uses the same
+    # threshold via all_dists so the two paths agree numerically.
+    valid = nl.all_dists > 1e-10
+    entropies: list[float] = []
+    for j in range(n):
+        mask = (nl.rows == j) & valid
+        if mask.sum() < 2:
+            continue
+        vecs = dh[mask]
+        cos_t = np.clip(vecs @ vecs.T, -1.0, 1.0)
+        angles = np.arccos(cos_t[np.triu_indices(len(vecs), k=1)])
+        counts, _ = np.histogram(angles, bins=n_bins, range=(0, math.pi))
+        p = counts[counts > 0].astype(float)
+        if p.sum() == 0:
+            continue
+        p /= p.sum()
+        entropies.append(float(-np.sum(p * np.log(p))))
+
+    return float(np.mean(entropies)) if entropies else 0.0
+
+
+def _compute_coordination_variance(nl: NeighborList) -> float:
+    """Variance of per-atom coordination numbers.
+
+    Targets the GNN aggregation bias: "coordination number is nearly
+    constant (octet rule)."
+
+    Uses ``NeighborList.deg`` (cached after first call).
+
+    Range
+    -----
+    ``[0, ∞)``  — 0 = all atoms have identical coordination.
+
+    Parameters
+    ----------
+    nl:
+        Pre-built ``NeighborList`` for the structure.
+
+    Returns
+    -------
+    float
+    """
+    if nl.n_atoms < 2 or nl.n_pairs == 0:
+        return 0.0
+    return float(np.var(nl.deg))
+
+
+def _compute_radial_variance(nl: NeighborList) -> float:
+    """Mean per-atom variance of neighbour distances.
+
+    For each atom *i*, computes ``Var(d_{ij})`` over all neighbours *j*
+    within the cutoff, then averages over atoms that have at least one
+    neighbour.  Unlike ``RDF_dev`` (which measures global g(r) shape),
+    this captures local shell disorder: atoms whose near and far
+    neighbours coexist within the same cutoff sphere score high.
+
+    Targets the RBF bias: "first/second coordination shells are
+    well-separated."
+
+    Uses ``NeighborList.dists_sq`` (cached) to avoid recomputing ``d²``.
+
+    Range
+    -----
+    ``[0, ∞)`` Å²  — 0 = all neighbours equidistant.
+
+    Parameters
+    ----------
+    nl:
+        Pre-built ``NeighborList`` for the structure.
+
+    Returns
+    -------
+    float
+    """
+    if nl.n_atoms < 2 or nl.n_pairs == 0:
+        return 0.0
+    n = nl.n_atoms
+    deg = nl.deg
+    mask = deg > 0
+    if not mask.any():
+        return 0.0
+    sdeg = np.where(mask, deg, 1.0)
+    d = nl.all_dists
+    d_sq = nl.dists_sq
+    sum_d = np.bincount(nl.rows, weights=d, minlength=n)
+    sum_d2 = np.bincount(nl.rows, weights=d_sq, minlength=n)
+    mean_d = sum_d / sdeg
+    mean_d2 = sum_d2 / sdeg
+    per_atom_var = np.where(mask, np.maximum(0.0, mean_d2 - mean_d**2), 0.0)
+    return float(per_atom_var[mask].mean())
+
+
+def _compute_local_anisotropy(nl: NeighborList) -> float:
+    """Mean per-atom relative shape anisotropy of local coordination tensor.
+
+    For each atom *i* with at least one neighbour, builds the local
+    covariance tensor ``T_i = (1/k_i) Σ_j u_ij u_ijᵀ`` and computes the
+    relative shape anisotropy::
+
+        κ²_i = 1.5 × ||T_i||²_F / (tr T_i)² − 0.5
+
+    using the Frobenius-norm identity (no ``eigvalsh`` needed)::
+
+        ||T||²_F = Txx² + Tyy² + Tzz² + 2(Txy² + Txz² + Tyz²)
+        tr  T    = Txx + Tyy + Tzz
+
+    Unlike ``shape_aniso`` (global inertia tensor), this is per-atom and
+    captures local environments such as square-planar or linear sites
+    where the vector sum is zero but the distribution is anisotropic.
+
+    Targets the bias: "local environments are isotropic or follow a
+    known symmetry group."
+
+    Uses ``NeighborList.unit_diff`` and ``NeighborList.deg`` (both cached).
+
+    The ``np.divide(out=, where=)`` pattern is used instead of
+    ``np.where(cond, a/b, 0)`` to avoid a ``RuntimeWarning`` on
+    ``tr² = 0`` elements (the latter evaluates the division for all
+    elements before selecting).
+
+    Range
+    -----
+    ``[0, 1]``  — 0 = isotropic, 1 = perfectly rod-like (linear chain).
+
+    Parameters
+    ----------
+    nl:
+        Pre-built ``NeighborList`` for the structure.
+
+    Returns
+    -------
+    float
+    """
+    n = nl.n_atoms
+    if n < 2 or nl.n_pairs == 0:
+        return 0.0
+    deg = nl.deg
+    mask = deg > 0
+    if not mask.any():
+        return 0.0
+
+    dh = nl.unit_diff  # (2P, 3) cached
+    rows = nl.rows
+    dx, dy, dz = dh[:, 0], dh[:, 1], dh[:, 2]
+    sdeg = np.where(mask, deg, 1.0)
+
+    Txx = np.bincount(rows, weights=dx * dx, minlength=n) / sdeg
+    Txy = np.bincount(rows, weights=dx * dy, minlength=n) / sdeg
+    Txz = np.bincount(rows, weights=dx * dz, minlength=n) / sdeg
+    Tyy = np.bincount(rows, weights=dy * dy, minlength=n) / sdeg
+    Tyz = np.bincount(rows, weights=dy * dz, minlength=n) / sdeg
+    Tzz = np.bincount(rows, weights=dz * dz, minlength=n) / sdeg
+
+    tr = Txx + Tyy + Tzz
+    fr2 = Txx**2 + Tyy**2 + Tzz**2 + 2.0 * (Txy**2 + Txz**2 + Tyz**2)
+
+    kap2 = np.zeros(n)
+    valid = mask & (tr * tr > 1e-24)
+    np.divide(1.5 * fr2, tr * tr, out=kap2, where=valid)
+    kap2[valid] -= 0.5
+    np.clip(kap2, 0.0, 1.0, out=kap2)
+    return float(kap2[mask].mean())
+
+
+def _compute_adversarial(nl: NeighborList) -> dict[str, float]:
+    """Compute all four adversarial metrics sharing one ``NeighborList``.
+
+    Parameters
+    ----------
+    nl:
+        Pre-built ``NeighborList`` for the structure.
+
+    Returns
+    -------
+    dict with keys ``bond_angle_entropy``, ``coordination_variance``,
+    ``radial_variance``, ``local_anisotropy``.
+    """
+    return {
+        "bond_angle_entropy": _compute_bond_angle_entropy(nl),
+        "coordination_variance": _compute_coordination_variance(nl),
+        "radial_variance": _compute_radial_variance(nl),
+        "local_anisotropy": _compute_local_anisotropy(nl),
+    }
