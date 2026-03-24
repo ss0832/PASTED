@@ -204,6 +204,12 @@ if w:
     # "No structures passed the metric filters after 10 attempt(s) ..."
 ```
 
+> **Behavior note — `n_atoms=0`:** passing `n_atoms=0` is accepted and
+> returns an empty `GenerationResult` with `n_passed=0` and `n_attempted=0`.
+> No error is raised.  This is intentional: it allows pipelines to call
+> `generate()` unconditionally and handle the empty result with the standard
+> `if not result:` guard rather than wrapping the call in a `try/except` block.
+
 ### `maxent` mode
 
 `maxent` requires a `region` argument — the same `"sphere:R"` / `"box:L"` string
@@ -748,6 +754,79 @@ opt = StructureOptimizer(
 
 ---
 
+### `NeighborList` — custom neighbor queries in objectives
+
+`pasted.neighbor_list.NeighborList` is a lightweight, lazily-cached neighbor
+list built on `scipy.spatial.cKDTree`.  It is the same data structure that
+`compute_all_metrics` uses internally, and it is available as a public API
+so that objective functions can compute custom per-bond quantities — such as
+Q3 or any other bond-order parameter not in `ALL_METRICS` — without
+rebuilding the tree or re-enumerating pairs redundantly.
+
+```python
+from pasted.neighbor_list import NeighborList
+
+nl = NeighborList(pts, cutoff)   # build once per evaluation step
+```
+
+**Attributes available immediately after construction**
+
+| Attribute | Shape | Description |
+|---|---|---|
+| `nl.n_atoms` | scalar | Number of atoms N |
+| `nl.n_pairs` | scalar | Number of undirected pairs P within cutoff |
+| `nl.pairs` | `(P, 2)` | Undirected pair indices, `pairs[k,0] < pairs[k,1]` |
+| `nl.rows` / `nl.cols` | `(2P,)` | Directed (bidirectional) source and target indices |
+| `nl.dists` | `(P,)` | Undirected pair distances (Å) |
+| `nl.all_dists` | `(2P,)` | Directed distances (each undirected distance duplicated) |
+| `nl.diff` | `(2P, 3)` | Directed difference vectors `pts[rows] - pts[cols]` |
+
+**Cached properties** (computed on first access, O(1) on subsequent calls)
+
+| Property | Shape | Description |
+|---|---|---|
+| `nl.deg` | `(N,)` | Per-atom coordination number as float64 |
+| `nl.unit_diff` | `(2P, 3)` | Directed unit vectors; coincident pairs (d < 1e-10 Å) use a safe divisor of 1.0 |
+| `nl.dists_sq` | `(2P,)` | Squared directed distances `all_dists²` |
+
+**Empty-structure handling:** when `n_atoms=0` or `n_pairs=0` all arrays are
+empty and each metric's own early-return guard fires before any arithmetic is
+attempted, so no `NaN` or `ZeroDivisionError` is produced.
+
+**Using `NeighborList` inside an objective function**
+
+`ctx.positions` is a `tuple[tuple[float, float, float], ...]` — convert it to
+an `ndarray` before passing it to `NeighborList`:
+
+```python
+import numpy as np
+from pasted.neighbor_list import NeighborList
+
+def my_objective(m, ctx):
+    pts = np.array(ctx.positions)          # tuple → ndarray required
+    nl = NeighborList(pts, ctx.cutoff)     # built once per step
+    # ... use nl.deg, nl.dists, nl.unit_diff, etc.
+    return some_score
+```
+
+> **Important — set `cutoff` explicitly when using `NeighborList` in
+> objectives.**  The default cutoff is `1.5 × median(rᵢ + rⱼ)` over
+> covalent radii, which is approximately **2.07 Å** for a C/N/O pool.  At
+> this distance only the nearest covalently-bonded neighbors are included
+> (mean coordination k ≈ 0.9), which limits the resolution of bond-order
+> parameters such as Q3.  For meaningful neighbor statistics, pass an
+> explicit cutoff to `StructureOptimizer`:
+>
+> ```python
+> opt = StructureOptimizer(..., cutoff=3.5)   # explicit cutoff in Å
+> ```
+>
+> The same value is then available inside the objective as `ctx.cutoff`, so
+> the `NeighborList` and any call to `compute_steinhardt_per_atom` use the
+> same distance threshold automatically.
+
+---
+
 ### Controlling initial-structure generation retries (`max_init_attempts`)
 
 By default `StructureOptimizer` retries generating the initial structure for
@@ -1058,7 +1137,14 @@ result = gen.generate()
 
 Weights are *relative* — they are normalized internally.
 `{"C": 6, "N": 3, "O": 1}` is equivalent to the above.
-Elements absent from the dict receive weight `1.0`.
+Elements absent from the dict (but present in the pool) receive weight `1.0`.
+
+> **Note — keys must be within the element pool:** every key in
+> `element_fractions` must correspond to an element present in the `elements=`
+> pool.  Passing a symbol that is not in the pool raises `ValueError` at
+> construction time.  This is by design: a weight for an element that can
+> never be sampled would silently mislead callers about the actual sampling
+> distribution.
 
 ### Element count bounds
 
@@ -1415,3 +1501,107 @@ print(f"Q6        = {best.metrics['Q6']:.4f}")
   particular region of metric space.
 - Use `ctx.step` for step-based schedules and `ctx.temperature` to tie
   the curriculum to the annealing schedule directly.
+
+---
+
+### Case study 4 — Custom bond-order metric (Q3) via `NeighborList`
+
+`ALL_METRICS` provides Q4, Q6, and Q8, but Steinhardt parameters for other
+angular momenta — such as Q3, which is sensitive to three-fold local
+symmetry — can be computed inside a 2-argument objective using
+`NeighborList` and `compute_steinhardt_per_atom`.  This pattern generalises
+to any bond-level quantity: just build a `NeighborList` from `ctx.positions`
+and operate on its arrays directly.
+
+**Why Q3?**  Q3 is nonzero for structures with three-fold (triangular or
+kagomé-like) local coordination.  It is absent from `ALL_METRICS` because
+it is rarely needed for the fuzzing workflows PASTED targets, but it is
+straightforward to add via the objective callable.
+
+```python
+import numpy as np
+from pasted import EvalContext, StructureOptimizer
+from pasted.neighbor_list import NeighborList
+from pasted._metrics import compute_steinhardt_per_atom
+
+# ── Objective: maximize mean Q3 across all atoms ─────────────────────────
+def q3_objective(m: dict, ctx: EvalContext) -> float:
+    """Maximize the Steinhardt Q3 bond-order parameter.
+
+    Uses NeighborList to avoid rebuilding the cKDTree independently from
+    the per-atom Steinhardt call.  ctx.cutoff is supplied by the optimizer
+    and is the same cutoff used for all built-in metrics, ensuring consistency.
+    """
+    pts = np.array(ctx.positions)                                   # tuple → ndarray
+    q3_per_atom = compute_steinhardt_per_atom(pts, [3], ctx.cutoff)["Q3"]
+    return float(q3_per_atom.mean())
+
+# ── Combined objective: maximize Q3 and compositional disorder ───────────
+def q3_disorder_objective(m: dict, ctx: EvalContext) -> float:
+    """Maximize Q3 and spatial disorder simultaneously."""
+    pts = np.array(ctx.positions)
+    q3_per_atom = compute_steinhardt_per_atom(pts, [3], ctx.cutoff)["Q3"]
+    return float(q3_per_atom.mean()) + m["H_total"]
+
+# ── Run the optimizer ─────────────────────────────────────────────────────
+# Pass cutoff=3.5 explicitly so that ctx.cutoff gives k_avg ≈ 1.5 rather
+# than the default ~2.07 Å (k_avg ≈ 0.9), which is too sparse for Q3.
+opt = StructureOptimizer(
+    n_atoms=20,
+    charge=0,
+    mult=1,
+    elements="6,7,8",
+    objective=q3_disorder_objective,
+    cutoff=3.5,           # explicit cutoff — essential for meaningful Q3
+    method="annealing",
+    max_steps=2000,
+    n_restarts=3,
+    seed=42,
+)
+
+result = opt.run()
+best = result.best
+print(result.summary())
+
+# Verify Q3 independently at the same cutoff
+q3_check = compute_steinhardt_per_atom(
+    np.array(best.positions), [3], 3.5
+)["Q3"]
+print(f"Q3 (global mean) = {float(q3_check.mean()):.4f}")
+print(f"H_total          = {best.metrics['H_total']:.4f}")
+print(f"comp             = {best.comp}")
+```
+
+**Extending to other `NeighborList`-based quantities**
+
+The same pattern works for any bond-level descriptor.  For example, use
+`nl.unit_diff` and `nl.deg` to build a per-atom angular anisotropy score,
+or `nl.dists` to compute a custom radial moment:
+
+```python
+def custom_radial_objective(m: dict, ctx: EvalContext) -> float:
+    """Penalize structures where neighbor distances are too uniform."""
+    pts = np.array(ctx.positions)
+    nl = NeighborList(pts, ctx.cutoff)
+    if nl.n_pairs == 0:
+        return 0.0
+    # per-atom variance of neighbor distances
+    per_atom_var = np.zeros(nl.n_atoms)
+    for i in range(nl.n_atoms):
+        mask = nl.rows == i
+        if mask.sum() > 1:
+            per_atom_var[i] = float(np.var(nl.all_dists[mask]))
+    return float(per_atom_var.mean()) + m["H_total"]
+```
+
+**Tips for custom-metric objectives**
+
+- Always pass `cutoff=` to `StructureOptimizer` and use `ctx.cutoff` inside
+  the objective so that the neighbor list and the built-in metrics share the
+  same distance threshold.
+- Guard against `nl.n_pairs == 0` (all atoms beyond cutoff) to avoid
+  division by zero or empty-array errors; returning `0.0` or `float("-inf")`
+  is appropriate depending on whether zero connectivity should be penalized.
+- `NeighborList.deg`, `unit_diff`, and `dists_sq` are cached on first access
+  within a single `NeighborList` instance, so calling them multiple times in
+  one objective evaluation is free.
