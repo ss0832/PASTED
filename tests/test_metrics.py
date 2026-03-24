@@ -12,6 +12,11 @@ from pasted import _ext
 from pasted._atoms import cov_radius_ang as _cov_radius_ang
 from pasted._atoms import parse_filter, pauling_electronegativity
 from pasted._metrics import (
+    _compute_adversarial,
+    _compute_bond_angle_entropy,
+    _compute_coordination_variance,
+    _compute_local_anisotropy,
+    _compute_radial_variance,
     _steinhardt_per_atom_sparse,
     compute_all_metrics,
     compute_charge_frustration,
@@ -26,6 +31,7 @@ from pasted._metrics import (
     compute_steinhardt_per_atom,
     passes_filters,
 )
+from pasted.neighbor_list import NeighborList
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -581,3 +587,316 @@ class TestSteinhardtFastPath:
             assert fast[key] == pytest.approx(generic[key], abs=1e-12), (
                 f"{key}: fast={fast[key]:.10f} generic={generic[key]:.10f}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Adversarial metrics (v0.4.0): shared fixtures
+# ---------------------------------------------------------------------------
+
+# Tetrahedral-ish cluster: 4 atoms, every pair within cutoff=2.5
+_ADV_PTS = np.array(
+    [
+        [0.0, 0.0, 0.0],
+        [1.5, 0.0, 0.0],
+        [0.0, 1.5, 0.0],
+        [0.0, 0.0, 1.5],
+    ]
+)
+_ADV_CUTOFF = 2.5
+
+
+# ---------------------------------------------------------------------------
+# _compute_bond_angle_entropy
+# ---------------------------------------------------------------------------
+
+
+class TestComputeBondAngleEntropy:
+    """Tests for _compute_bond_angle_entropy (v0.4.0 adversarial metric)."""
+
+    def test_no_pairs_returns_zero(self) -> None:
+        """n_pairs == 0 must short-circuit to 0.0."""
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        assert nl.n_pairs == 0
+        assert _compute_bond_angle_entropy(nl) == pytest.approx(0.0)
+
+    def test_returns_non_negative(self) -> None:
+        """Result must be >= 0 for any valid structure."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        assert _compute_bond_angle_entropy(nl) >= 0.0
+
+    def test_range_upper_bound(self) -> None:
+        """Result must be <= ln(36) (maximum entropy for 36-bin histogram)."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        assert _compute_bond_angle_entropy(nl) <= math.log(36) + 1e-9
+
+    def test_numpy_fallback_matches_cpp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pure-NumPy fallback must agree with C++ path to within 1e-9."""
+        import pasted._metrics as mod
+
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        cpp_result = _compute_bond_angle_entropy(nl)
+
+        monkeypatch.setattr(mod, "_HAS_BA_CPP", False)
+        numpy_result = _compute_bond_angle_entropy(nl)
+
+        assert numpy_result == pytest.approx(cpp_result, abs=1e-9)
+
+    def test_numpy_fallback_no_pairs_returns_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NumPy fallback with no pairs must return 0.0."""
+        import pasted._metrics as mod
+
+        monkeypatch.setattr(mod, "_HAS_BA_CPP", False)
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        assert _compute_bond_angle_entropy(nl) == pytest.approx(0.0)
+
+    def test_numpy_fallback_all_atoms_have_one_neighbor_returns_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Atoms with fewer than 2 neighbors are skipped; empty entropies list returns 0.0."""
+        import pasted._metrics as mod
+
+        monkeypatch.setattr(mod, "_HAS_BA_CPP", False)
+        # Two atoms connected to each other only -> each has degree 1
+        pts = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [50.0, 0.0, 0.0]])
+        nl = NeighborList(pts, cutoff=2.0)
+        assert nl.deg[0] == pytest.approx(1.0)
+        assert _compute_bond_angle_entropy(nl) == pytest.approx(0.0)
+
+    def test_numpy_fallback_positive_for_multi_neighbor_atoms(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """NumPy fallback returns > 0 when atoms have >= 2 neighbors."""
+        import pasted._metrics as mod
+
+        monkeypatch.setattr(mod, "_HAS_BA_CPP", False)
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        assert _compute_bond_angle_entropy(nl) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# _compute_coordination_variance
+# ---------------------------------------------------------------------------
+
+
+class TestComputeCoordinationVariance:
+    """Tests for _compute_coordination_variance (v0.4.0 adversarial metric)."""
+
+    def test_no_pairs_returns_zero(self) -> None:
+        """n_pairs == 0 must short-circuit to 0.0."""
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        assert _compute_coordination_variance(nl) == pytest.approx(0.0)
+
+    def test_single_atom_returns_zero(self) -> None:
+        """n_atoms < 2 must short-circuit to 0.0."""
+        pts = np.array([[0.0, 0.0, 0.0]])
+        nl = NeighborList(pts, cutoff=2.0)
+        assert _compute_coordination_variance(nl) == pytest.approx(0.0)
+
+    def test_uniform_coordination_returns_zero(self) -> None:
+        """All atoms with identical coordination number -> variance = 0."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        assert nl.deg.tolist() == pytest.approx([3.0, 3.0, 3.0, 3.0])
+        assert _compute_coordination_variance(nl) == pytest.approx(0.0)
+
+    def test_varying_coordination_returns_positive(self) -> None:
+        """Non-uniform coordination numbers -> variance > 0."""
+        # Center atom connected to 4 neighbors; outer atoms each connected to 1
+        pts = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.5, 0.0, 0.0],
+                [-1.5, 0.0, 0.0],
+                [0.0, 1.5, 0.0],
+                [0.0, -1.5, 0.0],
+            ]
+        )
+        nl = NeighborList(pts, cutoff=2.0)
+        assert _compute_coordination_variance(nl) > 0.0
+
+    def test_result_is_non_negative(self) -> None:
+        """Variance is always >= 0."""
+        rng = np.random.default_rng(0)
+        pts = rng.uniform(-3.0, 3.0, (20, 3))
+        nl = NeighborList(pts, cutoff=2.0)
+        assert _compute_coordination_variance(nl) >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# _compute_radial_variance
+# ---------------------------------------------------------------------------
+
+
+class TestComputeRadialVariance:
+    """Tests for _compute_radial_variance (v0.4.0 adversarial metric)."""
+
+    def test_no_pairs_returns_zero(self) -> None:
+        """n_pairs == 0 must short-circuit to 0.0."""
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        assert _compute_radial_variance(nl) == pytest.approx(0.0)
+
+    def test_single_atom_returns_zero(self) -> None:
+        """n_atoms < 2 must short-circuit to 0.0."""
+        pts = np.array([[0.0, 0.0, 0.0]])
+        nl = NeighborList(pts, cutoff=2.0)
+        assert _compute_radial_variance(nl) == pytest.approx(0.0)
+
+    def test_equidistant_neighbors_returns_zero(self) -> None:
+        """All neighbors at identical distance -> per-atom variance = 0."""
+        pts = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.5, 0.0, 0.0],
+                [-1.5, 0.0, 0.0],
+                [0.0, 1.5, 0.0],
+                [0.0, -1.5, 0.0],
+            ]
+        )
+        nl = NeighborList(pts, cutoff=2.0)
+        # Center atom has 4 neighbors all at distance 1.5 -> var = 0
+        assert _compute_radial_variance(nl) == pytest.approx(0.0, abs=1e-12)
+
+    def test_mixed_distances_returns_positive(self) -> None:
+        """Atoms whose neighbors span near and far distances -> variance > 0."""
+        pts = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+        nl = NeighborList(pts, cutoff=2.5)
+        # atom 0: neighbors at d=1.0 and d=2.0 -> var > 0
+        assert _compute_radial_variance(nl) > 0.0
+
+    def test_result_is_non_negative(self) -> None:
+        """Result must be >= 0 for any valid structure."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        assert _compute_radial_variance(nl) >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# _compute_local_anisotropy
+# ---------------------------------------------------------------------------
+
+
+class TestComputeLocalAnisotropy:
+    """Tests for _compute_local_anisotropy (v0.4.0 adversarial metric)."""
+
+    def test_no_pairs_returns_zero(self) -> None:
+        """n_pairs == 0 must short-circuit to 0.0."""
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        assert _compute_local_anisotropy(nl) == pytest.approx(0.0)
+
+    def test_single_atom_returns_zero(self) -> None:
+        """n_atoms < 2 must short-circuit to 0.0."""
+        pts = np.array([[0.0, 0.0, 0.0]])
+        nl = NeighborList(pts, cutoff=2.0)
+        assert _compute_local_anisotropy(nl) == pytest.approx(0.0)
+
+    def test_linear_chain_near_one(self) -> None:
+        """Linear chain: each interior atom has two collinear neighbors -> kappa^2 = 1."""
+        pts = np.array([[float(i), 0.0, 0.0] for i in range(5)])
+        nl = NeighborList(pts, cutoff=1.5)
+        result = _compute_local_anisotropy(nl)
+        assert result == pytest.approx(1.0, abs=1e-9)
+
+    def test_range(self) -> None:
+        """Result must lie in [0, 1]."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        result = _compute_local_anisotropy(nl)
+        assert 0.0 <= result <= 1.0
+
+    def test_isotropic_structure_lower_than_linear(self) -> None:
+        """Isotropic environment (atoms around a sphere) is less anisotropic than linear."""
+        rng = np.random.default_rng(42)
+        pts_iso = rng.standard_normal((50, 3))  # roughly isotropic
+        nl_iso = NeighborList(pts_iso, cutoff=1.5)
+
+        pts_lin = np.array([[float(i), 0.0, 0.0] for i in range(50)])
+        nl_lin = NeighborList(pts_lin, cutoff=1.5)
+
+        assert _compute_local_anisotropy(nl_iso) < _compute_local_anisotropy(nl_lin)
+
+
+# ---------------------------------------------------------------------------
+# _compute_adversarial (wrapper)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAdversarial:
+    """Tests for _compute_adversarial, the shared-NeighborList wrapper."""
+
+    def test_returns_all_four_keys(self) -> None:
+        """Wrapper must return exactly the four adversarial metric keys."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        result = _compute_adversarial(nl)
+        assert set(result.keys()) == {
+            "bond_angle_entropy",
+            "coordination_variance",
+            "radial_variance",
+            "local_anisotropy",
+        }
+
+    def test_all_values_are_finite(self) -> None:
+        """Every adversarial metric value must be finite."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        for key, val in _compute_adversarial(nl).items():
+            assert math.isfinite(val), f"{key} is not finite: {val}"
+
+    def test_no_pairs_all_zero(self) -> None:
+        """With no pairs within cutoff, all four metrics must be 0.0."""
+        nl = NeighborList(_ADV_PTS, cutoff=0.1)
+        for key, val in _compute_adversarial(nl).items():
+            assert val == pytest.approx(0.0), f"{key} expected 0.0, got {val}"
+
+    def test_values_match_individual_functions(self) -> None:
+        """Wrapper result must equal direct per-function calls on the same NeighborList."""
+        nl = NeighborList(_ADV_PTS, cutoff=_ADV_CUTOFF)
+        result = _compute_adversarial(nl)
+        assert result["bond_angle_entropy"] == pytest.approx(
+            _compute_bond_angle_entropy(nl), abs=1e-12
+        )
+        assert result["coordination_variance"] == pytest.approx(
+            _compute_coordination_variance(nl), abs=1e-12
+        )
+        assert result["radial_variance"] == pytest.approx(
+            _compute_radial_variance(nl), abs=1e-12
+        )
+        assert result["local_anisotropy"] == pytest.approx(
+            _compute_local_anisotropy(nl), abs=1e-12
+        )
+
+
+# ---------------------------------------------------------------------------
+# compute_all_metrics: adversarial metrics included in output
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAllMetricsAdversarial:
+    """Verify that compute_all_metrics exposes all four v0.4.0 adversarial metrics."""
+
+    @pytest.fixture
+    def all_metrics(self) -> dict[str, float]:
+        atoms = ["C", "N", "O", "H"]
+        positions = list(_ADV_PTS)  # type: ignore[arg-type]
+        return compute_all_metrics(atoms, positions)
+
+    def test_bond_angle_entropy_present(self, all_metrics: dict[str, float]) -> None:
+        assert "bond_angle_entropy" in all_metrics
+
+    def test_coordination_variance_present(self, all_metrics: dict[str, float]) -> None:
+        assert "coordination_variance" in all_metrics
+
+    def test_radial_variance_present(self, all_metrics: dict[str, float]) -> None:
+        assert "radial_variance" in all_metrics
+
+    def test_local_anisotropy_present(self, all_metrics: dict[str, float]) -> None:
+        assert "local_anisotropy" in all_metrics
+
+    def test_bond_angle_entropy_non_negative(self, all_metrics: dict[str, float]) -> None:
+        assert all_metrics["bond_angle_entropy"] >= 0.0
+
+    def test_coordination_variance_non_negative(self, all_metrics: dict[str, float]) -> None:
+        assert all_metrics["coordination_variance"] >= 0.0
+
+    def test_radial_variance_non_negative(self, all_metrics: dict[str, float]) -> None:
+        assert all_metrics["radial_variance"] >= 0.0
+
+    def test_local_anisotropy_in_range(self, all_metrics: dict[str, float]) -> None:
+        assert 0.0 <= all_metrics["local_anisotropy"] <= 1.0
