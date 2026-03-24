@@ -8,9 +8,12 @@ import numpy as np
 import pytest
 from scipy.spatial.distance import pdist, squareform
 
+import pasted._metrics as _metrics_mod
 from pasted import _ext
 from pasted._atoms import cov_radius_ang as _cov_radius_ang
+from pasted._atoms import cov_radius_ang as _cov_radius_ang_cv
 from pasted._atoms import parse_filter, pauling_electronegativity
+from pasted._atoms import pauling_electronegativity as _pauling_en_cv
 from pasted._metrics import (
     _compute_adversarial,
     _compute_bond_angle_entropy,
@@ -991,3 +994,253 @@ class TestComputeAngularEntropy:
             result = compute_angular_entropy(positions, cutoff=2.5, n_bins=n_bins)
             assert math.isfinite(result)
             assert result >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# Remaining coverage: branches not reached by test_adversarial.py
+# ---------------------------------------------------------------------------
+
+
+class TestShannonNpZeroTotal:
+    """_shannon_np: all-zero count array must return 0.0 (line 153)."""
+
+    def test_all_zero_counts_returns_zero(self) -> None:
+        from pasted._metrics import _shannon_np
+
+        assert _shannon_np(np.zeros(5)) == pytest.approx(0.0)
+
+    def test_mixed_zero_and_nonzero_counts_nonzero(self) -> None:
+        """Sanity check: non-trivial counts should return positive entropy."""
+        from pasted._metrics import _shannon_np
+
+        assert _shannon_np(np.array([1.0, 1.0, 0.0])) > 0.0
+
+
+class TestComputeRdfDeviationCoincident:
+    """compute_rdf_deviation: all atoms at same point -> r_bound=0 -> 0.0 (line 222)."""
+
+    def test_all_atoms_coincident_returns_zero(self) -> None:
+        pts = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+        assert compute_rdf_deviation(pts, cutoff=3.0, n_bins=20) == pytest.approx(0.0)
+
+
+class TestComputeShapeAnisotropyCoincident:
+    """compute_shape_anisotropy: coincident atoms -> tr < 1e-30 -> 0.0 (line 282)."""
+
+    def test_coincident_atoms_returns_zero(self) -> None:
+        pts = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+        assert compute_shape_anisotropy(pts) == pytest.approx(0.0)
+
+    def test_near_coincident_subnormal_returns_zero(self) -> None:
+        """Atoms differing by ~1e-108 Å must not raise ZeroDivisionError."""
+        pts = np.array([[0.0, 0.0, 0.0], [1e-54, 0.0, 0.0], [0.0, 1e-54, 0.0]])
+        result = compute_shape_anisotropy(pts)
+        assert result == pytest.approx(0.0)
+
+
+class TestSteinhardtPerAtomSparseEdgeCases:
+    """Direct tests of _steinhardt_per_atom_sparse to cover all three early-exit branches."""
+
+    def test_no_pairs_within_cutoff_returns_zeros(self) -> None:
+        """No pairs within cutoff -> all Q values zero (lines 314-316)."""
+        pts = np.array([[0.0, 0.0, 0.0], [100.0, 0.0, 0.0]])
+        result = _steinhardt_per_atom_sparse(pts, [4, 6, 8], cutoff=1.0)
+        for lv in [4, 6, 8]:
+            assert np.all(result[f"Q{lv}"] == pytest.approx(0.0))
+
+    def test_some_coincident_pairs_filtered(self) -> None:
+        """Some pairs with d < 1e-10 are filtered out; remaining pairs yield valid Q (lines 329-332)."""
+        # atom 0 and 1 are effectively coincident (d=1e-11); atom 2 is distinct
+        pts = np.array([[0.0, 0.0, 0.0], [1e-11, 0.0, 0.0], [2.0, 0.0, 0.0]])
+        result = _steinhardt_per_atom_sparse(pts, [4, 6], cutoff=3.0)
+        for lv in [4, 6]:
+            assert np.all(np.isfinite(result[f"Q{lv}"]))
+
+    def test_all_coincident_pairs_filtered_returns_zeros(self) -> None:
+        """All pairs with d < 1e-10 filtered -> rows empty -> all Q zero (lines 335-337)."""
+        pts = np.array([[0.0, 0.0, 0.0], [1e-11, 0.0, 0.0], [2e-11, 0.0, 0.0]])
+        result = _steinhardt_per_atom_sparse(pts, [4, 6, 8], cutoff=3.0)
+        for lv in [4, 6, 8]:
+            assert np.all(result[f"Q{lv}"] == pytest.approx(0.0))
+
+
+class TestComputeSteinhardtPerAtomFallback:
+    """compute_steinhardt_per_atom: HAS_STEINHARDT=False routes to sparse Python path (line 418)."""
+
+    def test_fallback_routes_to_sparse(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(_metrics_mod, "_HAS_STEINHARDT", False)
+        pts = np.array(_ADV_PTS)
+        result = compute_steinhardt_per_atom(pts, [4, 6, 8], cutoff=_ADV_CUTOFF)
+        assert set(result.keys()) == {"Q4", "Q6", "Q8"}
+        for lv in [4, 6, 8]:
+            assert np.all(np.isfinite(result[f"Q{lv}"]))
+
+    def test_fallback_matches_cpp(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Sparse Python result must agree with C++ to within 1e-9."""
+        pts = np.array(_ADV_PTS)
+        cpp_result = compute_steinhardt_per_atom(pts, [4, 6, 8], cutoff=_ADV_CUTOFF)
+
+        monkeypatch.setattr(_metrics_mod, "_HAS_STEINHARDT", False)
+        py_result = compute_steinhardt_per_atom(pts, [4, 6, 8], cutoff=_ADV_CUTOFF)
+
+        for lv in [4, 6, 8]:
+            np.testing.assert_allclose(
+                py_result[f"Q{lv}"], cpp_result[f"Q{lv}"], atol=1e-9
+            )
+
+
+class TestComputeGraphRingChargePythonFallback:
+    """_compute_graph_ring_charge: HAS_GRAPH=False uses pure-Python pdist path (lines 781-786)."""
+
+    @pytest.fixture
+    def graph_inputs(
+        self,
+    ) -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray]:
+        atoms = ["C", "N", "O", "H"]
+        pts = np.array(_ADV_PTS)
+        radii = np.array([_cov_radius_ang_cv(a) for a in atoms])
+        en_vals = np.array([_pauling_en_cv(a) for a in atoms])
+        return atoms, pts, radii, en_vals
+
+    def test_python_fallback_returns_expected_keys(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        graph_inputs: tuple[list[str], np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        from pasted._metrics import _compute_graph_ring_charge
+
+        monkeypatch.setattr(_metrics_mod, "_HAS_GRAPH", False)
+        atoms, pts, radii, en_vals = graph_inputs
+        result = _compute_graph_ring_charge(atoms, pts, radii, 1.0, _ADV_CUTOFF, en_vals)
+        assert set(result.keys()) == {
+            "graph_lcc",
+            "graph_cc",
+            "ring_fraction",
+            "charge_frustration",
+            "moran_I_chi",
+        }
+
+    def test_python_fallback_values_are_finite(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        graph_inputs: tuple[list[str], np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        from pasted._metrics import _compute_graph_ring_charge
+
+        monkeypatch.setattr(_metrics_mod, "_HAS_GRAPH", False)
+        atoms, pts, radii, en_vals = graph_inputs
+        result = _compute_graph_ring_charge(atoms, pts, radii, 1.0, _ADV_CUTOFF, en_vals)
+        for key, val in result.items():
+            assert math.isfinite(val), f"{key} is not finite: {val}"
+
+    def test_python_fallback_matches_cpp(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        graph_inputs: tuple[list[str], np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Pure-Python and C++ paths must agree to within 1e-9."""
+        from pasted._metrics import _compute_graph_ring_charge
+
+        atoms, pts, radii, en_vals = graph_inputs
+        cpp_result = _compute_graph_ring_charge(atoms, pts, radii, 1.0, _ADV_CUTOFF, en_vals)
+
+        monkeypatch.setattr(_metrics_mod, "_HAS_GRAPH", False)
+        py_result = _compute_graph_ring_charge(atoms, pts, radii, 1.0, _ADV_CUTOFF, en_vals)
+
+        for key in cpp_result:
+            assert py_result[key] == pytest.approx(cpp_result[key], abs=1e-9), (
+                f"{key}: cpp={cpp_result[key]:.10f} py={py_result[key]:.10f}"
+            )
+
+
+class TestComputeAllMetricsHasCombinedFalse:
+    """compute_all_metrics: HAS_COMBINED=False hits the HAS_GRAPH branch (lines 902-912)."""
+
+    @pytest.fixture
+    def metrics_no_combined(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> dict[str, float]:
+        monkeypatch.setattr(_metrics_mod, "_HAS_COMBINED", False)
+        atoms = ["C", "N", "O", "H"]
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        return compute_all_metrics(atoms, positions)
+
+    def test_has_combined_false_returns_all_keys(
+        self, metrics_no_combined: dict[str, float]
+    ) -> None:
+        for key in ("H_total", "H_spatial", "RDF_dev", "Q6", "graph_lcc", "ring_fraction"):
+            assert key in metrics_no_combined
+
+    def test_has_combined_false_h_total_non_negative(
+        self, metrics_no_combined: dict[str, float]
+    ) -> None:
+        assert metrics_no_combined["H_total"] >= 0.0
+
+    def test_has_combined_false_all_values_finite(
+        self, metrics_no_combined: dict[str, float]
+    ) -> None:
+        for key, val in metrics_no_combined.items():
+            assert math.isfinite(val), f"{key} is not finite: {val}"
+
+
+class TestComputeAllMetricsPurePythonPath:
+    """compute_all_metrics: HAS_COMBINED=False + HAS_GRAPH=False hits the pure-Python
+    else-branch (lines 908-910): compute_h_spatial / compute_rdf_deviation /
+    _compute_graph_ring_charge are called directly instead of the C++ helpers."""
+
+    @pytest.fixture
+    def pure_python_metrics(self, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
+        monkeypatch.setattr(_metrics_mod, "_HAS_COMBINED", False)
+        monkeypatch.setattr(_metrics_mod, "_HAS_GRAPH", False)
+        atoms = ["C", "N", "O", "H"]
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        return compute_all_metrics(atoms, positions)
+
+    def test_pure_python_returns_all_expected_keys(
+        self, pure_python_metrics: dict[str, float]
+    ) -> None:
+        for key in ("H_total", "H_spatial", "RDF_dev", "Q6", "graph_lcc", "ring_fraction"):
+            assert key in pure_python_metrics
+
+    def test_pure_python_h_total_non_negative(
+        self, pure_python_metrics: dict[str, float]
+    ) -> None:
+        assert pure_python_metrics["H_total"] >= 0.0
+
+    def test_pure_python_all_values_finite(
+        self, pure_python_metrics: dict[str, float]
+    ) -> None:
+        for key, val in pure_python_metrics.items():
+            assert math.isfinite(val), f"{key} is not finite: {val}"
+
+    def test_pure_python_matches_cpp_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Pure-Python path must agree with the C++ path to within 1e-6."""
+        atoms = ["C", "N", "O", "H"]
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        cpp_metrics = compute_all_metrics(atoms, positions)
+
+        monkeypatch.setattr(_metrics_mod, "_HAS_COMBINED", False)
+        monkeypatch.setattr(_metrics_mod, "_HAS_GRAPH", False)
+        py_metrics = compute_all_metrics(atoms, positions)
+
+        for key in ("H_atom", "H_spatial", "H_total", "RDF_dev"):
+            assert py_metrics[key] == pytest.approx(cpp_metrics[key], abs=1e-6), (
+                f"{key}: cpp={cpp_metrics[key]:.10f} py={py_metrics[key]:.10f}"
+            )
