@@ -25,6 +25,9 @@ dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
 ]
+authors = [
+    {name = "ss0832", email = "highlighty876@gmail.com"}
+]
 
 [project.optional-dependencies]
 dev = [
