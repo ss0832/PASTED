@@ -4,9 +4,9 @@ tests/test_type_coverage.py
 Tests specialized for type checking of inputs and outputs.
 Targets the following 3 modules that lacked coverage.
 
-  * src/pasted/neighbor_list.py 
-  * src/pasted/_metrics.py        
-  * src/pasted/__init__.py      
+  * src/pasted/neighbor_list.py
+  * src/pasted/_metrics.py
+  * src/pasted/__init__.py
 
 Guidelines
 ----------
