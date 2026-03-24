@@ -14,6 +14,8 @@ of 13 structural metrics. Useful for stress-testing structure optimizers,
 generating worst-case inputs for QC codes, or exploring what "maximum chaos"
 looks like in structural space.
 
+*This program was developed using LLMs.
+
 ## Features
 
 - **Four placement modes** — random gas (`gas`), chain-growth (`chain`),
