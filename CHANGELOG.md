@@ -9,6 +9,84 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.1] — 2026-03-24
+
+### Documentation
+
+#### DOC — `docs/quickstart.md`: four clarifications and two new sections
+
+**`NeighborList` — new section** (`### NeighborList — custom neighbor queries
+in objectives`, placed immediately after the *Extended objective with
+EvalContext* section).
+
+`pasted.neighbor_list.NeighborList` is a public API that has been available
+since v0.4.0 but was not documented in the quickstart.  The new section
+covers:
+
+- Attribute and cached-property reference tables (`n_pairs`, `pairs`, `rows`,
+  `cols`, `dists`, `all_dists`, `diff`, `deg`, `unit_diff`, `dists_sq`).
+- Empty-structure handling guarantee (`n_atoms=0` and `n_pairs=0` produce
+  empty arrays; no `NaN` or `ZeroDivisionError`).
+- Required conversion: `ctx.positions` is a `tuple[tuple[float,float,float],
+  ...]`; callers must convert it to `ndarray` via `np.array(ctx.positions)`
+  before passing it to `NeighborList`.
+- Explicit guidance on setting `cutoff=` in `StructureOptimizer`.  The
+  default cutoff of `1.5 × median(rᵢ + rⱼ)` evaluates to approximately
+  **2.07 Å** for a C/N/O pool, which yields a mean coordination of k ≈ 0.9
+  — sufficient for the built-in metrics but too sparse for bond-order
+  parameters such as Q3.  This is **intentional behaviour**: the default
+  is calibrated for covalent-bond adjacency, not second-neighbour shells.
+  Users computing Steinhardt parameters beyond the first shell should pass
+  an explicit `cutoff=3.5` (or larger) to `StructureOptimizer` so that
+  `ctx.cutoff` carries the intended value.
+
+**Case study 4 — Custom bond-order metric (Q3) via `NeighborList`**
+(appended to `## Optimizer case studies`).
+
+Demonstrates how to compute Q3 — a Steinhardt parameter sensitive to
+three-fold local symmetry that is absent from `ALL_METRICS` — inside a
+2-argument objective callable using `compute_steinhardt_per_atom` and
+`NeighborList`.  Includes three code examples:
+
+1. *Q3-only objective* — `compute_steinhardt_per_atom(pts, [3],
+   ctx.cutoff)["Q3"].mean()`.
+2. *Combined Q3 + H_total objective* — demonstrates mixing a custom
+   per-atom metric with a built-in metric from `m`.
+3. *Custom radial-moment objective* — uses `NeighborList.all_dists`
+   and `NeighborList.rows` directly to compute a per-atom neighbor-distance
+   variance without calling `compute_steinhardt_per_atom`, illustrating the
+   more general `NeighborList` usage pattern.
+
+Each example is accompanied by a `n_pairs == 0` guard note and a reminder
+to pass `cutoff=3.5` explicitly.
+
+**`n_atoms=0` behaviour note** (added after the `warnings.catch_warnings`
+code block in *Functional API (`generate`)*).
+
+Clarifies that passing `n_atoms=0` is accepted and returns an empty
+`GenerationResult` with `n_passed=0` and `n_attempted=0` without raising
+an error.  This is **intentional**: it lets pipelines call `generate()`
+unconditionally and handle the empty result with the standard
+`if not result:` guard rather than wrapping the call in a `try/except`
+block.
+
+**`element_fractions` out-of-pool key note** (added after the
+`element_fractions` weight-normalisation paragraph in *Biased element
+fractions*).
+
+Clarifies that every key in `element_fractions` must correspond to an
+element present in the `elements=` pool; passing a symbol that is not in
+the pool raises `ValueError` at construction time.  This is **intentional
+by design**: a weight assigned to an element that can never be sampled
+would silently mislead callers about the actual sampling distribution.
+The existing sentence "Elements absent from the dict receive weight 1.0"
+has been corrected to "Elements absent from the dict (but present in the
+pool) receive weight 1.0" to prevent the same misreading.
+
+**Affected files:** `docs/quickstart.md`
+
+---
+
 ## [0.4.0] — 2026-03-24
 
 ### Fixed
