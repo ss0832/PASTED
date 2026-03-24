@@ -19,6 +19,7 @@ from pasted._metrics import (
     _compute_radial_variance,
     _steinhardt_per_atom_sparse,
     compute_all_metrics,
+    compute_angular_entropy,
     compute_charge_frustration,
     compute_graph_metrics,
     compute_h_atom,
@@ -900,3 +901,93 @@ class TestComputeAllMetricsAdversarial:
 
     def test_local_anisotropy_in_range(self, all_metrics: dict[str, float]) -> None:
         assert 0.0 <= all_metrics["local_anisotropy"] <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# compute_angular_entropy  (diagnostic metric, not in ALL_METRICS)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeAngularEntropy:
+    """Tests for compute_angular_entropy.
+
+    This function is a diagnostic metric for the ``maxent`` placement mode
+    and is not included in ``ALL_METRICS``, which is why it is absent from
+    the other test classes.  All branches of the implementation are exercised
+    here.
+    """
+
+    # ------------------------------------------------------------------
+    # Early-return branches
+    # ------------------------------------------------------------------
+
+    def test_single_atom_returns_zero(self) -> None:
+        """n < 2 must short-circuit to 0.0."""
+        assert compute_angular_entropy([(0.0, 0.0, 0.0)], cutoff=3.0) == pytest.approx(0.0)
+
+    def test_no_pairs_within_cutoff_returns_zero(self) -> None:
+        """No pairs within cutoff must short-circuit to 0.0."""
+        positions = [(0.0, 0.0, 0.0), (100.0, 0.0, 0.0)]
+        assert compute_angular_entropy(positions, cutoff=1.0) == pytest.approx(0.0)
+
+    def test_all_atoms_have_one_neighbor_returns_zero(self) -> None:
+        """Atoms with fewer than 2 neighbors are skipped; empty entropies list -> 0.0."""
+        # Atom 0 and 1 are connected to each other only; atom 2 is isolated.
+        positions = [(0.0, 0.0, 0.0), (1.5, 0.0, 0.0), (50.0, 0.0, 0.0)]
+        assert compute_angular_entropy(positions, cutoff=2.0) == pytest.approx(0.0)
+
+    # ------------------------------------------------------------------
+    # Main path: atoms with >= 2 neighbors
+    # ------------------------------------------------------------------
+
+    def test_returns_non_negative(self) -> None:
+        """Result must be >= 0 for any valid structure."""
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        assert compute_angular_entropy(positions, cutoff=2.5) >= 0.0
+
+    def test_upper_bound_ln_n_bins(self) -> None:
+        """Result must be <= ln(n_bins), the maximum entropy for that bin count."""
+        n_bins = 20
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        result = compute_angular_entropy(positions, cutoff=2.5, n_bins=n_bins)
+        assert result <= math.log(n_bins) + 1e-9
+
+    def test_isotropic_higher_than_linear(self) -> None:
+        """Isotropic neighbor distribution has higher angular entropy than collinear."""
+        # Uniformly distributed neighbors around a sphere -> high theta entropy
+        rng = np.random.default_rng(0)
+        raw = rng.standard_normal((50, 3))
+        sphere = raw / np.linalg.norm(raw, axis=1, keepdims=True) * 2.0
+        positions_iso: list[tuple[float, float, float]] = [
+            (float(p[0]), float(p[1]), float(p[2])) for p in sphere
+        ]
+        # Linear chain -> all neighbors at theta=0 or pi -> single-bin -> entropy=0
+        positions_lin: list[tuple[float, float, float]] = [
+            (float(i) * 1.5, 0.0, 0.0) for i in range(10)
+        ]
+        h_iso = compute_angular_entropy(positions_iso, cutoff=3.0, n_bins=20)
+        h_lin = compute_angular_entropy(positions_lin, cutoff=2.0, n_bins=20)
+        assert h_iso > h_lin
+
+    def test_n_bins_parameter_respected(self) -> None:
+        """Passing different n_bins values must both return valid non-negative floats."""
+        positions: list[tuple[float, float, float]] = [
+            (0.0, 0.0, 0.0),
+            (1.5, 0.0, 0.0),
+            (0.0, 1.5, 0.0),
+            (0.0, 0.0, 1.5),
+        ]
+        for n_bins in (10, 20, 36):
+            result = compute_angular_entropy(positions, cutoff=2.5, n_bins=n_bins)
+            assert math.isfinite(result)
+            assert result >= 0.0
