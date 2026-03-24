@@ -1,32 +1,38 @@
-# Quick start
+# **Quick start**
 
-## Installation
+## **Installation**
 
 ```bash
 pip install pasted
 ```
-
 Requires Python 3.10 or later. Python 3.10, 3.11, 3.12, and 3.13 are
+
 officially supported and tested in CI.
 
 A C++17 compiler is required to build the optional acceleration extensions.
+
 If none is available the package still installs and runs on pure Python/NumPy.
 
-Verify that the C++ extensions compiled successfully:
-
+Verify that the 6 C++ extensions compiled successfully:
 ```python
-from pasted._ext import HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH
-print(HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH)
-# True True True True True  (all extensions compiled)
+from pasted._ext import (  
+    HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP,   
+    HAS_STEINHARDT, HAS_GRAPH, HAS_BA_CPP, HAS_COMBINED  
+)  
+print(HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP, HAS_STEINHARDT, HAS_GRAPH, HAS_BA_CPP, HAS_COMBINED)  
+# True True True True True True True  (all extensions compiled)
 ```
 
 | Flag | What it enables |
-|---|---|
-| `HAS_RELAX` | C++ L-BFGS steric-clash relaxation (~20–50× vs Python) |
-| `HAS_MAXENT` | C++ angular-repulsion gradient for `maxent` mode |
-| `HAS_MAXENT_LOOP` | Full C++ L-BFGS loop for `place_maxent` (~10–22× vs `HAS_MAXENT_LOOP=False`) |
-| `HAS_STEINHARDT` | C++ sparse Steinhardt Q_l (~2000× vs dense Python) |
-| `HAS_GRAPH` | C++ O(N·k) graph / ring / charge / Moran / RDF metrics (~25× vs Python) |
+| :---- | :---- |
+| HAS_RELAX | C++ L-BFGS steric-clash relaxation (~20–50× vs Python) |
+| HAS_MAXENT | C++ angular-repulsion gradient for maxent mode |
+| HAS_MAXENT_LOOP | Full C++ L-BFGS loop for place_maxent (~10–22× vs HAS_MAXENT_LOOP=False) |
+| HAS_STEINHARDT | C++ sparse Steinhardt Q_l (~2000× vs dense Python) |
+| HAS_GRAPH | C++ O(N·k) graph / ring / charge / Moran / RDF metrics (~25× vs Python) |
+| HAS_BA_CPP | C++ bond-angle-distribution Shannon entropy |
+| HAS_COMBINED | C++ single-pass all-metrics computation (~1.9× vs legacy C++) |
+
 
 When `HAS_GRAPH` is `True`, both `graph_metrics_cpp` (graph / ring / charge /
 Moran metrics) and `rdf_h_cpp` (`H_spatial` and `RDF_dev`) are active.
