@@ -36,19 +36,28 @@ src/pasted/
 ├── _atoms.py            Element data, covalent radii, pool/filter parsing
 ├── _config.py           GeneratorConfig frozen dataclass (all generator params)
 ├── _generator.py        StructureGenerator class and generate() function
-├── _io.py               XYZ serialization (format_xyz)
-├── _metrics.py          All disorder metrics: entropy, RDF, Steinhardt, graph
+├── _io.py               XYZ serialization (format_xyz, parse_xyz)
+├── _metrics.py          All 17 disorder metrics: entropy, RDF, Steinhardt,
+│                        graph, and four adversarial metrics (v0.4.0)
 ├── _optimizer.py        StructureOptimizer — basin-hopping on existing structures
 ├── _placement.py        Placement algorithms + relax_positions + _affine_move
 ├── cli.py               argparse CLI entry point
+├── neighbor_list.py     NeighborList — lazy-cached neighbor list for Python
+│                        fallback metric computations (added v0.4.0)
 └── _ext/
-    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_STEINHARDT / HAS_GRAPH
-    │                    flags; None fallbacks
+    ├── __init__.py      HAS_RELAX / HAS_MAXENT / HAS_MAXENT_LOOP /
+    │                    HAS_STEINHARDT / HAS_GRAPH / HAS_BA_CPP /
+    │                    HAS_COMBINED flags; None fallbacks
     ├── _relax.cpp       C++17: relax_positions with Verlet-list reuse (N≥64)
     ├── _maxent.cpp      C++17: angular_repulsion_gradient with Cell List (N≥64)
     ├── _steinhardt.cpp  C++17: Steinhardt Q_l with sparse neighbor list (N≥64)
-    └── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration,
-                                         moran_I_chi, h_spatial, rdf_dev — all O(N·k)
+    ├── _graph_core.cpp  C++17: graph_lcc/cc, ring_fraction, charge_frustration,
+    │                            moran_I_chi, h_spatial, rdf_dev — all O(N·k)
+    ├── _bond_angle_core.cpp  C++17: bond_angle_entropy_cpp — mean per-atom
+    │                                 bond-angle Shannon entropy (added v0.4.0)
+    └── _combined_core.cpp    C++17: all_metrics_cpp — single-pass FlatCellList
+                                      kernel computing all 17 metrics in one
+                                      traversal (added v0.4.0)
 ```
 
 ---
@@ -132,6 +141,9 @@ stored in `Structure.metrics`.  Since v0.1.14, every metric uses cutoff-based
 local pair enumeration (O(N·k)) — the O(N²) `scipy.spatial.distance.pdist`
 path has been removed entirely.
 
+Since v0.4.0 the full set comprises **17 metrics** (13 original + 4 adversarial
+metrics introduced to stress-test GNN and MLP feature-engineering assumptions).
+
 | Metric | Range | Description |
 |---|---|---|
 | `H_atom` | ≥ 0 | Shannon entropy of element composition |
@@ -145,6 +157,63 @@ path has been removed entirely.
 | `ring_fraction` | [0, 1] | Fraction of atoms in at least one cycle in the cutoff-adjacency graph (Tarjan bridge-finding) |
 | `charge_frustration` | ≥ 0 | Variance of \|Δχ\| across cutoff-adjacent pairs |
 | `moran_I_chi` | (−∞, 1] | Moran's I spatial autocorrelation for Pauling electronegativity; 0 = random. Clamped to 1.0: sparse graphs (W < N) can inflate the raw n/W prefactor above 1 (see v0.3.8 fix). |
+| `bond_angle_entropy` | [0, ln 36] | Mean per-atom Shannon entropy of bond-angle histogram (36 bins over [0, π]). Targets GNN/spherical-harmonic bias. *(added v0.4.0)* |
+| `coordination_variance` | ≥ 0 | Population variance of per-atom coordination number. Targets GNN aggregation bias (octet-rule uniformity). *(added v0.4.0)* |
+| `radial_variance` | ≥ 0 Å² | Mean per-atom variance of neighbor distances within cutoff. Captures local shell disorder independent of global g(r). *(added v0.4.0)* |
+| `local_anisotropy` | [0, 1] | Mean per-atom relative shape anisotropy of local coordination tensor (0=isotropic, 1=rod-like). Targets bias toward symmetric local environments. *(added v0.4.0)* |
+
+### Adversarial metrics (v0.4.0)
+
+The four new metrics are computed by `_compute_adversarial()` in `_metrics.py`,
+which shares a single `NeighborList` instance across all four to avoid
+redundant tree queries.  When `HAS_COMBINED = True`, the combined C++ kernel
+(`_combined_core`) computes them in the same single `FlatCellList` pass as the
+original 13 metrics.
+
+**Design motivation.**  Standard disorder metrics (entropy, Steinhardt,
+graph topology) do not cover all the inductive biases exploited by GNN and
+MLP codes.  The four adversarial metrics target specific assumptions that such
+codes rely on:
+
+- `bond_angle_entropy` — breaks the "bond angles cluster at 109.5°/120°"
+  assumption common to MPNN message-passing.
+- `coordination_variance` — breaks the "coordination number is nearly
+  constant" assumption common to GNN aggregation.
+- `radial_variance` — breaks the "first and second coordination shells are
+  well-separated" assumption encoded by RBF descriptor grids.
+- `local_anisotropy` — breaks the "local environment is isotropic or follows
+  a known symmetry group" assumption in equivariant architectures.
+
+### NeighborList (v0.4.0)
+
+`pasted.neighbor_list.NeighborList` is a pure-Python helper class that
+wraps `scipy.spatial.cKDTree` and lazily caches derived arrays:
+
+| Property | Description |
+|---|---|
+| `deg` | Per-atom coordination number (first access triggers `np.bincount`) |
+| `unit_diff` | Directed unit-vector differences `(2P, 3)`, coincident pairs masked (d < 1e-10) |
+| `dists_sq` | Squared directed distances `(2P,)` |
+
+All four adversarial metrics accept a pre-built `NeighborList` so they share
+the pair enumeration done at construction time.  The coincident-pair guard
+(`d < 1e-10`) in `unit_diff` mirrors the C++ threshold in
+`_bond_angle_core.cpp`, ensuring the Python fallback and the C++ path produce
+numerically identical results.
+
+### compute_all_metrics dispatch chain
+
+`compute_all_metrics` selects the fastest available path at runtime:
+
+1. **`HAS_COMBINED = True`** (v0.4.0+): calls `all_metrics_cpp` — one
+   `FlatCellList` traversal for all 17 metrics (~1.9× speedup vs. legacy C++
+   path at N=1000).
+2. **`HAS_GRAPH = True`, `HAS_COMBINED = False`**: calls `rdf_h_cpp`,
+   `graph_metrics_cpp`, `steinhardt_per_atom`, and `bond_angle_entropy_cpp`
+   (if available) independently — four separate `FlatCellList` passes.
+3. **Pure Python** (`HAS_GRAPH = False`): uses `scipy.spatial.cKDTree` for
+   pair enumeration; graph metrics fall back to a full O(N²)
+   `pdist`/`squareform` pass.  Significantly slower for N ≳ 500.
 
 ### Unified adjacency definition
 
@@ -172,8 +241,18 @@ counted as a ring member.
 
 ## C++ acceleration layer
 
-The `_ext` sub-package contains four independently compiled pybind11
+The `_ext` sub-package contains six independently compiled pybind11
 modules.  Each can be absent without affecting the others.
+
+| Flag | Module | Purpose |
+|---|---|---|
+| `HAS_RELAX` | `_relax_core` | `relax_positions` inner loop |
+| `HAS_MAXENT` | `_maxent_core` | `angular_repulsion_gradient` |
+| `HAS_MAXENT_LOOP` | `_maxent_core` | Full C++ L-BFGS loop for `place_maxent` |
+| `HAS_STEINHARDT` | `_steinhardt_core` | `compute_steinhardt_per_atom` |
+| `HAS_GRAPH` | `_graph_core` | Graph + RDF metrics (legacy multi-pass) |
+| `HAS_BA_CPP` | `_bond_angle_core` | `bond_angle_entropy_cpp` (v0.4.0) |
+| `HAS_COMBINED` | `_combined_core` | `all_metrics_cpp` single-pass kernel (v0.4.0) |
 
 ### `_relax_core` — `relax_positions`
 
@@ -327,7 +406,65 @@ Performance at N = 10 000 (v0.1.13 → v0.1.14 → v0.2.9):
 | `rdf_h_cpp` | — | ~2 ms | ~3 ms | ~2 ms |
 | **`compute_all_metrics` total** | **~2 880 ms** | **~194 ms** | **~260 ms** | **~200 ms** |
 
-### `_maxent_core` — `angular_repulsion_gradient` and `place_maxent_cpp`
+### `_bond_angle_core` — `bond_angle_entropy_cpp` (v0.4.0)
+
+Computes mean per-atom bond-angle Shannon entropy in a single O(N·k)
+`FlatCellList` pass.
+
+For each atom *j* with ≥ 2 neighbors within `cutoff`, all pairwise angles
+θ_{ajb} = arccos(u_ja · u_jb) are histogrammed into **36 equal bins** over
+[0, π].  The Shannon entropy of the per-atom histogram is averaged over all
+atoms that have at least two neighbors.
+
+- Bonds with d < 1e-10 Å are skipped (coincident-coordinate guard, mirrored
+  in the Python `NeighborList.unit_diff` fallback).
+- `HAS_BA_CPP` in `pasted._ext` is `True` when this module is compiled.
+- When `HAS_COMBINED = True`, `_combined_core` subsumes this module — no
+  separate call to `bond_angle_entropy_cpp` is issued by `compute_all_metrics`.
+
+---
+
+### `_combined_core` — `all_metrics_cpp` (v0.4.0)
+
+Single-pass C++17 kernel that replaces the four independent `FlatCellList`
+builds previously issued by `rdf_h_cpp`, `graph_metrics_cpp`,
+`steinhardt_per_atom`, and `bond_angle_entropy_cpp`.
+
+**One shared `FlatCellList` traversal** accumulates:
+
+- RDF histogram → `h_spatial`, `rdf_dev`
+- Bond adjacency lists → `graph_lcc`, `graph_cc`, `ring_fraction`,
+  `charge_frustration`, `moran_I_chi`
+- Steinhardt re/im buffers → `Q4`, `Q6`, `Q8` (fast-path ④ Cartesian
+  polynomial expressions, same as `_steinhardt_core`)
+- Per-atom distance sums → `radial_variance`
+- Per-atom outer-product tensor components → `local_anisotropy`
+- CSR neighbor count + unit-vector accumulation → `bond_angle_entropy`
+  (no second cell-list pass: unit vectors are filled from the
+  already-populated adjacency lists)
+- Per-atom degree counts → `coordination_variance`
+
+**NaN/Inf guard:** non-finite coordinates in `pts` are detected at entry and
+return a zero-filled result dict matching the behavior of the individual
+extension modules, rather than crashing in `FlatCellList::build`.
+
+**Dispatch:** `compute_all_metrics` checks `HAS_COMBINED` first (highest
+priority in the dispatch chain).  When `True`, `all_metrics_cpp` is the sole
+C++ call; all other extension modules are unused for that call.
+
+**Measured speedup** (C++ level, 4× `FlatCellList` → 1×):
+
+| N    | Old multi-pass (ms) | `all_metrics_cpp` (ms) | Speedup |
+|-----:|--------------------:|-----------------------:|--------:|
+|   50 |               0.110 |                  0.057 |   1.93× |
+|  500 |               0.615 |                  0.328 |   1.87× |
+| 1000 |               1.131 |                  0.591 |   1.91× |
+
+`HAS_COMBINED` in `pasted._ext` is `True` when this module is compiled.
+
+---
+
+
 
 **`angular_repulsion_gradient(pts, cutoff)`** — computes ∂U/∂rᵢ for the
 angular repulsion potential used by `place_maxent`.

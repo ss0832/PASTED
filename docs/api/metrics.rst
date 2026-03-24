@@ -117,6 +117,18 @@ therefore be used as ``--filter`` targets on the CLI and in the
    computation for ``Q4``, ``Q6``, and ``Q8`` (~2000× vs. the dense Python
    fallback).
 
+   :data:`~pasted._ext.HAS_BA_CPP` *(v0.4.0)* enables the C++
+   ``bond_angle_entropy_cpp`` path for ``bond_angle_entropy``.  When absent,
+   the NumPy fallback in :func:`pasted._metrics._compute_bond_angle_entropy`
+   is used; both paths use 36 bins and produce numerically identical results.
+
+   :data:`~pasted._ext.HAS_COMBINED` *(v0.4.0)* enables the single-pass
+   ``all_metrics_cpp`` kernel, which accumulates **all 17 metrics** in one
+   shared ``FlatCellList`` traversal (~1.9× speedup at N=1000 vs. calling
+   the individual C++ modules separately).  When ``HAS_COMBINED = True``,
+   ``HAS_GRAPH``, ``HAS_STEINHARDT``, and ``HAS_BA_CPP`` are not consulted
+   by :func:`~pasted._metrics.compute_all_metrics`.
+
    .. note::
 
       **Steinhardt optimizations (v0.3.6 + v0.3.7).**

@@ -120,6 +120,7 @@ covalent bond (H–H ≈ 0.74 Å).
 **Affected files:**
 - `tests/test_property_based.py` — `assume` import + `_MIN_ATOM_DIST` guard
 
+
 ---
 
 ## [0.3.10] — 2026-03-22
