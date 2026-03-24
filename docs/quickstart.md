@@ -13,7 +13,7 @@ A C++17 compiler is required to build the optional acceleration extensions.
 
 If none is available the package still installs and runs on pure Python/NumPy.
 
-Verify that the 6 C++ extensions compiled successfully:
+Verify that the 7 C++ extensions compiled successfully:
 ```python
 from pasted._ext import (  
     HAS_RELAX, HAS_MAXENT, HAS_MAXENT_LOOP,   
