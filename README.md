@@ -4,6 +4,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/pasted.svg)](https://img.shields.io/pypi/v/pasted.svg)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pasted.svg)](https://img.shields.io/pypi/pyversions/pasted.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/pasted?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=RED&left_text=downloads)](https://pepy.tech/projects/pasted)
 
 **P**ointless **A**tom **ST**ructure with **E**ntropy **D**iagnostics
 
