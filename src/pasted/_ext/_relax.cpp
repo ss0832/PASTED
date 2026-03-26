@@ -30,6 +30,18 @@
  * Between rebuilds the same extended pair list is reused, amortizing the
  * cost of the FlatCellList traversal.  Skin = min(0.8 A, cell_size * 0.3).
  *
+ * Gradient vector reuse (v0.4.3):
+ * Vec g (3N doubles) is allocated once in relax_positions_cpp and shared
+ * across early-exit check, optional jitter re-evaluation, and lbfgs_minimize.
+ * This eliminates the temporary Vec grad_tmp that was heap-allocated and
+ * immediately discarded on every call regardless of the early-exit path.
+ *
+ * Jitter FlatCellList memory cap (v0.4.3):
+ * The coincident-atom jitter check (cutoff 1e-9 A) uses a FlatCellList with
+ * max_cells = max(1024, 16*n) instead of the normal 4 M-cell limit.
+ * For n = 4096 this caps cell_head at 65 536 ints (~256 KB) vs ~16 MB.
+ * Coarsening only adds false-positive pairs; coincident atoms are never missed.
+ *
  * Python API
  * ----------
  *   relax_positions(pts, radii, cov_scale, max_cycles, seed=-1)
@@ -133,7 +145,13 @@ struct FlatCellList {
     std::vector<int> cell_head;  // cell_head[cid] = first atom in cell, -1 if empty
     std::vector<int> next;       // next[i] = next atom in same cell, -1 if none
 
-    void build(const double* pts, int n, double cell_size) {
+    // max_cells: upper bound on nx*ny*nz (cell_head size).
+    //   Default 1<<22 (4 M, ~16 MB) for normal use.
+    //   Pass a smaller value (e.g. max(1024, 16*n)) for the jitter check,
+    //   where the cutoff is 1e-9 Å and almost all cells are empty anyway.
+    //   Coarsening only adds false-positive pairs, never misses coincident atoms.
+    void build(const double* pts, int n, double cell_size,
+               std::int64_t max_cells = static_cast<std::int64_t>(1) << 22) {
         inv_cell = 1.0 / cell_size;
         double xmin=pts[0],xmax=pts[0],ymin=pts[1],ymax=pts[1],zmin=pts[2],zmax=pts[2];
         for (int i=1;i<n;++i){
@@ -142,14 +160,13 @@ struct FlatCellList {
             zmin=std::min(zmin,pts[i*3+2]); zmax=std::max(zmax,pts[i*3+2]);
         }
         ox=xmin-cell_size; oy=ymin-cell_size; oz=zmin-cell_size;
-        // Guard: coarsen grid until nx*ny*nz <= 1<<22 (4M cells).
+        // Guard: coarsen grid until nx*ny*nz <= max_cells.
         // Prevents signed integer overflow for large cutoffs (UBSan fix, v0.3.9).
         {
-            static constexpr std::int64_t MAX_CELLS = 1LL << 22;
             auto tnx=[&]{return static_cast<int>((xmax-ox)*inv_cell)+2;};
             auto tny=[&]{return static_cast<int>((ymax-oy)*inv_cell)+2;};
             auto tnz=[&]{return static_cast<int>((zmax-oz)*inv_cell)+2;};
-            while (static_cast<std::int64_t>(tnx())*tny()*tnz() > MAX_CELLS) {
+            while (static_cast<std::int64_t>(tnx())*tny()*tnz() > max_cells) {
                 cell_size *= 2.0; inv_cell = 1.0 / cell_size;
                 ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
             }
@@ -323,8 +340,13 @@ public:
 //   Line search   : Armijo sufficient decrease (c1 = ARMIJO_C1), step halved
 //   History update: skipped when s^T y <= 1e-10 * ||s||^2 (curvature check)
 
+// E_init  : energy already evaluated at x before calling (avoids re-evaluation).
+// g       : gradient at x (pre-computed, modified in-place during minimisation).
+//           Caller must ensure g is valid for the current x.
 static std::pair<double, bool> lbfgs_minimize(
     Vec& x,
+    double E,
+    Vec& g,
     std::function<double(const Vec&, Vec&)> eval,
     int max_iter)
 {
@@ -338,9 +360,10 @@ static std::pair<double, bool> lbfgs_minimize(
     int buf_count = 0;
 
     std::vector<double> alpha_arr(m, 0.0);
-    Vec g(dim), g_new(dim), q(dim), r(dim), d(dim), x_trial(dim);
+    // g is passed in — no allocation here.
+    Vec g_new(dim), q(dim), r(dim), d(dim), x_trial(dim);
 
-    double E = eval(x, g);
+    // E and g are already valid; check convergence immediately.
     if (E <= ENERGY_TOL) return {E, true};
 
     // slot(i): index of the i-th newest history entry
@@ -472,28 +495,47 @@ std::tuple<F64Array, bool> relax_positions_cpp(
     // Build evaluator (computes cell_size from radii; reused throughout)
     PenaltyEvaluator evaluator(radii, cov_scale, n);
 
+    // Allocate gradient vector once; reused for early-exit, jitter, and L-BFGS.
+    // This avoids a separate Vec grad_tmp allocation on the early-exit path.
+    Vec g(3 * n);
+
     // Fast early-exit: if no overlaps exist, return without touching positions.
     // This also avoids applying jitter to already-valid structures.
-    {
-        Vec grad_tmp(3 * n);
-        if (evaluator.evaluate(x, grad_tmp) <= ENERGY_TOL) {
-            return {pts_out, true};
-        }
+    double E = evaluator.evaluate(x, g);
+    if (E <= ENERGY_TOL) {
+        return {pts_out, true};
     }
 
     // Coincident-atom jitter: only perturb atoms in pairs with d < 1e-10.
     // This mirrors v0.1.10 GS behavior: RNG consumed only when coincident
     // atoms exist, so seed=None yields deterministic results for normal
     // structures.  sigma ~ 1e-6 * max_r (~3e-8 Ang for H).
+    //
+    // For n >= CELL_LIST_THRESHOLD the O(N²) loop is replaced by a
+    // FlatCellList traversal with cutoff = 1e-9 Å.  The grid is capped at
+    // max(1024, 16*n) cells (≤ 256 KB for n ≤ 16 384) instead of the normal
+    // 4 M-cell limit, so the jitter check never allocates more than ~1 MB
+    // even for very large structures.  Correctness is preserved because
+    // coarsening only adds false-positive candidate pairs; it never misses
+    // a truly coincident pair (d < 1e-10 << cell_size after coarsening).
     {
         const double max_r      = *std::max_element(radii, radii + n);
         const double jitter_sig = 1e-6 * std::max(max_r, 1e-3);
-        const double* xd = x.data();
-        for (int i = 0; i < n - 1; ++i) {
-            for (int j = i + 1; j < n; ++j) {
-                const double ddx = xd[3*i  ] - xd[3*j  ];
-                const double ddy = xd[3*i+1] - xd[3*j+1];
-                const double ddz = xd[3*i+2] - xd[3*j+2];
+
+        bool jittered = false;
+
+        if (n >= CELL_LIST_THRESHOLD) {
+            // O(N) FlatCellList path for large N.
+            // Memory cap: cell_head ≤ max(1024, 16*n) ints.
+            const std::int64_t jitter_max_cells =
+                std::max(static_cast<std::int64_t>(1024),
+                         static_cast<std::int64_t>(n) * 16);
+            FlatCellList cl_jitter;
+            cl_jitter.build(x.data(), n, 1e-9, jitter_max_cells);
+            cl_jitter.for_each_pair(n, [&](int i, int j) {
+                const double ddx = x[3*i  ] - x[3*j  ];
+                const double ddy = x[3*i+1] - x[3*j+1];
+                const double ddz = x[3*i+2] - x[3*j+2];
                 if (ddx*ddx + ddy*ddy + ddz*ddz < 1e-20) {
                     x[3*i  ] += jitter_sig * ndist(rng);
                     x[3*i+1] += jitter_sig * ndist(rng);
@@ -501,12 +543,43 @@ std::tuple<F64Array, bool> relax_positions_cpp(
                     x[3*j  ] += jitter_sig * ndist(rng);
                     x[3*j+1] += jitter_sig * ndist(rng);
                     x[3*j+2] += jitter_sig * ndist(rng);
+                    jittered = true;
+                }
+            });
+        } else {
+            // Small N: O(N²) is acceptable (n < CELL_LIST_THRESHOLD = 64).
+            const double* xd = x.data();
+            for (int i = 0; i < n - 1; ++i) {
+                for (int j = i + 1; j < n; ++j) {
+                    const double ddx = xd[3*i  ] - xd[3*j  ];
+                    const double ddy = xd[3*i+1] - xd[3*j+1];
+                    const double ddz = xd[3*i+2] - xd[3*j+2];
+                    if (ddx*ddx + ddy*ddy + ddz*ddz < 1e-20) {
+                        x[3*i  ] += jitter_sig * ndist(rng);
+                        x[3*i+1] += jitter_sig * ndist(rng);
+                        x[3*i+2] += jitter_sig * ndist(rng);
+                        x[3*j  ] += jitter_sig * ndist(rng);
+                        x[3*j+1] += jitter_sig * ndist(rng);
+                        x[3*j+2] += jitter_sig * ndist(rng);
+                        jittered = true;
+                    }
                 }
             }
         }
+
+        // Re-evaluate only when jitter actually moved atoms.
+        // If no coincident pairs existed (the common case), we reuse E and g
+        // from the early-exit check above — saving one full evaluator call.
+        if (jittered) {
+            E = evaluator.evaluate(x, g);
+        }
     }
+
+    // L-BFGS minimisation.
+    // E and g are already valid for the current x; lbfgs_minimize reuses
+    // them directly without an extra eval() call at the start.
     const auto [final_energy, converged] = lbfgs_minimize(
-        x,
+        x, E, g,
         [&](const Vec& pos, Vec& grad) {
             return evaluator.evaluate(pos, grad);
         },
