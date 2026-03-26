@@ -11,6 +11,74 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.4.3] — 2026-03-26
 
+### Fixed
+
+#### BUG — `FlatCellList::build()`: int32 overflow in coarsening guard causes SIGSEGV (`_relax.cpp`)
+
+*Discovered via: memory usage test suite added in this release*
+*Affected code paths: `relax_positions` (C++ path) when `n >= CELL_LIST_THRESHOLD` and coincident atoms are present*
+
+**Root cause.**
+The v0.4.3 performance fix introduced a jitter check that calls
+`FlatCellList::build()` with `cell_size = 1e-9 Å` and
+`max_cells = max(1024, 16*n)`.  For typical atom spreads of ~10 Å,
+`(range / cell_size) ≈ 1e10`, which exceeds `INT_MAX` (≈ 2.1 × 10⁹).
+
+The three lambdas in the coarsening guard returned `static_cast<int>(...)`,
+causing UB-truncation to ~1.4 × 10⁹.  The subsequent overflow check
+
+```cpp
+while (static_cast<std::int64_t>(tnx()) * tny() * tnz() > max_cells)
+```
+
+computed `(1.4e9)³ ≈ 2.8e27`, which overflowed `int64` to a **negative**
+value.  The `while` condition (`negative > 2048`) evaluated to `false`
+immediately, so no coarsening occurred, and `nx = ny = nz ≈ 1.4 × 10⁹`
+were assigned.  The subsequent `cell_head.assign(nx*ny*nz, -1)` attempted
+to allocate ~10²⁷ ints, writing far outside addressable memory and causing
+a **segmentation fault** on the very first test run with `n >= 64` and
+coincident atoms.
+
+The bug was latent in all cell-list sizes (`build()` is shared with the
+normal relaxation path), but was only reachable via the jitter check because
+the 1e-9 Å cutoff is the only code path that passes such an extreme `cell_size`.
+
+**Fix.**
+The lambdas now return `std::int64_t` instead of `int`, eliminating the
+int32 truncation.  The overflow-safe `exceeds()` helper replaces the triple
+product with a step-wise comparison — each intermediate value is bounded by
+`max_cells²` ≤ 2⁴⁴, which fits safely in `int64`:
+
+```cpp
+auto exceeds = [&]() -> bool {
+    const std::int64_t x = tnx(), y = tny(), z = tnz();
+    if (x > max_cells || y > max_cells || z > max_cells) return true;
+    const std::int64_t xy = x * y;   // <= max_cells^2 <= 2^44: safe
+    if (xy > max_cells) return true;
+    return xy * z > max_cells;       // xy <= max_cells, so xy*z <= max_cells^2
+};
+```
+
+**Files changed:** `src/pasted/_ext/_relax.cpp` only.
+
+### Added
+
+#### TEST — Memory usage and Segfault regression suite (`tests/test_jitter_memory.py`)
+
+22 tests across 4 classes covering both the v0.4.3 performance fix and the
+SIGSEGV fix above:
+
+- `TestFlatCellListCap` (6 tests) — tracemalloc peak stays below 16 MB for
+  n = 128–8192; verifies the `max(1024, 16*n)` cell cap is effective.
+- `TestJitterCorrectness` (8 tests) — coincident pairs are separated after
+  jitter for n = 2–200; results are finite and consistent across the
+  `CELL_LIST_THRESHOLD` boundary (n = 32/64/65/128).
+- `TestEdgeCases` (7 tests) — n = 0, 1, two identical atoms, threshold
+  boundary (63/64/65), and **n = 2000 no-crash regression** (the SIGSEGV
+  case).
+- `TestEarlyExitMemory` (1 test) — well-separated atoms skip the jitter
+  FlatCellList entirely; peak memory stays below 4 MB.
+
 ### Performance
 
 #### PERF — `src/pasted/_ext/_relax.cpp`: eliminate O(N²) jitter scan and redundant allocations
