@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import tracemalloc
+import types
 from pathlib import Path
 
 import numpy as np
@@ -27,12 +28,14 @@ import pytest
 _EXT_PATH = Path(__file__).parent.parent / "src" / "pasted" / "_ext"
 
 
-def _load_relax_core():
+def _load_relax_core() -> types.ModuleType:
     so_files = list(_EXT_PATH.glob("_relax_core*.so"))
     if not so_files:
         pytest.skip("_relax_core.so not found (C++ build required)")
     spec = importlib.util.spec_from_file_location("_relax_core", so_files[0])
+    assert spec is not None, "spec_from_file_location returned None"
     mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None, "ModuleSpec.loader is None"
     spec.loader.exec_module(mod)
     return mod
 
@@ -78,7 +81,7 @@ class TestFlatCellListCap:
     """
 
     @pytest.mark.parametrize("n", [128, 512, 1024, 4096])
-    def test_peak_memory_scales_linearly_not_quadratic(self, n: int):
+    def test_peak_memory_scales_linearly_not_quadratic(self, n: int) -> None:
         """With coincident pairs present the jitter FlatCellList is exercised.
         Peak additional memory must stay below 16 MB (the old 4M-cell limit).
         """
@@ -106,7 +109,7 @@ class TestFlatCellListCap:
         )
 
     @pytest.mark.parametrize("n", [4096, 8192])
-    def test_peak_memory_well_below_old_limit(self, n: int):
+    def test_peak_memory_well_below_old_limit(self, n: int) -> None:
         """After the fix, peak memory should be at least 10x below the old 16 MB limit.
         Old: ~16 MB, new: ~256 KB (n=4096) / ~1 MB (n=16384).
         """
@@ -139,7 +142,7 @@ class TestJitterCorrectness:
     """Verify that jitter actually separates coincident atom pairs."""
 
     @pytest.mark.parametrize("n", [2, 10, 64, 200])
-    def test_coincident_atoms_are_separated(self, n: int):
+    def test_coincident_atoms_are_separated(self, n: int) -> None:
         """Input with a coincident pair -> after relax the pair distance must be > 0."""
         rng = np.random.default_rng(7)
         pts = _make_coincident_pts(n, rng)
@@ -153,14 +156,14 @@ class TestJitterCorrectness:
         )
 
     @pytest.mark.parametrize("n", [32, 64, 65, 128])  # straddles CELL_LIST_THRESHOLD=64
-    def test_threshold_boundary_consistency(self, n: int):
+    def test_threshold_boundary_consistency(self, n: int) -> None:
         """At the O(N^2) -> FlatCellList switch point (n=64), results must be
         finite and self-consistent."""
         rng = np.random.default_rng(99)
         pts = _make_coincident_pts(n, rng)
         radii = _make_radii(n, 0.3)
 
-        pts_out, converged = relax_positions(
+        pts_out, _converged = relax_positions(
             pts, radii, cov_scale=0.9, max_cycles=500, seed=42
         )
         assert np.all(np.isfinite(pts_out)), (
@@ -174,19 +177,19 @@ class TestJitterCorrectness:
 class TestEdgeCases:
     """Ensure extreme inputs do not crash (guards against SIGSEGV regression)."""
 
-    def test_n_zero(self):
+    def test_n_zero(self) -> None:
         pts = np.zeros((0, 3), dtype=np.float64)
         radii = np.zeros(0, dtype=np.float64)
-        pts_out, conv = relax_positions(pts, radii, cov_scale=0.9, max_cycles=10, seed=0)
+        pts_out, _conv = relax_positions(pts, radii, cov_scale=0.9, max_cycles=10, seed=0)
         assert pts_out.shape == (0, 3)
 
-    def test_n_one(self):
+    def test_n_one(self) -> None:
         pts = np.array([[1.0, 2.0, 3.0]], dtype=np.float64)
         radii = np.array([0.5], dtype=np.float64)
-        pts_out, conv = relax_positions(pts, radii, cov_scale=0.9, max_cycles=10, seed=0)
+        pts_out, _conv = relax_positions(pts, radii, cov_scale=0.9, max_cycles=10, seed=0)
         assert pts_out.shape == (1, 3)
 
-    def test_n_two_identical(self):
+    def test_n_two_identical(self) -> None:
         """Minimal coincident case: two exactly overlapping atoms."""
         pts = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float64)
         radii = np.array([1.0, 1.0], dtype=np.float64)
@@ -194,7 +197,7 @@ class TestEdgeCases:
         assert np.all(np.isfinite(pts_out))
 
     @pytest.mark.parametrize("n", [63, 64, 65])  # around CELL_LIST_THRESHOLD
-    def test_threshold_no_crash(self, n: int):
+    def test_threshold_no_crash(self, n: int) -> None:
         """No Segfault at the CELL_LIST_THRESHOLD (64) boundary."""
         rng = np.random.default_rng(n)
         pts = _make_coincident_pts(n, rng)
@@ -202,7 +205,7 @@ class TestEdgeCases:
         pts_out, _ = relax_positions(pts, radii, cov_scale=0.9, max_cycles=50, seed=0)
         assert np.all(np.isfinite(pts_out))
 
-    def test_large_n_no_segfault(self):
+    def test_large_n_no_segfault(self) -> None:
         """No Segfault for n=2000 (regression test for the int32 overflow bug).
 
         Root cause of the original SIGSEGV (fixed in v0.4.3):
@@ -227,11 +230,10 @@ class TestEarlyExitMemory:
     """When no overlaps exist, relax_positions returns immediately without
     running the jitter FlatCellList.  Peak memory should be tiny."""
 
-    def test_no_overlap_peak_memory_small(self):
+    def test_no_overlap_peak_memory_small(self) -> None:
         """Well-separated atoms -> early exit -> jitter FlatCellList not reached.
         Peak memory must be below 4 MB."""
         n = 2000
-        rng = np.random.default_rng(1)
         # Place atoms on a grid with 5 A spacing -- guaranteed no overlaps
         pts = np.array(
             [[i * 5.0, j * 5.0, k * 5.0]
