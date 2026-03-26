@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-pasted.py — direct-run entry point.
+run_pasted.py — direct-run entry point.
 
-Allows ``python pasted.py`` without a prior ``pip install``, as documented
+Allows ``python run_pasted.py`` without a prior ``pip install``, as documented
 in README.md.  Adds ``src/`` to the import path when the package has not
 been installed, then delegates entirely to :func:`pasted.cli.main`.
 
 Usage (without installation)::
 
-    python pasted.py --help
-    python pasted.py --n-atoms 10 --elements 1-30 --charge 0 --mult 1 \\
+    python run_pasted.py --help
+    python run_pasted.py --n-atoms 10 --elements 1-30 --charge 0 --mult 1 \\
         --mode gas --region sphere:8
 
 Usage (after ``pip install -e .``)::
 
     pasted --help        # CLI entry-point installed by pip
-    python pasted.py     # still works; resolves to the installed package
+    python run_pasted.py     # still works; resolves to the installed package
 """
 
 from __future__ import annotations
