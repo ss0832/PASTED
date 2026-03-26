@@ -162,15 +162,45 @@ struct FlatCellList {
         ox=xmin-cell_size; oy=ymin-cell_size; oz=zmin-cell_size;
         // Guard: coarsen grid until nx*ny*nz <= max_cells.
         // Prevents signed integer overflow for large cutoffs (UBSan fix, v0.3.9).
+        //
+        // BUG FIX (v0.4.4): lambdas now return std::int64_t to avoid int32
+        // overflow when cell_size is tiny (e.g. 1e-9 A for the jitter check).
+        // With cell_size=1e-9 and a 10 A spread, (range/cell_size)~1e10 exceeds
+        // INT_MAX; the old static_cast<int> truncated to ~1.4e9, and the
+        // subsequent int64 product (1.4e9)^3 wrapped to a negative value, making
+        // the while condition false on the very first evaluation -- leaving
+        // nx/ny/nz with the overflowed values and causing cell_head to be
+        // wildly mis-sized, leading to an out-of-bounds write / SIGSEGV.
+        //
+        // The overflow-safe comparison avoids multiplying three potentially
+        // large int64 values together: once any single axis exceeds max_cells we
+        // know the product does too; the pairwise product (guaranteed <=
+        // max_cells^2 <= 2^44 for max_cells<=1<<22) is checked before the full
+        // triple product to keep all intermediates within int64 range.
         {
-            auto tnx=[&]{return static_cast<int>((xmax-ox)*inv_cell)+2;};
-            auto tny=[&]{return static_cast<int>((ymax-oy)*inv_cell)+2;};
-            auto tnz=[&]{return static_cast<int>((zmax-oz)*inv_cell)+2;};
-            while (static_cast<std::int64_t>(tnx())*tny()*tnz() > max_cells) {
+            // Return int64 to avoid int32 overflow when cell_size is very small.
+            auto tnx=[&]() -> std::int64_t {
+                return static_cast<std::int64_t>((xmax-ox)*inv_cell) + 2; };
+            auto tny=[&]() -> std::int64_t {
+                return static_cast<std::int64_t>((ymax-oy)*inv_cell) + 2; };
+            auto tnz=[&]() -> std::int64_t {
+                return static_cast<std::int64_t>((zmax-oz)*inv_cell) + 2; };
+
+            // Overflow-safe: step-wise so no intermediate exceeds ~2^44.
+            auto exceeds = [&]() -> bool {
+                const std::int64_t x = tnx(), y = tny(), z = tnz();
+                if (x > max_cells || y > max_cells || z > max_cells) return true;
+                const std::int64_t xy = x * y;  // <= max_cells^2 <= 2^44: safe
+                if (xy > max_cells) return true;
+                return xy * z > max_cells;       // xy<=max_cells here, so xy*z<=max_cells^2
+            };
+            while (exceeds()) {
                 cell_size *= 2.0; inv_cell = 1.0 / cell_size;
                 ox = xmin - cell_size; oy = ymin - cell_size; oz = zmin - cell_size;
             }
-            nx = tnx(); ny = tny(); nz = tnz();
+            nx = static_cast<int>(tnx());
+            ny = static_cast<int>(tny());
+            nz = static_cast<int>(tnz());
         }
         cell_head.assign(static_cast<std::size_t>(nx*ny*nz), -1);
         next.resize(static_cast<std::size_t>(n));
