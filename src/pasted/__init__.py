@@ -111,7 +111,7 @@ from .neighbor_list import NeighborList
 try:
     __version__: str = importlib.metadata.version("pasted")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.4.2"
+    __version__ = "0.4.3"
 
 __all__ = [  # grouped by API category, not alphabetical
     # High-level API
