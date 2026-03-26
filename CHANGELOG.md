@@ -9,6 +9,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.3] — 2026-03-26
+
+### Performance
+
+#### PERF — `src/pasted/_ext/_relax.cpp`: eliminate O(N²) jitter scan and redundant allocations
+
+**Root cause.**
+`relax_positions_cpp` contained an unconditional O(N²) double loop that
+scanned all N(N−1)/2 atom pairs on every call to check for coincident atoms
+(distance < 1e-10 Å).  Because the placement algorithm virtually never
+produces exactly coincident atoms, the loop almost always produced no
+perturbations — making it a pure overhead cost that scaled quadratically
+with system size.
+
+Measured overhead before this fix:
+
+```
+n=256 → n=4096  (16× atoms)
+relax_positions : 0.988 ms → 111 ms  =  112×  (≈ O(N^1.8))
+no-overlap path : 0.422 ms →  25 ms  =   59×  (≈ O(N^1.5))
+```
+
+**Fix 1 — O(N) jitter scan via `FlatCellList` (n ≥ 64).**
+For `n >= CELL_LIST_THRESHOLD` the O(N²) double loop is replaced by a
+`FlatCellList` traversal with cutoff = 1e-9 Å.  Only neighbouring cells
+are visited, so the scan is O(N) in the common case where no coincident
+pairs exist.
+
+**Fix 2 — `FlatCellList::build()` memory cap parameter.**
+`build()` now accepts an optional `max_cells` argument (default `1<<22`,
+unchanged for existing callers).  The jitter call passes
+`max_cells = max(1024, 16*n)`, capping `cell_head` at ≤ 256 KB for
+n ≤ 16 384 instead of the previous 16 MB upper bound.  Coarsening only
+adds false-positive candidate pairs; it never misses a truly coincident
+pair (d < 1e-10 Å ≪ cell_size after coarsening).
+
+| n | `cell_head` before | `cell_head` after |
+|------:|--------------------|-------------------|
+|   256 | up to 16 MB        | up to 4 KB        |
+| 4 096 | up to 16 MB        | up to 256 KB      |
+|65 536 | up to 16 MB        | up to 4 MB        |
+
+**Fix 3 — shared gradient vector; one fewer `evaluate()` call.**
+`Vec grad_tmp(3*n)` was heap-allocated inside a block solely for the
+early-exit check and immediately discarded.  A single `Vec g(3*n)` is now
+allocated once and shared across the early-exit check, the optional
+post-jitter re-evaluation, and `lbfgs_minimize`.  `lbfgs_minimize`'s
+signature is updated to accept the pre-computed `(E, g)` pair, saving one
+redundant `evaluate()` call at the start of every non-early-exit invocation.
+In the common gas-mode path (overlaps present, no coincident atoms) this
+eliminates two heap allocations and one full O(N·k) gradient evaluation.
+
+**Files changed:** `src/pasted/_ext/_relax.cpp` only.
+
+---
+
 ## [0.4.2] — 2026-03-24
 
 ### Documentation
