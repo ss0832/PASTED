@@ -11,7 +11,7 @@
 PASTED is a structure fuzzer for quantum chemistry (QC) and machine-learning
 potential (MLP) codes. It generates intentionally random, physically
 meaningless atomic structures and quantifies their disorder through a suite
-of 13 structural metrics. Useful for stress-testing structure optimizers,
+of 17 structural metrics. Useful for stress-testing structure optimizers,
 generating worst-case inputs for QC codes, or exploring what "maximum chaos"
 looks like in structural space.
 
