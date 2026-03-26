@@ -21,7 +21,7 @@ looks like in structural space.
 
 - **Four placement modes** — random gas (`gas`), chain-growth (`chain`),
   coordination-complex-like (`shell`), and maximum-entropy (`maxent`)
-- **13 disorder metrics** computed per structure, all usable as output filters
+- **17 disorder metrics** computed per structure, all usable as output filters
 - **Element pool** specified by atomic number (Z = 1–106); composition sampled
   randomly per structure
 - **Guaranteed atom count** — post-placement L-BFGS repulsion relaxation
