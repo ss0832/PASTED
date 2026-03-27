@@ -14,7 +14,6 @@ import random
 import warnings
 
 import numpy as np
-import pytest
 
 from pasted import StructureGenerator
 from pasted._atoms import ATOMIC_NUMBERS, _cov_radius_ang, parse_element_spec, validate_charge_mult
@@ -24,7 +23,6 @@ from pasted._placement import (
     _PACKING_WARN,
     add_hydrogen,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
