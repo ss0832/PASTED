@@ -33,6 +33,7 @@ itself contains only placement logic.
 
 from __future__ import annotations
 
+import math
 import random
 import sys
 import warnings
@@ -57,6 +58,8 @@ from ._config import GeneratorConfig
 from ._io import _fmt, format_xyz, parse_xyz
 from ._metrics import compute_all_metrics, passes_filters
 from ._placement import (
+    _PACKING_HARD,
+    _PACKING_WARN,
     Vec3,
     _affine_move,
     add_hydrogen,
@@ -833,6 +836,16 @@ class StructureGenerator:
         self._element_min_counts: dict[str, int] = dict(cfg.element_min_counts or {})
         self._element_max_counts: dict[str, int] = dict(cfg.element_max_counts or {})
 
+        # ── Density validation (v0.4.4) ─────────────────────────────────
+        # _validate_density returns an effective region (possibly auto-scaled
+        # when the user-supplied region would exceed packing thresholds).
+        if cfg.mode in ("gas", "maxent") and cfg.region is not None:
+            self._effective_region: str = self._validate_density(
+                cfg.n_atoms, cfg.region
+            )
+        else:
+            self._effective_region = cfg.region or ""
+
         # ── Filters ─────────────────────────────────────────────────────
         self._filters: list[tuple[str, float, float]] = [
             parse_filter(f) for f in (cfg.filters or [])
@@ -869,6 +882,157 @@ class StructureGenerator:
     def _log(self, msg: str) -> None:
         """Print *msg* to stderr when verbose mode is active."""
         print(msg, file=sys.stderr)
+
+    # ------------------------------------------------------------------ #
+    # Parity adjustment (v0.4.4)                                          #
+    # ------------------------------------------------------------------ #
+
+    def _adjust_parity(self, atoms: list[str], rng: random.Random) -> list[str]:
+        """Nudge atom list by ±1 electron so charge/mult parity is satisfied.
+
+        Strategy (priority order):
+
+        1. Already correct → return unchanged.
+        2. H in pool → add or remove one H to flip electron count parity.
+        3. No H → swap one atom with a pool element of opposite-parity Z.
+
+        Changes at most one atom so element-fraction distribution is minimally
+        perturbed.
+        """
+        charge, mult = self._cfg.charge, self._cfg.mult
+        target_parity = (mult - 1) % 2
+        z_sum = sum(ATOMIC_NUMBERS.get(a, 0) for a in atoms)
+        if (z_sum - charge) % 2 == target_parity:
+            return atoms
+
+        pool = self._element_pool
+
+        # Strategy 2: H available
+        if "H" in pool:
+            if "H" not in atoms:
+                return [*atoms, "H"]
+            elif rng.random() < 0.5 and atoms.count("H") >= 1:
+                idx = next(i for i, a in enumerate(atoms) if a == "H")
+                return atoms[:idx] + atoms[idx + 1:]
+            else:
+                return [*atoms, "H"]
+
+        # Strategy 3: swap one atom for opposite-parity Z element
+        indices = list(range(len(atoms)))
+        rng.shuffle(indices)
+        for idx in indices:
+            old_z = ATOMIC_NUMBERS.get(atoms[idx], 0)
+            needed_parity = (old_z + 1) % 2
+            candidates = [s for s in pool if ATOMIC_NUMBERS.get(s, 0) % 2 == needed_parity]
+            if candidates:
+                result = list(atoms)
+                result[idx] = rng.choice(candidates)
+                return result
+
+        return atoms  # pool has only one parity class
+
+    # ------------------------------------------------------------------ #
+    # Density validation (v0.4.4)                                         #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _region_volume(region: str) -> tuple[str, float] | None:
+        """Return (shape, volume_Å³) for a region spec, or None if unknown."""
+        if region.startswith("sphere:"):
+            r = float(region.split(":")[1])
+            return "sphere", (4 / 3) * math.pi * r ** 3
+        if region.startswith("box:"):
+            dims = list(map(float, region.split(":")[1].split(",")))
+            if len(dims) == 1:
+                dims *= 3
+            return "box", dims[0] * dims[1] * dims[2]
+        return None
+
+    @staticmethod
+    def _recommend_region(n_atoms: int, mean_r: float, shape: str,
+                          target_packing: float = 0.45) -> str:
+        """Return a region string at *target_packing* for *n_atoms* atoms."""
+        atom_vol = (4 / 3) * math.pi * mean_r ** 3
+        V = n_atoms * atom_vol / target_packing
+        margin = 1.05
+        if shape == "sphere":
+            r = ((3 * V) / (4 * math.pi)) ** (1 / 3) * margin
+            return f"sphere:{r:.1f}"
+        L = V ** (1 / 3) * margin
+        return f"box:{L:.1f}"
+
+    def _validate_density(self, n_atoms: int, region: str) -> str:
+        """Check packing fraction and auto-scale the region when it is too high.
+
+        If the packing fraction of *n_atoms* atoms inside *region* would
+        exceed a safety threshold the region is **automatically enlarged** to
+        bring the packing fraction back to the target value
+        (``_PACKING_TARGET = 0.45``), and a :class:`UserWarning` is emitted.
+        This prevents a silent failure in :func:`relax_positions` without
+        forcing the caller to manually calculate a safe region size.
+
+        Two thresholds govern the behaviour:
+
+        Warn limit (0.50)
+            Practical threshold above which relax_positions slows
+            significantly due to FlatCellList cell over-population.
+            Region is auto-scaled; UserWarning emitted.
+
+        Hard limit (0.64)
+            Random-close-packing limit for monodisperse spheres.
+            relax_positions cannot converge above this density.
+            Region is auto-scaled with a stronger UserWarning.
+
+        Both sphere and box region specs are supported; unrecognised specs
+        are returned unchanged (no scaling is attempted).
+
+        Parameters
+        ----------
+        n_atoms:
+            Number of atoms to be placed.
+        region:
+            Bounding-region spec (``"sphere:R"`` | ``"box:L"`` | ``"box:LX,LY,LZ"``).
+
+        Returns
+        -------
+        str
+            The effective region spec to use for placement.  Equal to *region*
+            when the packing fraction is within limits; otherwise the
+            auto-scaled spec string.
+        """
+        result = self._region_volume(region)
+        if result is None:
+            return region
+        shape, region_vol = result
+        mean_r = float(np.mean([_cov_radius_ang(s) for s in self._element_pool]))
+        atom_vol = (4 / 3) * math.pi * mean_r ** 3
+        pf = n_atoms * atom_vol / region_vol
+
+        if pf > _PACKING_HARD:
+            scaled = self._recommend_region(n_atoms, mean_r, shape)
+            warnings.warn(
+                f"[pasted v0.4.4] Packing fraction {pf:.0%} exceeds the physical "
+                f"limit ({_PACKING_HARD:.0%}, random-close-packing) for "
+                f"{region!r} with {n_atoms:,} atoms. "
+                f"relax_positions cannot converge at this density. "
+                f"Region auto-scaled to {scaled!r} (target packing: 45%).",
+                UserWarning,
+                stacklevel=3,
+            )
+            return scaled
+        if pf > _PACKING_WARN:
+            scaled = self._recommend_region(n_atoms, mean_r, shape)
+            warnings.warn(
+                f"[pasted v0.4.4] Packing fraction {pf:.0%} exceeds recommended "
+                f"limit ({_PACKING_WARN:.0%}) for {region!r} with {n_atoms:,} atoms. "
+                f"relax_positions may be slow. "
+                f"Region auto-scaled to {scaled!r} (target packing: 45%).",
+                UserWarning,
+                stacklevel=3,
+            )
+            return scaled
+        return region
+
 
     # ------------------------------------------------------------------ #
     # Verbose logging helpers                                              #
@@ -1111,10 +1275,10 @@ class StructureGenerator:
 
         center_sym: str | None = None
         if self._cfg.mode == "gas":
-            assert self._cfg.region is not None  # guaranteed by __init__ validation
+            # Use _effective_region (auto-scaled if density was too high)
             atoms_out, positions = place_gas(
                 atoms_list,
-                self._cfg.region,
+                self._effective_region,
                 rng,
             )
         elif self._cfg.mode == "chain":
@@ -1128,10 +1292,10 @@ class StructureGenerator:
                 chain_bias=self._cfg.chain_bias,
             )
         elif self._cfg.mode == "maxent":
-            assert self._cfg.region is not None
+            # Use _effective_region (auto-scaled if density was too high)
             atoms_out, positions = place_maxent(
                 atoms_list,
-                self._cfg.region,
+                self._effective_region,
                 self._cfg.cov_scale,
                 rng,
                 maxent_steps=self._cfg.maxent_steps,
@@ -1209,7 +1373,17 @@ class StructureGenerator:
 
                 atoms_list = self._sample_atoms(rng)
                 if do_add_h:
-                    atoms_list = add_hydrogen(atoms_list, rng)
+                    atoms_list = add_hydrogen(
+                        atoms_list, rng,
+                        region=self._effective_region or None,
+                        charge=self._cfg.charge,
+                        mult=self._cfg.mult,
+                    )
+                # _adjust_parity may add/remove/swap atoms, which would
+                # violate explicit element_min_counts / element_max_counts
+                # set by the caller.  Skip when such constraints are active.
+                if not self._element_min_counts and not self._element_max_counts:
+                    atoms_list = self._adjust_parity(atoms_list, rng)
 
                 ok, val_msg = validate_charge_mult(atoms_list, self._cfg.charge, self._cfg.mult)
                 if not ok:

@@ -48,7 +48,7 @@ import random
 
 import numpy as np
 
-from ._atoms import _cov_radius_ang
+from ._atoms import ATOMIC_NUMBERS, _cov_radius_ang
 
 # ---------------------------------------------------------------------------
 # Optional C++ acceleration  (pasted._ext)
@@ -70,6 +70,16 @@ from ._ext import (
 from ._ext import angular_repulsion_gradient as _cpp_angular_gradient
 from ._ext import place_maxent_cpp as _cpp_place_maxent
 from ._ext import relax_positions as _cpp_relax_positions
+
+# Pyykkö single-bond covalent radius for H (Å) — used for volume-cap in add_hydrogen
+_H_COV_RADIUS: float = 0.31
+
+# Density thresholds for region validation (sphere and box, identical physics)
+# Hard limit = Random Close Packing for monodisperse spheres (~0.6366).
+# Anything above this is geometrically impossible to relax to convergence.
+# Warn limit = practical threshold above which relax_positions slows dramatically.
+_PACKING_HARD: float = 0.64
+_PACKING_WARN: float = 0.50
 
 # Type alias used throughout this module and exported for type annotations.
 Vec3 = tuple[float, float, float]
@@ -316,19 +326,111 @@ def relax_positions(
 # ---------------------------------------------------------------------------
 
 
-def add_hydrogen(atoms: list[str], rng: random.Random) -> list[str]:
+def add_hydrogen(
+    atoms: list[str],
+    rng: random.Random,
+    *,
+    region: str | None = None,
+    charge: int = 0,
+    mult: int = 1,
+) -> list[str]:
     """Append hydrogen atoms when H is in the pool but absent from *atoms*.
 
-    The number of H atoms added is:
-    ``n_H = 1 + round(uniform(0, 1) × n_current × 1.2)``
+    Enhanced in v0.4.4 with two new guards:
 
-    The original list is not modified; a new list is returned.
+    **Parity-aware count** — the sampled H count is adjusted by ±1 so that
+    the total electron count satisfies the charge/multiplicity parity:
+    ``(Σ Z_i − charge + n_H) % 2 == (mult − 1) % 2``.
+    This prevents most charge/multiplicity rejections that previously occurred
+    *after* the (potentially expensive) H-list allocation.
+
+    **Volume cap** — when *region* is given the H count is hard-capped so
+    that the total packing fraction of the new atoms stays below
+    ``_PACKING_HARD`` (0.64, random-close-packing limit for monodisperse
+    spheres).  This is independent of the density validation in
+    :class:`~pasted._generator.StructureGenerator`; that check operates on
+    the *non-hydrogen* heavy atoms specified by the user, while this cap
+    limits hydrogen inflation within a fixed region after heavy-atom placement.
+
+    The base sample is still drawn from
+    ``n_H_raw = 1 + round(uniform(0, 1) × n_current × 1.2)``,
+    which preserves the original distribution as closely as possible while
+    respecting the two constraints above.
+
+    Parameters
+    ----------
+    atoms:
+        Current element list (must not already contain ``"H"``; returns
+        *atoms* unchanged when it does).
+    rng:
+        Seeded random-number generator.
+    region:
+        Bounding-region spec ``"sphere:R"`` | ``"box:L"`` | ``"box:LX,LY,LZ"``.
+        Used to derive the volume cap.  ``None`` → uncapped (original
+        behaviour, kept for back-compat when region is not available).
+    charge:
+        Total system charge (default: 0).  Used for parity calculation.
+    mult:
+        Spin multiplicity (default: 1).  Used for parity calculation.
+
+    Returns
+    -------
+    list[str]
+        Original list with ``n_H`` ``"H"`` entries appended.  The original
+        list is not modified.
     """
     if "H" in atoms:
         return atoms
+
     n = len(atoms)
-    n_h = 1 + round(rng.random() * n * 1.2)
-    return atoms + ["H"] * n_h
+
+    # ── Volume cap from region ────────────────────────────────────────────
+    # Cap H count so that adding H does not push the total packing fraction
+    # above _PACKING_HARD.  We use the mean covalent radius of the heavy
+    # atoms already placed as a proxy for the displaced volume they occupy.
+    h_vol = (4 / 3) * math.pi * _H_COV_RADIUS ** 3
+
+    if region is not None:
+        if region.startswith("sphere:"):
+            r = float(region.split(":")[1])
+            region_vol = (4 / 3) * math.pi * r ** 3
+        elif region.startswith("box:"):
+            dims = list(map(float, region.split(":")[1].split(",")))
+            if len(dims) == 1:
+                dims *= 3
+            region_vol = dims[0] * dims[1] * dims[2]
+        else:
+            region_vol = None  # unknown spec — skip cap
+
+        if region_vol is not None and n > 0:
+            mean_r = sum(_cov_radius_ang(a) for a in atoms) / n
+            heavy_vol = n * (4 / 3) * math.pi * mean_r ** 3
+            available = region_vol * _PACKING_HARD - heavy_vol
+            max_h = max(0, int(available / h_vol))
+        else:
+            max_h = n  # unknown region type
+    else:
+        # Original uncapped behaviour preserved when region is unavailable.
+        max_h = 1 + round(n * 1.2)
+
+    # ── Raw sample (same distribution as v0.4.3) ──────────────────────────
+    n_h = min(1 + round(rng.random() * n * 1.2), max_h)
+
+    # ── Parity adjustment (±1) ────────────────────────────────────────────
+    # Needed parity: (total_electrons) % 2 == (mult − 1) % 2
+    # total_electrons = Σ Z_i − charge + n_H   (H has Z = 1)
+    z_sum = sum(ATOMIC_NUMBERS.get(a, 0) for a in atoms)
+    target_parity = (mult - 1) % 2
+    if (z_sum - charge + n_h) % 2 != target_parity:
+        # Prefer removing one H (keeps structure leaner); fall back to adding.
+        if n_h > 0:
+            n_h -= 1
+        elif n_h < max_h:
+            n_h += 1
+        # If neither adjustment works the structure will still fail
+        # validate_charge_mult downstream — that is the designed safety net.
+
+    return atoms + ["H"] * max(0, n_h)
 
 
 # ---------------------------------------------------------------------------
