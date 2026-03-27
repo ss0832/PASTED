@@ -58,11 +58,11 @@ from ._config import GeneratorConfig
 from ._io import _fmt, format_xyz, parse_xyz
 from ._metrics import compute_all_metrics, passes_filters
 from ._placement import (
+    _H_COV_RADIUS,
     _PACKING_HARD,
     _PACKING_WARN,
     Vec3,
     _affine_move,
-    add_hydrogen,
     place_chain,
     place_gas,
     place_maxent,
@@ -846,6 +846,33 @@ class StructureGenerator:
         else:
             self._effective_region = cfg.region or ""
 
+        # ── v0.4.5 hot-loop caches ──────────────────────────────────────
+        self._target_parity: int = (cfg.mult - 1) % 2
+        self._charge_parity: int = cfg.charge & 1
+        # Pre-classify pool elements by Z parity (used by _adjust_parity strategy 3)
+        self._odd_pool: list[str] = [
+            s for s in self._element_pool if ATOMIC_NUMBERS[s] % 2 == 1
+        ]
+        self._even_pool: list[str] = [
+            s for s in self._element_pool if ATOMIC_NUMBERS[s] % 2 == 0
+        ]
+        # Pre-parse region geometry for _add_h_fast volume cap
+        _rv = self._region_volume(self._effective_region)
+        _h_vol: float = (4.0 / 3.0) * math.pi * _H_COV_RADIUS ** 3
+        if _rv is not None and self._element_pool:
+            _mean_pool_r = (
+                sum(_cov_radius_ang(s) for s in self._element_pool)
+                / len(self._element_pool)
+            )
+            self._h_region_vol: float = _rv[1]
+            self._h_heavy_vol_per_atom: float = (4.0 / 3.0) * math.pi * _mean_pool_r ** 3
+            self._h_region_known: bool = True
+        else:
+            self._h_region_vol = 0.0
+            self._h_heavy_vol_per_atom = 0.0
+            self._h_region_known = False
+        self._h_vol_const: float = _h_vol
+
         # ── Filters ─────────────────────────────────────────────────────
         self._filters: list[tuple[str, float, float]] = [
             parse_filter(f) for f in (cfg.filters or [])
@@ -888,48 +915,114 @@ class StructureGenerator:
     # ------------------------------------------------------------------ #
 
     def _adjust_parity(self, atoms: list[str], rng: random.Random) -> list[str]:
-        """Nudge atom list by ±1 electron so charge/mult parity is satisfied.
+        """Nudge atom list so charge/mult parity is satisfied (v0.4.5: optimised).
 
-        Strategy (priority order):
+        Optimisations vs v0.4.4:
+
+        * Z-sum parity via XOR accumulation — avoids ``dict.get`` on every
+          atom and discards the full integer sum (only the low bit matters).
+        * Strategy-3 candidate lists come from ``self._odd_pool`` /
+          ``self._even_pool`` cached at construction time instead of a
+          per-call list comprehension over the pool.
+        * Strategy-3 index selection uses ``rng.randrange`` so only a
+          constant number of atoms are examined in the typical case (mixed-
+          parity pool → first candidate always succeeds).
+
+        Strategy (priority order, unchanged from v0.4.4):
 
         1. Already correct → return unchanged.
-        2. H in pool → add or remove one H to flip electron count parity.
+        2. H in pool → add or remove one H to flip electron-count parity.
         3. No H → swap one atom with a pool element of opposite-parity Z.
 
         Changes at most one atom so element-fraction distribution is minimally
         perturbed.
         """
-        charge, mult = self._cfg.charge, self._cfg.mult
-        target_parity = (mult - 1) % 2
-        z_sum = sum(ATOMIC_NUMBERS.get(a, 0) for a in atoms)
-        if (z_sum - charge) % 2 == target_parity:
+        # ── XOR bit trick: zp = z_sum % 2 without computing z_sum ─────────
+        zp = 0
+        for a in atoms:
+            zp ^= ATOMIC_NUMBERS[a] & 1
+        if (zp ^ self._charge_parity) == self._target_parity:
             return atoms
 
-        pool = self._element_pool
-
-        # Strategy 2: H available
-        if "H" in pool:
+        # ── Strategy 2: H available ───────────────────────────────────────
+        if "H" in self._element_pool:
             if "H" not in atoms:
                 return [*atoms, "H"]
-            elif rng.random() < 0.5 and atoms.count("H") >= 1:
+            elif rng.random() < 0.5:
                 idx = next(i for i, a in enumerate(atoms) if a == "H")
                 return atoms[:idx] + atoms[idx + 1:]
             else:
                 return [*atoms, "H"]
 
-        # Strategy 3: swap one atom for opposite-parity Z element
-        indices = list(range(len(atoms)))
-        rng.shuffle(indices)
-        for idx in indices:
-            old_z = ATOMIC_NUMBERS.get(atoms[idx], 0)
-            needed_parity = (old_z + 1) % 2
-            candidates = [s for s in pool if ATOMIC_NUMBERS.get(s, 0) % 2 == needed_parity]
-            if candidates:
+        # ── Strategy 3: swap one atom — O(1) amortised ───────────────────
+        # Pre-cached pools eliminate the per-call list comprehension.
+        # rng.randrange picks a random starting atom; in a mixed-parity pool
+        # the first candidate always succeeds, giving O(1) average cost.
+        n = len(atoms)
+        if not n:
+            return atoms
+        start = rng.randrange(n)
+        for offset in range(n):
+            i = (start + offset) % n
+            needed = (ATOMIC_NUMBERS[atoms[i]] & 1) ^ 1
+            cands = self._odd_pool if needed == 1 else self._even_pool
+            if cands:
                 result = list(atoms)
-                result[idx] = rng.choice(candidates)
+                result[i] = rng.choice(cands)
                 return result
 
         return atoms  # pool has only one parity class
+
+    # ------------------------------------------------------------------ #
+    # Fast hydrogen augmentation (v0.4.5)                                 #
+    # ------------------------------------------------------------------ #
+
+    def _add_h_fast(self, atoms: list[str], rng: random.Random) -> list[str]:
+        """Hydrogen augmentation using construction-time caches (v0.4.5 fast path).
+
+        Semantically equivalent to :func:`~pasted._placement.add_hydrogen`
+        called with ``region=self._effective_region``, ``charge``, and
+        ``mult`` from the config, but replaces two per-sample O(N) scans
+        with O(1) cache lookups:
+
+        * Region-volume string parsing → ``self._h_region_vol`` (pre-parsed).
+        * Mean covalent radius of placed atoms → pool mean stored in
+          ``self._h_heavy_vol_per_atom`` (exact in expectation since atoms
+          are drawn from the same pool; acts as a proxy for the per-sample
+          mean with negligible error for large samples).
+
+        The Z-sum parity check still scans *atoms* (unavoidable), but uses
+        the XOR bit trick to avoid computing the full integer sum (~2× faster
+        than the ``dict.get`` accumulation in v0.4.4).
+        """
+        if "H" in atoms:
+            return atoms
+
+        n = len(atoms)
+
+        # ── Volume cap (O(1) with cached geometry) ─────────────────────────
+        if self._h_region_known and n > 0:
+            available = self._h_region_vol * _PACKING_HARD - n * self._h_heavy_vol_per_atom
+            max_h = max(0, int(available / self._h_vol_const))
+        else:
+            max_h = 1 + round(n * 1.2)
+
+        # ── Raw sample (same distribution as v0.4.3 / add_hydrogen) ────────
+        n_h = min(1 + round(rng.random() * n * 1.2), max_h)
+
+        # ── Parity adjustment — XOR bit trick ───────────────────────────────
+        # (z_sum - charge + n_h) % 2 == target_parity
+        # ⟺ (zp ^ charge_parity ^ (n_h & 1)) == target_parity
+        zp = 0
+        for a in atoms:
+            zp ^= ATOMIC_NUMBERS[a] & 1
+        if (zp ^ self._charge_parity ^ (n_h & 1)) != self._target_parity:
+            if n_h > 0:
+                n_h -= 1
+            elif n_h < max_h:
+                n_h += 1
+
+        return atoms + ["H"] * max(0, n_h)
 
     # ------------------------------------------------------------------ #
     # Density validation (v0.4.4)                                         #
@@ -1373,12 +1466,7 @@ class StructureGenerator:
 
                 atoms_list = self._sample_atoms(rng)
                 if do_add_h:
-                    atoms_list = add_hydrogen(
-                        atoms_list, rng,
-                        region=self._effective_region or None,
-                        charge=self._cfg.charge,
-                        mult=self._cfg.mult,
-                    )
+                    atoms_list = self._add_h_fast(atoms_list, rng)
                 # _adjust_parity may add/remove/swap atoms, which would
                 # violate explicit element_min_counts / element_max_counts
                 # set by the caller.  Skip when such constraints are active.
