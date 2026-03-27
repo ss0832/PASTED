@@ -9,6 +9,132 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.4] — 2026-03-27
+
+### Changed
+
+#### BEHAVIOR — `StructureGenerator._validate_density()`: auto-scale region instead of raising `ValueError`
+
+Previously, when the user-supplied region's packing fraction exceeded the
+hard limit (0.64, random-close-packing) a `ValueError` was raised at
+construction time, forcing the caller to manually recalculate a valid region.
+
+**New behavior:** instead of raising an error, the region is **automatically
+enlarged** to bring the packing fraction down to the 45 % target, and a
+`UserWarning` is emitted. Generation proceeds with the scaled region.
+
+Both soft (> 0.50) and hard (> 0.64) thresholds now trigger auto-scaling:
+
+- **Soft threshold exceeded (pf > 0.50):** UserWarning + region scaled to
+  target packing (45 %). `relax_positions` would have been slow otherwise.
+- **Hard threshold exceeded (pf > 0.64):** UserWarning noting that
+  convergence was impossible + region scaled to target packing (45 %).
+
+The warning message includes the original and scaled region strings, e.g.:
+
+```
+UserWarning: [pasted v0.4.4] Packing fraction 74% exceeds the physical limit
+(64%, random-close-packing) for 'sphere:2.25' with 20 atoms.
+relax_positions cannot converge at this density.
+Region auto-scaled to 'sphere:2.8' (target packing: 45%).
+```
+
+This change preserves backward compatibility for callers passing a
+well-sized region (no warning, no scaling). Callers that were previously
+catching `ValueError` should update to handle `UserWarning` instead.
+
+**Files changed:** `src/pasted/_generator.py`.
+
+### Added
+
+#### FEATURE — `add_hydrogen()`: parity-aware H count and volume cap (`_placement.py`)
+
+`add_hydrogen()` gains two new keyword parameters (`region`, `charge`,
+`mult`) and two corresponding guards:
+
+**Parity-aware count** — the raw H count is adjusted by ±1 so that the
+total electron count satisfies the charge/multiplicity parity constraint:
+`(Σ Z_i − charge + n_H) % 2 == (mult − 1) % 2`. This prevents most
+charge/multiplicity rejections that previously occurred *after* the
+(potentially expensive) H-list allocation in the generation loop.
+
+**Volume cap** — when `region` is supplied, the H count is hard-capped so
+that the total packing fraction (heavy atoms + H) stays below
+`_PACKING_HARD` (0.64). This is complementary to the density validation in
+`StructureGenerator`: that check operates on the non-hydrogen heavy atoms,
+while this cap limits hydrogen inflation within the fixed region after
+heavy-atom placement.
+
+The base sample distribution `n_H_raw = 1 + round(uniform(0,1) × n × 1.2)`
+is preserved as closely as possible. Passing `region=None` (or omitting the
+parameter) reproduces the v0.4.3 uncapped behaviour exactly.
+
+**Backward compatibility:** the new parameters are keyword-only with safe
+defaults (`region=None`, `charge=0`, `mult=1`), so existing call sites
+require no changes.
+
+**Files changed:** `src/pasted/_placement.py`.
+
+#### FEATURE — `StructureGenerator._adjust_parity()`: post-sampling parity nudge (`_generator.py`)
+
+A new internal method `_adjust_parity()` is called after `add_hydrogen()`
+in the generation loop to catch any remaining parity mismatches before the
+(more expensive) structure placement and metric computation steps.
+
+**Strategy (priority order):**
+
+1. Already correct → return unchanged.
+2. H in pool → add or remove one H to flip the electron-count parity.
+3. No H → swap one atom with a pool element of opposite-parity Z.
+
+Changes at most one atom, so the element-fraction distribution is minimally
+perturbed. Skipped automatically when `element_min_counts` or
+`element_max_counts` constraints are active (those constraints take
+precedence to avoid violating the caller's composition requirements).
+
+**Files changed:** `src/pasted/_generator.py`.
+
+#### FEATURE — `StructureGenerator._validate_density()`: density validation at construction time (`_generator.py`)
+
+`StructureGenerator.__init__()` now calls `_validate_density()` for `gas`
+and `maxent` modes whenever a `region` is provided. The method:
+
+- Computes the packing fraction from the element pool's mean covalent radius.
+- Auto-scales the region to 45 % target packing if either threshold is
+  exceeded (see the BEHAVIOR entry above).
+- Stores the effective region in `self._effective_region`, which is used
+  by `_place_one()` and `add_hydrogen()` throughout the generation loop.
+
+Helper methods added alongside:
+
+- `_region_volume(region)` — parses sphere/box spec and returns
+  `(shape, volume_Å³)`, or `None` for unrecognised specs.
+- `_recommend_region(n_atoms, mean_r, shape)` — returns a region string
+  at 45 % target packing for the given atom count and mean radius.
+
+**Files changed:** `src/pasted/_generator.py`.
+
+#### TEST — v0.4.4 feature test suite (`tests/test_v044.py`)
+
+34 new tests across 4 classes covering all v0.4.4 additions:
+
+- `TestAddHydrogen` (9 tests) — parity for singlet/doublet/negative-charge
+  systems, volume cap for sphere and box regions, input-immutability check.
+- `TestAdjustParity` (6 tests) — already-correct pass-through, H-pool
+  strategy, no-H swap strategy, at-most-one-change invariant, pool
+  membership check.
+- `TestValidateDensity` (15 tests) — low-packing no-op, warn-threshold
+  auto-scale, hard-threshold auto-scale (no `ValueError`), scaled region
+  physically valid, box region, maxent mode, chain-mode skip, unknown spec
+  pass-through, `_region_volume` and `_recommend_region` unit tests,
+  end-to-end generation after auto-scale.
+- `TestIntegrationV044` (4 tests) — parity validity across 20 samples,
+  no spurious density warnings on normal-sized regions, all returned
+  structures pass `validate_charge_mult`, generation succeeds after
+  auto-scaling.
+
+---
+
 ## [0.4.3] — 2026-03-26
 
 ### Fixed
