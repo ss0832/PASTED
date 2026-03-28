@@ -205,10 +205,11 @@ if w:
 ```
 
 > **Behavior note — `n_atoms=0`:** passing `n_atoms=0` is accepted and
-> returns an empty `GenerationResult` with `n_passed=0` and `n_attempted=0`.
-> No error is raised.  This is intentional: it allows pipelines to call
-> `generate()` unconditionally and handle the empty result with the standard
-> `if not result:` guard rather than wrapping the call in a `try/except` block.
+> returns an empty `GenerationResult` with `n_passed=0`.  No exception is
+> raised.  `n_attempted` reflects the number of placement attempts made
+> (equal to `n_samples`); all attempts will be rejected by the parity check
+> and a `UserWarning` will be emitted.  The result still evaluates as falsy,
+> so pipelines can handle it with the standard `if not result:` guard.
 
 ### `maxent` mode
 
@@ -416,9 +417,9 @@ pasted --n-atoms 15 --charge 0 --mult 1 \
 
 Available metrics: `H_atom`, `H_spatial`, `H_total`, `RDF_dev`,
 `shape_aniso`, `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
-`ring_fraction`, `charge_frustration`, `moran_I_chi`.
-
-### Shell mode with a fixed center atom
+`ring_fraction`, `charge_frustration`, `moran_I_chi`,
+`bond_angle_entropy`, `coordination_variance`, `radial_variance`,
+`local_anisotropy`.
 
 ```bash
 pasted --n-atoms 8 --charge 0 --mult 1 \
@@ -582,7 +583,9 @@ objective = lambda m: m["H_spatial"] - 2.0 * m["Q6"]
 Available metrics: all keys in `pasted.ALL_METRICS` —
 `H_atom`, `H_spatial`, `H_total`, `RDF_dev`, `shape_aniso`,
 `Q4`, `Q6`, `Q8`, `graph_lcc`, `graph_cc`,
-`ring_fraction`, `charge_frustration`, `moran_I_chi`.
+`ring_fraction`, `charge_frustration`, `moran_I_chi`,
+`bond_angle_entropy`, `coordination_variance`, `radial_variance`,
+`local_anisotropy`.
 
 ---
 
